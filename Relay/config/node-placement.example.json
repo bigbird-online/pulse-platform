@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "deploymentId": "example-two-node",
+  "status": "candidate",
+  "nodes": [
+    { "id": "node-a" },
+    { "id": "node-b" }
+  ],
+  "agents": [
+    { "id": "agent-a", "placements": ["node-a", "node-b"], "ownerIds": ["agent-a"], "deliveryBotId": "agent-a-bot" }
+  ],
+  "bots": [
+    {
+      "id": "agent-a-bot",
+      "agentId": "agent-a",
+      "activeNode": "node-a",
+      "credentialRefs": { "telegramToken": "env:EXAMPLE_RELAY_BOT_TOKEN_AGENT_A" }
+    }
+  ],
+  "bindings": [
+    { "id": "example-user-agent-a", "activeNode": "node-a" }
+  ],
+  "jobs": [
+    { "id": "agent-a-daily", "ownerId": "agent-a", "runNode": "node-b" }
+  ],
+  "userDefaults": [
+    { "userId": "example-user", "nodeId": "node-a", "botId": "agent-a-bot" }
+  ]
+}

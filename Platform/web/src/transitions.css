@@ -1,0 +1,32 @@
+/* ── Step transition animations ── */
+
+.step-entering > .card:first-of-type {
+  animation: stepFadeIn 0.35s ease-out forwards;
+}
+
+@keyframes stepFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Message transition ── */
+.msg.msg-entering {
+  animation: msgFadeIn 0.3s ease-out forwards;
+}
+
+@keyframes msgFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

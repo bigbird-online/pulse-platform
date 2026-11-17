@@ -1,0 +1,16 @@
+{
+  "schema": "computecost_coverage_recoveries/v1",
+  "entities": [
+    {
+      "id": "tcloud-relay",
+      "domain": "usage",
+      "wi": null,
+      "abandoned_heads": [
+        "ccf1_2e15744f64d8f743a1e9dffc3afc51f30d314e30c5bc10e7f9b26b1bae526b32"
+      ],
+      "recovered_on": "2026-10-21",
+      "authorization": "49c1b0418f642161f3bdf9c728fe2bc0133418b4b4ae3368a0301071246f1a2f",
+      "note": "ownermac 转运副本经证据修订改基后的重复链，非 TCloud 采集器断言"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+#!/bin/sh
+# The reviewed Host supplies the canonical interpreter. The immutable release
+# containing this command supplies code; no package/env installation is needed.
+if [ -z "${PULSE_COMPUTE_COST_PYTHON:-}" ]; then
+  echo 'ComputeCost requires the reviewed Host canonical Python binding' >&2
+  exit 78
+fi
+exec "$PULSE_COMPUTE_COST_PYTHON" -I -B -c 'import pathlib,runpy,sys; entry=pathlib.Path(sys.argv.pop(1)).resolve(); sys.path.insert(0,str(entry.parent.parent)); runpy.run_module("pulse_compute_cost",run_name="__main__")' "$0" "$@"

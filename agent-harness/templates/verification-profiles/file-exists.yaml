@@ -1,0 +1,12 @@
+profile_id: file-exists
+description: "验证文件已生成/已创建的声明"
+claim_patterns:
+  - "(生成|创建|写入|saved?|created?|wrote|produced?).*\\.(md|yaml|py|ts|json|csv|html)"
+  - "\\.(md|yaml|py|ts|json).*已(生成|创建|写入)"
+  - "文件.*存在"
+  - "file.*exist"
+verification:
+  type: file_exists
+  path_extract: "[\\w/.:-]+\\.\\w+"
+  pass_condition: "文件存在且大小 > 0 字节"
+tags: [doc, file]

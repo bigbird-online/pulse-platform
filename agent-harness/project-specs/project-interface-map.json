@@ -1,0 +1,2894 @@
+{
+  "schema": "agent-harness-interface-map/v1",
+  "status": "specification",
+  "baseline": "e6ae6e2463d834dec0d2dda16f8d9e25adf62bfe",
+  "classification_note": "AST declarations include groups and internal commands, not a claim that every declaration is externally callable. Target mappings specify retained capability, not runtime equivalence proof.",
+  "click_declarations": [
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 170,
+      "function": "main",
+      "parent": "click",
+      "name": "main",
+      "kind": "group",
+      "requirements": [
+        "AH-059"
+      ],
+      "target": "container"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 298,
+      "function": "verify_admission_command",
+      "parent": "main",
+      "name": "verify-admission",
+      "kind": "command",
+      "requirements": [
+        "AH-021"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 326,
+      "function": "canonical_publisher_rpc_command",
+      "parent": "main",
+      "name": "canonical-publisher-rpc",
+      "kind": "command",
+      "requirements": [
+        "AH-040",
+        "AH-043"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 340,
+      "function": "canonical_publisher_reconcile_command",
+      "parent": "main",
+      "name": "canonical-publisher-reconcile",
+      "kind": "command",
+      "requirements": [
+        "AH-044"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 1111,
+      "function": "assign",
+      "parent": "main",
+      "name": "assign",
+      "kind": "command",
+      "requirements": [
+        "AH-002",
+        "AH-027",
+        "AH-028"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 1229,
+      "function": "assign_batch",
+      "parent": "main",
+      "name": "assign-batch",
+      "kind": "command",
+      "requirements": [
+        "AH-002",
+        "AH-027",
+        "AH-028"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 1386,
+      "function": "create",
+      "parent": "main",
+      "name": "create",
+      "kind": "command",
+      "requirements": [
+        "AH-001",
+        "AH-002"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 1546,
+      "function": "show",
+      "parent": "main",
+      "name": "show",
+      "kind": "command",
+      "requirements": [
+        "AH-006"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 1624,
+      "function": "list_items",
+      "parent": "main",
+      "name": "list",
+      "kind": "command",
+      "requirements": [
+        "AH-006"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 1677,
+      "function": "admit_existing",
+      "parent": "main",
+      "name": "admit-existing",
+      "kind": "command",
+      "requirements": [
+        "AH-056",
+        "AH-077"
+      ],
+      "target": "migration_only"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 1788,
+      "function": "mark_main_only",
+      "parent": "main",
+      "name": "mark-main-only",
+      "kind": "command",
+      "requirements": [
+        "AH-004",
+        "AH-042"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 1837,
+      "function": "activate_owner",
+      "parent": "main",
+      "name": "activate-owner",
+      "kind": "command",
+      "requirements": [
+        "AH-027",
+        "AH-029"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 1918,
+      "function": "transition",
+      "parent": "main",
+      "name": "transition",
+      "kind": "command",
+      "requirements": [
+        "AH-008",
+        "AH-012",
+        "AH-020",
+        "AH-026"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 2032,
+      "function": "disposition",
+      "parent": "main",
+      "name": "disposition",
+      "kind": "command",
+      "requirements": [
+        "AH-008"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 2147,
+      "function": "handoffs",
+      "parent": "main",
+      "name": "handoffs",
+      "kind": "command",
+      "requirements": [
+        "AH-006",
+        "AH-028"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 2226,
+      "function": "amend_criteria_command",
+      "parent": "main",
+      "name": "amend-criteria",
+      "kind": "command",
+      "requirements": [
+        "AH-004"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 2439,
+      "function": "ready_for_uat",
+      "parent": "main",
+      "name": "ready-for-uat",
+      "kind": "command",
+      "requirements": [
+        "AH-014",
+        "AH-020"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 2544,
+      "function": "verify_result",
+      "parent": "main",
+      "name": "verify-result",
+      "kind": "command",
+      "requirements": [
+        "AH-022"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 2782,
+      "function": "lightweight_complete",
+      "parent": "main",
+      "name": "lightweight-complete",
+      "kind": "command",
+      "requirements": [
+        "AH-017"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 2848,
+      "function": "complete",
+      "parent": "main",
+      "name": "complete",
+      "kind": "command",
+      "requirements": [
+        "AH-026"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 3256,
+      "function": "handoff",
+      "parent": "main",
+      "name": "handoff",
+      "kind": "command",
+      "requirements": [
+        "AH-027",
+        "AH-028"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 3548,
+      "function": "ack",
+      "parent": "main",
+      "name": "ack",
+      "kind": "command",
+      "requirements": [
+        "AH-028"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 3933,
+      "function": "withdraw",
+      "parent": "main",
+      "name": "withdraw",
+      "kind": "command",
+      "requirements": [
+        "AH-028"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 3995,
+      "function": "reassign",
+      "parent": "main",
+      "name": "reassign",
+      "kind": "command",
+      "requirements": [
+        "AH-028"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 4110,
+      "function": "release_executor_cmd",
+      "parent": "main",
+      "name": "release-executor",
+      "kind": "command",
+      "requirements": [
+        "AH-037"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 4155,
+      "function": "log",
+      "parent": "main",
+      "name": "log",
+      "kind": "command",
+      "requirements": [
+        "AH-006"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 4174,
+      "function": "compute_profile",
+      "parent": "main",
+      "name": "compute-profile",
+      "kind": "group",
+      "requirements": [
+        "AH-063"
+      ],
+      "target": "container"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 4187,
+      "function": "compute_profile_resolve",
+      "parent": "compute_profile",
+      "name": "resolve",
+      "kind": "command",
+      "requirements": [
+        "AH-063"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 4210,
+      "function": "gate",
+      "parent": "main",
+      "name": "gate",
+      "kind": "group",
+      "requirements": [
+        "AH-066"
+      ],
+      "target": "container"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 4223,
+      "function": "gate_check",
+      "parent": "gate",
+      "name": "check",
+      "kind": "command",
+      "requirements": [
+        "AH-066"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 4270,
+      "function": "compliance",
+      "parent": "main",
+      "name": "compliance",
+      "kind": "group",
+      "requirements": [
+        "AH-066"
+      ],
+      "target": "container"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 4280,
+      "function": "compliance_check",
+      "parent": "compliance",
+      "name": "check",
+      "kind": "command",
+      "requirements": [
+        "AH-066"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 4321,
+      "function": "compliance_create_work_item",
+      "parent": "compliance",
+      "name": "create-work-item",
+      "kind": "command",
+      "requirements": [
+        "AH-027",
+        "AH-066",
+        "AH-002"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 4398,
+      "function": "extract",
+      "parent": "main",
+      "name": "extract",
+      "kind": "command",
+      "requirements": [
+        "AH-067"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 4426,
+      "function": "ssot",
+      "parent": "main",
+      "name": "ssot",
+      "kind": "group",
+      "requirements": [
+        "AH-068"
+      ],
+      "target": "container"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 4445,
+      "function": "ssot_check",
+      "parent": "ssot",
+      "name": "check",
+      "kind": "command",
+      "requirements": [
+        "AH-068"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 4534,
+      "function": "ssot_create_work_item",
+      "parent": "ssot",
+      "name": "create-work-item",
+      "kind": "command",
+      "requirements": [
+        "AH-002",
+        "AH-027",
+        "AH-068"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 4605,
+      "function": "policy",
+      "parent": "main",
+      "name": "policy",
+      "kind": "group",
+      "requirements": [
+        "AH-064"
+      ],
+      "target": "container"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 4620,
+      "function": "policy_validate",
+      "parent": "policy",
+      "name": "validate",
+      "kind": "command",
+      "requirements": [
+        "AH-064"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 4687,
+      "function": "policy_write",
+      "parent": "policy",
+      "name": "write",
+      "kind": "command",
+      "requirements": [
+        "AH-064"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 4741,
+      "function": "policy_show",
+      "parent": "policy",
+      "name": "show",
+      "kind": "command",
+      "requirements": [
+        "AH-064"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 4777,
+      "function": "policy_diff",
+      "parent": "policy",
+      "name": "diff",
+      "kind": "command",
+      "requirements": [
+        "AH-064"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 4871,
+      "function": "ssot_register",
+      "parent": "ssot",
+      "name": "register",
+      "kind": "command",
+      "requirements": [
+        "AH-068"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 5001,
+      "function": "registry",
+      "parent": "main",
+      "name": "registry",
+      "kind": "group",
+      "requirements": [
+        "AH-068"
+      ],
+      "target": "container"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 5018,
+      "function": "registry_show",
+      "parent": "registry",
+      "name": "show",
+      "kind": "command",
+      "requirements": [
+        "AH-068"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 5093,
+      "function": "site",
+      "parent": "main",
+      "name": "site",
+      "kind": "group",
+      "requirements": [
+        "AH-072"
+      ],
+      "target": "container"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 5132,
+      "function": "site_check_cron_ids",
+      "parent": "site",
+      "name": "check-cron-ids",
+      "kind": "command",
+      "requirements": [
+        "AH-072"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 5186,
+      "function": "adjudicate",
+      "parent": "main",
+      "name": "adjudicate",
+      "kind": "group",
+      "requirements": [
+        "AH-072"
+      ],
+      "target": "container"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 5199,
+      "function": "adjudicate_verify",
+      "parent": "adjudicate",
+      "name": "verify",
+      "kind": "command",
+      "requirements": [
+        "AH-072"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 5270,
+      "function": "sweep_timeouts",
+      "parent": "main",
+      "name": "sweep-timeouts",
+      "kind": "command",
+      "requirements": [
+        "AH-028",
+        "AH-062"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 5452,
+      "function": "sweep_executors",
+      "parent": "main",
+      "name": "sweep-executors",
+      "kind": "command",
+      "requirements": [
+        "AH-062"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 5701,
+      "function": "sweep_archive",
+      "parent": "main",
+      "name": "sweep-archive",
+      "kind": "command",
+      "requirements": [
+        "AH-057",
+        "AH-073"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cli.py",
+      "line": 5838,
+      "function": "lint",
+      "parent": "main",
+      "name": "lint",
+      "kind": "command",
+      "requirements": [
+        "AH-065"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/closeout_cli.py",
+      "line": 19,
+      "function": "closeout_command",
+      "parent": "click",
+      "name": "closeout",
+      "kind": "group",
+      "requirements": [
+        "AH-026",
+        "AH-057",
+        "AH-058"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/closeout_cli.py",
+      "line": 29,
+      "function": "prepare",
+      "parent": "closeout_command",
+      "name": "prepare",
+      "kind": "command",
+      "requirements": [
+        "AH-026",
+        "AH-057",
+        "AH-058"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/closeout_cli.py",
+      "line": 57,
+      "function": "publish",
+      "parent": "closeout_command",
+      "name": "publish",
+      "kind": "command",
+      "requirements": [
+        "AH-026",
+        "AH-057",
+        "AH-058"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/closeout_cli.py",
+      "line": 77,
+      "function": "complete_closeout",
+      "parent": "closeout_command",
+      "name": "complete",
+      "kind": "command",
+      "requirements": [
+        "AH-026",
+        "AH-057",
+        "AH-058"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/continuation_cli.py",
+      "line": 123,
+      "function": "continuation_command",
+      "parent": "click",
+      "name": "continuation",
+      "kind": "group",
+      "requirements": [
+        "AH-032",
+        "AH-033",
+        "AH-034"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/continuation_cli.py",
+      "line": 145,
+      "function": "create_continuation_command",
+      "parent": "continuation_command",
+      "name": "create",
+      "kind": "command",
+      "requirements": [
+        "AH-032",
+        "AH-033",
+        "AH-034"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/continuation_cli.py",
+      "line": 185,
+      "function": "show_continuation_command",
+      "parent": "continuation_command",
+      "name": "show",
+      "kind": "command",
+      "requirements": [
+        "AH-032",
+        "AH-033",
+        "AH-034"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/continuation_cli.py",
+      "line": 207,
+      "function": "validate_continuation_command",
+      "parent": "continuation_command",
+      "name": "validate",
+      "kind": "command",
+      "requirements": [
+        "AH-032",
+        "AH-033",
+        "AH-034"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/continuation_cli.py",
+      "line": 236,
+      "function": "list_continuation_command",
+      "parent": "continuation_command",
+      "name": "list",
+      "kind": "command",
+      "requirements": [
+        "AH-032",
+        "AH-033",
+        "AH-034"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/continuation_cli.py",
+      "line": 280,
+      "function": "claim_continuation_command",
+      "parent": "continuation_command",
+      "name": "claim",
+      "kind": "command",
+      "requirements": [
+        "AH-032",
+        "AH-033",
+        "AH-034"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/continuation_cli.py",
+      "line": 309,
+      "function": "consume_continuation_command",
+      "parent": "continuation_command",
+      "name": "consume",
+      "kind": "command",
+      "requirements": [
+        "AH-032",
+        "AH-033",
+        "AH-034"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/continuation_cli.py",
+      "line": 338,
+      "function": "release_continuation_command",
+      "parent": "continuation_command",
+      "name": "release",
+      "kind": "command",
+      "requirements": [
+        "AH-032",
+        "AH-033",
+        "AH-034"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/continuation_cli.py",
+      "line": 367,
+      "function": "fail_continuation_command",
+      "parent": "continuation_command",
+      "name": "fail",
+      "kind": "command",
+      "requirements": [
+        "AH-032",
+        "AH-033",
+        "AH-034"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/continuation_cli.py",
+      "line": 397,
+      "function": "supersede_continuation_command",
+      "parent": "continuation_command",
+      "name": "supersede",
+      "kind": "command",
+      "requirements": [
+        "AH-032",
+        "AH-033",
+        "AH-034"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/converger_cli.py",
+      "line": 81,
+      "function": "converge_command",
+      "parent": "click",
+      "name": "converge",
+      "kind": "group",
+      "requirements": [
+        "AH-041",
+        "AH-042",
+        "AH-071"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/converger_cli.py",
+      "line": 90,
+      "function": "enroll_command",
+      "parent": "converge_command",
+      "name": "enroll",
+      "kind": "command",
+      "requirements": [
+        "AH-041",
+        "AH-042",
+        "AH-071"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/converger_cli.py",
+      "line": 119,
+      "function": "migrate_authority_branch_command",
+      "parent": "converge_command",
+      "name": "migrate-authority-branch",
+      "kind": "command",
+      "requirements": [
+        "AH-041",
+        "AH-042",
+        "AH-071"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/converger_cli.py",
+      "line": 163,
+      "function": "migrate_endpoint_paths_command",
+      "parent": "converge_command",
+      "name": "migrate-endpoint-paths",
+      "kind": "command",
+      "requirements": [
+        "AH-041",
+        "AH-042",
+        "AH-071"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/converger_cli.py",
+      "line": 210,
+      "function": "adopt_pulse_authority_command",
+      "parent": "converge_command",
+      "name": "adopt-pulse-authority",
+      "kind": "command",
+      "requirements": [
+        "AH-041",
+        "AH-042",
+        "AH-071"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/converger_cli.py",
+      "line": 243,
+      "function": "sync_command",
+      "parent": "converge_command",
+      "name": "sync",
+      "kind": "command",
+      "requirements": [
+        "AH-041",
+        "AH-042",
+        "AH-071"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/converger_cli.py",
+      "line": 279,
+      "function": "after_merge_command",
+      "parent": "converge_command",
+      "name": "after-merge",
+      "kind": "command",
+      "requirements": [
+        "AH-041",
+        "AH-042",
+        "AH-071"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/converger_cli.py",
+      "line": 310,
+      "function": "after_wi_mutation_command",
+      "parent": "converge_command",
+      "name": "after-wi-mutation",
+      "kind": "command",
+      "requirements": [
+        "AH-041",
+        "AH-042",
+        "AH-071"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/converger_cli.py",
+      "line": 338,
+      "function": "read_work_item_command",
+      "parent": "converge_command",
+      "name": "read-work-item",
+      "kind": "command",
+      "requirements": [
+        "AH-041",
+        "AH-042",
+        "AH-071"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/converger_cli.py",
+      "line": 360,
+      "function": "closeout_command",
+      "parent": "converge_command",
+      "name": "closeout",
+      "kind": "command",
+      "requirements": [
+        "AH-041",
+        "AH-042",
+        "AH-071"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/converger_cli.py",
+      "line": 394,
+      "function": "finalize_command",
+      "parent": "converge_command",
+      "name": "finalize",
+      "kind": "command",
+      "requirements": [
+        "AH-041",
+        "AH-042",
+        "AH-071"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/cost_attribution_cli.py",
+      "line": 44,
+      "function": "cost_attribution_command",
+      "parent": "click",
+      "name": "cost-attribution",
+      "kind": "group",
+      "requirements": [
+        "AH-070"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cost_attribution_cli.py",
+      "line": 55,
+      "function": "record_command",
+      "parent": "cost_attribution_command",
+      "name": "record",
+      "kind": "command",
+      "requirements": [
+        "AH-070"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cost_observation_cli.py",
+      "line": 42,
+      "function": "cost_observation_command",
+      "parent": "click",
+      "name": "cost-observation",
+      "kind": "group",
+      "requirements": [
+        "AH-070"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/cost_observation_cli.py",
+      "line": 52,
+      "function": "record_command",
+      "parent": "cost_observation_command",
+      "name": "record",
+      "kind": "command",
+      "requirements": [
+        "AH-070"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/dispatcher.py",
+      "line": 5860,
+      "function": "dispatch_command",
+      "parent": "click",
+      "name": "dispatch",
+      "kind": "command",
+      "requirements": [
+        "AH-063"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/escalation.py",
+      "line": 1783,
+      "function": "escalation_group",
+      "parent": "click",
+      "name": "escalation",
+      "kind": "group",
+      "requirements": [
+        "AH-061"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/escalation.py",
+      "line": 1816,
+      "function": "flush_daily",
+      "parent": "escalation_group",
+      "name": "flush-daily",
+      "kind": "command",
+      "requirements": [
+        "AH-061"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/escalation.py",
+      "line": 1935,
+      "function": "emit",
+      "parent": "escalation_group",
+      "name": "emit",
+      "kind": "command",
+      "requirements": [
+        "AH-061"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/escalation.py",
+      "line": 2046,
+      "function": "list_failed",
+      "parent": "escalation_group",
+      "name": "list-failed",
+      "kind": "command",
+      "requirements": [
+        "AH-061"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/escalation.py",
+      "line": 2103,
+      "function": "resolve",
+      "parent": "escalation_group",
+      "name": "resolve",
+      "kind": "command",
+      "requirements": [
+        "AH-061"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/escalation.py",
+      "line": 2172,
+      "function": "list_open",
+      "parent": "escalation_group",
+      "name": "list-open",
+      "kind": "command",
+      "requirements": [
+        "AH-061"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/escalation.py",
+      "line": 2239,
+      "function": "retry_failed",
+      "parent": "escalation_group",
+      "name": "retry-failed",
+      "kind": "command",
+      "requirements": [
+        "AH-061"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/execution_cli.py",
+      "line": 118,
+      "function": "execution_command",
+      "parent": "click",
+      "name": "execution",
+      "kind": "group",
+      "requirements": [
+        "AH-015"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/execution_cli.py",
+      "line": 131,
+      "function": "adopt_execution_plan_command",
+      "parent": "execution_command",
+      "name": "adopt",
+      "kind": "command",
+      "requirements": [
+        "AH-015"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/execution_cli.py",
+      "line": 161,
+      "function": "show_execution_plan_command",
+      "parent": "execution_command",
+      "name": "show",
+      "kind": "command",
+      "requirements": [
+        "AH-015"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/execution_cli.py",
+      "line": 179,
+      "function": "validate_execution_plan_command",
+      "parent": "execution_command",
+      "name": "validate",
+      "kind": "command",
+      "requirements": [
+        "AH-015"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/execution_entry_cli.py",
+      "line": 116,
+      "function": "entry_command",
+      "parent": "click",
+      "name": "entry",
+      "kind": "group",
+      "requirements": [
+        "AH-029",
+        "AH-031",
+        "AH-033"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/execution_entry_cli.py",
+      "line": 129,
+      "function": "enter_command",
+      "parent": "entry_command",
+      "name": "enter",
+      "kind": "command",
+      "requirements": [
+        "AH-029",
+        "AH-031",
+        "AH-033"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/execution_entry_cli.py",
+      "line": 225,
+      "function": "apply_command",
+      "parent": "entry_command",
+      "name": "apply",
+      "kind": "command",
+      "requirements": [
+        "AH-029",
+        "AH-031",
+        "AH-033"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/execution_entry_cli.py",
+      "line": 261,
+      "function": "recover_command",
+      "parent": "entry_command",
+      "name": "recover",
+      "kind": "command",
+      "requirements": [
+        "AH-029",
+        "AH-031",
+        "AH-033"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/execution_resume_cli.py",
+      "line": 99,
+      "function": "continue_command",
+      "parent": "click",
+      "name": "continue",
+      "kind": "command",
+      "requirements": [
+        "AH-033"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/execution_runtime_cli.py",
+      "line": 305,
+      "function": "_runtime_execution_group",
+      "parent": "click",
+      "name": "_execution-runtime",
+      "kind": "group",
+      "requirements": [
+        "AH-029",
+        "AH-032",
+        "AH-033",
+        "AH-034",
+        "AH-036"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/execution_runtime_cli.py",
+      "line": 313,
+      "function": "status_execution_command",
+      "parent": "_runtime_execution_group",
+      "name": "status",
+      "kind": "command",
+      "requirements": [
+        "AH-029",
+        "AH-032",
+        "AH-033",
+        "AH-034",
+        "AH-036"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/execution_runtime_cli.py",
+      "line": 331,
+      "function": "checkpoint_execution_command",
+      "parent": "_runtime_execution_group",
+      "name": "checkpoint",
+      "kind": "command",
+      "requirements": [
+        "AH-029",
+        "AH-032",
+        "AH-033",
+        "AH-034",
+        "AH-036"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/execution_runtime_cli.py",
+      "line": 367,
+      "function": "bind_execution_command",
+      "parent": "_runtime_execution_group",
+      "name": "bind",
+      "kind": "command",
+      "requirements": [
+        "AH-029",
+        "AH-032",
+        "AH-033",
+        "AH-034",
+        "AH-036"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/execution_runtime_cli.py",
+      "line": 400,
+      "function": "resolve_execution_continue_command",
+      "parent": "_runtime_execution_group",
+      "name": "resolve-continue",
+      "kind": "command",
+      "requirements": [
+        "AH-029",
+        "AH-032",
+        "AH-033",
+        "AH-034",
+        "AH-036"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/execution_runtime_cli.py",
+      "line": 424,
+      "function": "prepare_execution_rollover_command",
+      "parent": "_runtime_execution_group",
+      "name": "prepare-rollover",
+      "kind": "command",
+      "requirements": [
+        "AH-029",
+        "AH-032",
+        "AH-033",
+        "AH-034",
+        "AH-036"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/execution_runtime_cli.py",
+      "line": 456,
+      "function": "apply_execution_rollover_command",
+      "parent": "_runtime_execution_group",
+      "name": "apply-rollover",
+      "kind": "command",
+      "requirements": [
+        "AH-029",
+        "AH-032",
+        "AH-033",
+        "AH-034",
+        "AH-036"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/execution_runtime_cli.py",
+      "line": 487,
+      "function": "recover_execution_rollover_command",
+      "parent": "_runtime_execution_group",
+      "name": "recover-rollover",
+      "kind": "command",
+      "requirements": [
+        "AH-029",
+        "AH-032",
+        "AH-033",
+        "AH-034",
+        "AH-036"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/execution_runtime_cli.py",
+      "line": 519,
+      "function": "reopen_verification_for_execution_command",
+      "parent": "_runtime_execution_group",
+      "name": "reopen",
+      "kind": "command",
+      "requirements": [
+        "AH-029",
+        "AH-032",
+        "AH-033",
+        "AH-034",
+        "AH-036"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/execution_runtime_cli.py",
+      "line": 568,
+      "function": "recover_active_surface_command",
+      "parent": "_runtime_execution_group",
+      "name": "recover-active-surface",
+      "kind": "command",
+      "requirements": [
+        "AH-029",
+        "AH-032",
+        "AH-033",
+        "AH-034",
+        "AH-036"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/execution_runtime_cli.py",
+      "line": 625,
+      "function": "recover_dormant_surface_command",
+      "parent": "_runtime_execution_group",
+      "name": "recover-dormant-surface",
+      "kind": "command",
+      "requirements": [
+        "AH-029",
+        "AH-032",
+        "AH-033",
+        "AH-034",
+        "AH-036"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/execution_runtime_cli.py",
+      "line": 673,
+      "function": "mark_execution_dormant_command",
+      "parent": "_runtime_execution_group",
+      "name": "mark-dormant",
+      "kind": "command",
+      "requirements": [
+        "AH-029",
+        "AH-032",
+        "AH-033",
+        "AH-034",
+        "AH-036"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/execution_runtime_cli.py",
+      "line": 691,
+      "function": "resume_execution_command",
+      "parent": "_runtime_execution_group",
+      "name": "resume",
+      "kind": "command",
+      "requirements": [
+        "AH-029",
+        "AH-032",
+        "AH-033",
+        "AH-034",
+        "AH-036"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/execution_runtime_cli.py",
+      "line": 710,
+      "function": "mark_execution_recovery_required_command",
+      "parent": "_runtime_execution_group",
+      "name": "recovery-required",
+      "kind": "command",
+      "requirements": [
+        "AH-029",
+        "AH-032",
+        "AH-033",
+        "AH-034",
+        "AH-036"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "source": "agent-harness/harness/execution_surface_cli.py",
+      "line": 94,
+      "function": "surface_command",
+      "parent": "click",
+      "name": "surface",
+      "kind": "group",
+      "requirements": [
+        "AH-031",
+        "AH-074"
+      ],
+      "target": "host_adapter"
+    },
+    {
+      "source": "agent-harness/harness/execution_surface_cli.py",
+      "line": 104,
+      "function": "enter_surface_command",
+      "parent": "surface_command",
+      "name": "enter",
+      "kind": "command",
+      "requirements": [
+        "AH-031",
+        "AH-074"
+      ],
+      "target": "host_adapter"
+    },
+    {
+      "source": "agent-harness/harness/execution_surface_cli.py",
+      "line": 136,
+      "function": "observe_surface_command",
+      "parent": "surface_command",
+      "name": "observe",
+      "kind": "command",
+      "requirements": [
+        "AH-031",
+        "AH-074"
+      ],
+      "target": "host_adapter"
+    },
+    {
+      "source": "agent-harness/harness/git_broker_cli.py",
+      "line": 177,
+      "function": "broker_command",
+      "parent": "click",
+      "name": "broker",
+      "kind": "group",
+      "requirements": [
+        "AH-040",
+        "AH-041",
+        "AH-042",
+        "AH-043",
+        "AH-044"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/git_broker_cli.py",
+      "line": 197,
+      "function": "issue_command",
+      "parent": "broker_command",
+      "name": "issue",
+      "kind": "command",
+      "requirements": [
+        "AH-040",
+        "AH-041",
+        "AH-042",
+        "AH-043",
+        "AH-044"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/git_broker_cli.py",
+      "line": 246,
+      "function": "show_command",
+      "parent": "broker_command",
+      "name": "show",
+      "kind": "command",
+      "requirements": [
+        "AH-040",
+        "AH-041",
+        "AH-042",
+        "AH-043",
+        "AH-044"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/git_broker_cli.py",
+      "line": 262,
+      "function": "validate_command",
+      "parent": "broker_command",
+      "name": "validate",
+      "kind": "command",
+      "requirements": [
+        "AH-040",
+        "AH-041",
+        "AH-042",
+        "AH-043",
+        "AH-044"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/git_broker_cli.py",
+      "line": 286,
+      "function": "project_harness_command",
+      "parent": "broker_command",
+      "name": "project-harness",
+      "kind": "command",
+      "requirements": [
+        "AH-040",
+        "AH-041",
+        "AH-042",
+        "AH-043",
+        "AH-044"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/git_broker_cli.py",
+      "line": 302,
+      "function": "resume_projection_command",
+      "parent": "broker_command",
+      "name": "resume-projection",
+      "kind": "command",
+      "requirements": [
+        "AH-040",
+        "AH-041",
+        "AH-042",
+        "AH-043",
+        "AH-044"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/git_broker_cli.py",
+      "line": 353,
+      "function": "retire_projection_command",
+      "parent": "broker_command",
+      "name": "retire-projection",
+      "kind": "command",
+      "requirements": [
+        "AH-040",
+        "AH-041",
+        "AH-042",
+        "AH-043",
+        "AH-044"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/git_broker_cli.py",
+      "line": 405,
+      "function": "settle_ledger_command",
+      "parent": "broker_command",
+      "name": "settle-ledger",
+      "kind": "command",
+      "requirements": [
+        "AH-040",
+        "AH-041",
+        "AH-042",
+        "AH-043",
+        "AH-044"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/git_broker_cli.py",
+      "line": 445,
+      "function": "resume_ledger_command",
+      "parent": "broker_command",
+      "name": "resume-ledger",
+      "kind": "command",
+      "requirements": [
+        "AH-040",
+        "AH-041",
+        "AH-042",
+        "AH-043",
+        "AH-044"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/git_broker_cli.py",
+      "line": 461,
+      "function": "resume_service_ledger_command",
+      "parent": "broker_command",
+      "name": "resume-service-ledger",
+      "kind": "command",
+      "requirements": [
+        "AH-040",
+        "AH-041",
+        "AH-042",
+        "AH-043",
+        "AH-044"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/git_broker_cli.py",
+      "line": 496,
+      "function": "inventory_human_command",
+      "parent": "broker_command",
+      "name": "inventory-human",
+      "kind": "command",
+      "requirements": [
+        "AH-040",
+        "AH-041",
+        "AH-042",
+        "AH-043",
+        "AH-044"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/git_broker_cli.py",
+      "line": 543,
+      "function": "settle_human_command",
+      "parent": "broker_command",
+      "name": "settle-human",
+      "kind": "command",
+      "requirements": [
+        "AH-040",
+        "AH-041",
+        "AH-042",
+        "AH-043",
+        "AH-044"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/git_broker_cli.py",
+      "line": 604,
+      "function": "snapshot_command",
+      "parent": "broker_command",
+      "name": "snapshot",
+      "kind": "command",
+      "requirements": [
+        "AH-040",
+        "AH-041",
+        "AH-042",
+        "AH-043",
+        "AH-044"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/git_broker_cli.py",
+      "line": 634,
+      "function": "prepare_command",
+      "parent": "broker_command",
+      "name": "prepare",
+      "kind": "command",
+      "requirements": [
+        "AH-040",
+        "AH-041",
+        "AH-042",
+        "AH-043",
+        "AH-044"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/git_broker_cli.py",
+      "line": 648,
+      "function": "publish_human_command",
+      "parent": "broker_command",
+      "name": "publish-human",
+      "kind": "command",
+      "requirements": [
+        "AH-040",
+        "AH-041",
+        "AH-042",
+        "AH-043",
+        "AH-044"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/git_broker_cli.py",
+      "line": 662,
+      "function": "reconcile_human_command",
+      "parent": "broker_command",
+      "name": "reconcile-human",
+      "kind": "command",
+      "requirements": [
+        "AH-040",
+        "AH-041",
+        "AH-042",
+        "AH-043",
+        "AH-044"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/git_broker_cli.py",
+      "line": 681,
+      "function": "advance_command",
+      "parent": "broker_command",
+      "name": "advance",
+      "kind": "command",
+      "requirements": [
+        "AH-040",
+        "AH-041",
+        "AH-042",
+        "AH-043",
+        "AH-044"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/git_broker_cli.py",
+      "line": 707,
+      "function": "guard_command",
+      "parent": "broker_command",
+      "name": "guard",
+      "kind": "command",
+      "requirements": [
+        "AH-040",
+        "AH-041",
+        "AH-042",
+        "AH-043",
+        "AH-044"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/git_broker_cli.py",
+      "line": 736,
+      "function": "install_guards_command",
+      "parent": "broker_command",
+      "name": "install-guards",
+      "kind": "command",
+      "requirements": [
+        "AH-040",
+        "AH-041",
+        "AH-042",
+        "AH-043",
+        "AH-044"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/measurement_pilot_cli.py",
+      "line": 33,
+      "function": "measurement_pilot_command",
+      "parent": "click",
+      "name": "measurement-pilot",
+      "kind": "group",
+      "requirements": [
+        "AH-069",
+        "AH-070"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/measurement_pilot_cli.py",
+      "line": 62,
+      "function": "attention_record_command",
+      "parent": "measurement_pilot_command",
+      "name": "attention-record",
+      "kind": "command",
+      "requirements": [
+        "AH-069",
+        "AH-070"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/measurement_pilot_cli.py",
+      "line": 116,
+      "function": "snapshot_command",
+      "parent": "measurement_pilot_command",
+      "name": "snapshot",
+      "kind": "command",
+      "requirements": [
+        "AH-069",
+        "AH-070"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/measurement_pilot_cli.py",
+      "line": 137,
+      "function": "validate_command",
+      "parent": "measurement_pilot_command",
+      "name": "validate",
+      "kind": "command",
+      "requirements": [
+        "AH-069",
+        "AH-070"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/resource_alerts.py",
+      "line": 270,
+      "function": "resource_alert_cli",
+      "parent": "click",
+      "name": "resource-alert",
+      "kind": "group",
+      "requirements": [
+        "AH-072"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/resource_alerts.py",
+      "line": 277,
+      "function": "receive_command",
+      "parent": "resource_alert_cli",
+      "name": "receive",
+      "kind": "command",
+      "requirements": [
+        "AH-072"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/resource_alerts.py",
+      "line": 298,
+      "function": "resolve_command",
+      "parent": "resource_alert_cli",
+      "name": "resolve",
+      "kind": "command",
+      "requirements": [
+        "AH-072"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/resource_alerts.py",
+      "line": 314,
+      "function": "show_command",
+      "parent": "resource_alert_cli",
+      "name": "show",
+      "kind": "command",
+      "requirements": [
+        "AH-072"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/resource_alerts.py",
+      "line": 460,
+      "function": "dispatch_command",
+      "parent": "resource_alert_cli",
+      "name": "dispatch",
+      "kind": "command",
+      "requirements": [
+        "AH-072"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/review_cli.py",
+      "line": 110,
+      "function": "review_command",
+      "parent": "click",
+      "name": "review",
+      "kind": "group",
+      "requirements": [
+        "AH-023",
+        "AH-024"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/review_cli.py",
+      "line": 119,
+      "function": "show_review_command",
+      "parent": "review_command",
+      "name": "show",
+      "kind": "command",
+      "requirements": [
+        "AH-023",
+        "AH-024"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/review_cli.py",
+      "line": 158,
+      "function": "record_review_command",
+      "parent": "review_command",
+      "name": "record",
+      "kind": "command",
+      "requirements": [
+        "AH-023",
+        "AH-024"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/runtime_artifact_cli.py",
+      "line": 111,
+      "function": "runtime_artifact_command",
+      "parent": "click",
+      "name": "runtime-artifact",
+      "kind": "group",
+      "requirements": [
+        "AH-055",
+        "AH-072"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/runtime_artifact_cli.py",
+      "line": 138,
+      "function": "enroll_command",
+      "parent": "runtime_artifact_command",
+      "name": "enroll",
+      "kind": "command",
+      "requirements": [
+        "AH-055",
+        "AH-072"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/runtime_artifact_cli.py",
+      "line": 199,
+      "function": "attest_command",
+      "parent": "runtime_artifact_command",
+      "name": "attest",
+      "kind": "command",
+      "requirements": [
+        "AH-055",
+        "AH-072"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/runtime_artifact_cli.py",
+      "line": 242,
+      "function": "classify_command",
+      "parent": "runtime_artifact_command",
+      "name": "classify",
+      "kind": "command",
+      "requirements": [
+        "AH-055",
+        "AH-072"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/scan.py",
+      "line": 1265,
+      "function": "scan_command",
+      "parent": "click",
+      "name": "scan",
+      "kind": "command",
+      "requirements": [
+        "AH-062",
+        "AH-065"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/stats_authority_cli.py",
+      "line": 33,
+      "function": "stats_authority_command",
+      "parent": "click",
+      "name": "stats-authority",
+      "kind": "group",
+      "requirements": [
+        "AH-006",
+        "AH-054",
+        "AH-071"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/stats_authority_cli.py",
+      "line": 50,
+      "function": "workflow_profiles_command",
+      "parent": "stats_authority_command",
+      "name": "workflow-profiles",
+      "kind": "command",
+      "requirements": [
+        "AH-006",
+        "AH-054",
+        "AH-071"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/stats_authority_cli.py",
+      "line": 101,
+      "function": "project_command",
+      "parent": "stats_authority_command",
+      "name": "project",
+      "kind": "command",
+      "requirements": [
+        "AH-006",
+        "AH-054",
+        "AH-071"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/stats_authority_cli.py",
+      "line": 158,
+      "function": "materialize_command",
+      "parent": "stats_authority_command",
+      "name": "materialize",
+      "kind": "command",
+      "requirements": [
+        "AH-006",
+        "AH-054",
+        "AH-071"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/stats_authority_cli.py",
+      "line": 225,
+      "function": "publish_command",
+      "parent": "stats_authority_command",
+      "name": "publish",
+      "kind": "command",
+      "requirements": [
+        "AH-006",
+        "AH-054",
+        "AH-071"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/stats_authority_cli.py",
+      "line": 265,
+      "function": "work_item_query_command",
+      "parent": "stats_authority_command",
+      "name": "wi",
+      "kind": "group",
+      "requirements": [
+        "AH-006",
+        "AH-054",
+        "AH-071"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/stats_authority_cli.py",
+      "line": 314,
+      "function": "get_work_item_command",
+      "parent": "work_item_query_command",
+      "name": "get",
+      "kind": "command",
+      "requirements": [
+        "AH-006",
+        "AH-054",
+        "AH-071"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/stats_authority_cli.py",
+      "line": 351,
+      "function": "list_work_items_command",
+      "parent": "work_item_query_command",
+      "name": "list",
+      "kind": "command",
+      "requirements": [
+        "AH-006",
+        "AH-054",
+        "AH-071"
+      ],
+      "target": "read_model"
+    },
+    {
+      "source": "agent-harness/harness/task_outcome_cli.py",
+      "line": 105,
+      "function": "task_outcome_command",
+      "parent": "click",
+      "name": "task-outcome",
+      "kind": "group",
+      "requirements": [
+        "AH-069"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/task_outcome_cli.py",
+      "line": 123,
+      "function": "record_task_outcome_command",
+      "parent": "task_outcome_command",
+      "name": "record",
+      "kind": "command",
+      "requirements": [
+        "AH-069"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/task_outcome_cli.py",
+      "line": 157,
+      "function": "list_task_outcome_command",
+      "parent": "task_outcome_command",
+      "name": "list",
+      "kind": "command",
+      "requirements": [
+        "AH-069"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "source": "agent-harness/harness/terminal_reconciliation_cli.py",
+      "line": 47,
+      "function": "reconcile_terminal_command",
+      "parent": "click",
+      "name": "reconcile-terminal",
+      "kind": "command",
+      "requirements": [
+        "AH-056",
+        "AH-058"
+      ],
+      "target": "migration_only"
+    },
+    {
+      "source": "agent-harness/harness/workspace_sync_cli.py",
+      "line": 30,
+      "function": "sync_workspace_command",
+      "parent": "click",
+      "name": "sync-workspace",
+      "kind": "group",
+      "requirements": [
+        "AH-038",
+        "AH-041"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/workspace_sync_cli.py",
+      "line": 85,
+      "function": "audit_command",
+      "parent": "sync_workspace_command",
+      "name": "audit",
+      "kind": "command",
+      "requirements": [
+        "AH-038",
+        "AH-041"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/workspace_sync_cli.py",
+      "line": 115,
+      "function": "apply_safe_command",
+      "parent": "sync_workspace_command",
+      "name": "apply-safe",
+      "kind": "command",
+      "requirements": [
+        "AH-038",
+        "AH-041"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/workspace_sync_cli.py",
+      "line": 270,
+      "function": "apply_authorized_command",
+      "parent": "sync_workspace_command",
+      "name": "apply-authorized",
+      "kind": "command",
+      "requirements": [
+        "AH-038",
+        "AH-041"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/workspace_sync_cli.py",
+      "line": 303,
+      "function": "run_command",
+      "parent": "sync_workspace_command",
+      "name": "run",
+      "kind": "command",
+      "requirements": [
+        "AH-038",
+        "AH-041"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/workspace_sync_cli.py",
+      "line": 352,
+      "function": "run_batch_command",
+      "parent": "sync_workspace_command",
+      "name": "run-batch",
+      "kind": "command",
+      "requirements": [
+        "AH-038",
+        "AH-041"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "agent-harness/harness/worktree_cli.py",
+      "line": 275,
+      "function": "worktree_command",
+      "parent": "click",
+      "name": "worktree",
+      "kind": "group",
+      "requirements": [
+        "AH-038",
+        "AH-039",
+        "AH-057",
+        "AH-073"
+      ],
+      "target": "resource_adapter"
+    },
+    {
+      "source": "agent-harness/harness/worktree_cli.py",
+      "line": 331,
+      "function": "initialize_scope_command",
+      "parent": "worktree_command",
+      "name": "initialize-scope",
+      "kind": "command",
+      "requirements": [
+        "AH-038",
+        "AH-039",
+        "AH-057",
+        "AH-073"
+      ],
+      "target": "resource_adapter"
+    },
+    {
+      "source": "agent-harness/harness/worktree_cli.py",
+      "line": 393,
+      "function": "compact_scope_command",
+      "parent": "worktree_command",
+      "name": "compact-scope",
+      "kind": "command",
+      "requirements": [
+        "AH-038",
+        "AH-039",
+        "AH-057",
+        "AH-073"
+      ],
+      "target": "resource_adapter"
+    },
+    {
+      "source": "agent-harness/harness/worktree_cli.py",
+      "line": 438,
+      "function": "expand_scope_command",
+      "parent": "worktree_command",
+      "name": "expand-scope",
+      "kind": "command",
+      "requirements": [
+        "AH-038",
+        "AH-039",
+        "AH-057",
+        "AH-073"
+      ],
+      "target": "resource_adapter"
+    },
+    {
+      "source": "agent-harness/harness/worktree_cli.py",
+      "line": 489,
+      "function": "allocation_command",
+      "parent": "worktree_command",
+      "name": "allocation",
+      "kind": "command",
+      "requirements": [
+        "AH-038",
+        "AH-039",
+        "AH-057",
+        "AH-073"
+      ],
+      "target": "resource_adapter"
+    },
+    {
+      "source": "agent-harness/harness/worktree_cli.py",
+      "line": 538,
+      "function": "configure_placement_command",
+      "parent": "worktree_command",
+      "name": "configure-placement",
+      "kind": "command",
+      "requirements": [
+        "AH-038",
+        "AH-039",
+        "AH-057",
+        "AH-073"
+      ],
+      "target": "resource_adapter"
+    },
+    {
+      "source": "agent-harness/harness/worktree_cli.py",
+      "line": 597,
+      "function": "retire_terminal_command",
+      "parent": "worktree_command",
+      "name": "retire-terminal",
+      "kind": "command",
+      "requirements": [
+        "AH-038",
+        "AH-039",
+        "AH-057",
+        "AH-073"
+      ],
+      "target": "resource_adapter"
+    },
+    {
+      "source": "agent-harness/harness/worktree_cli.py",
+      "line": 639,
+      "function": "claim_owner_command",
+      "parent": "worktree_command",
+      "name": "claim-owner",
+      "kind": "command",
+      "requirements": [
+        "AH-038",
+        "AH-039",
+        "AH-057",
+        "AH-073"
+      ],
+      "target": "resource_adapter"
+    },
+    {
+      "source": "agent-harness/harness/worktree_cli.py",
+      "line": 776,
+      "function": "register_command",
+      "parent": "worktree_command",
+      "name": "register",
+      "kind": "command",
+      "requirements": [
+        "AH-038",
+        "AH-039",
+        "AH-057",
+        "AH-073"
+      ],
+      "target": "resource_adapter"
+    },
+    {
+      "source": "agent-harness/harness/worktree_cli.py",
+      "line": 855,
+      "function": "migrate_command",
+      "parent": "worktree_command",
+      "name": "migrate",
+      "kind": "command",
+      "requirements": [
+        "AH-038",
+        "AH-039",
+        "AH-057",
+        "AH-073"
+      ],
+      "target": "resource_adapter"
+    },
+    {
+      "source": "agent-harness/harness/worktree_cli.py",
+      "line": 945,
+      "function": "migrate_set_command",
+      "parent": "worktree_command",
+      "name": "migrate-set",
+      "kind": "command",
+      "requirements": [
+        "AH-038",
+        "AH-039",
+        "AH-057",
+        "AH-073"
+      ],
+      "target": "resource_adapter"
+    },
+    {
+      "source": "agent-harness/harness/worktree_cli.py",
+      "line": 1030,
+      "function": "validate_command",
+      "parent": "worktree_command",
+      "name": "validate",
+      "kind": "command",
+      "requirements": [
+        "AH-038",
+        "AH-039",
+        "AH-057",
+        "AH-073"
+      ],
+      "target": "resource_adapter"
+    },
+    {
+      "source": "agent-harness/harness/worktree_cli.py",
+      "line": 1068,
+      "function": "attach_active_command",
+      "parent": "worktree_command",
+      "name": "attach-active",
+      "kind": "command",
+      "requirements": [
+        "AH-038",
+        "AH-039",
+        "AH-057",
+        "AH-073"
+      ],
+      "target": "resource_adapter"
+    },
+    {
+      "source": "agent-harness/harness/worktree_cli.py",
+      "line": 1206,
+      "function": "launch_command",
+      "parent": "worktree_command",
+      "name": "launch",
+      "kind": "command",
+      "requirements": [
+        "AH-038",
+        "AH-039",
+        "AH-057",
+        "AH-073"
+      ],
+      "target": "resource_adapter"
+    },
+    {
+      "source": "agent-harness/harness/worktree_cli.py",
+      "line": 1405,
+      "function": "integrate_event_history_command",
+      "parent": "worktree_command",
+      "name": "integrate-event-history",
+      "kind": "command",
+      "requirements": [
+        "AH-038",
+        "AH-039",
+        "AH-057",
+        "AH-073"
+      ],
+      "target": "resource_adapter"
+    }
+  ],
+  "scl_commands": [
+    {
+      "name": "accept-handoff-local",
+      "requirements": [
+        "AH-028",
+        "AH-029"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "name": "admit-runtime-workspace-local",
+      "requirements": [
+        "AH-029",
+        "AH-038"
+      ],
+      "target": "resource_adapter"
+    },
+    {
+      "name": "adopt-terminal-local",
+      "requirements": [
+        "AH-026",
+        "AH-058"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "name": "adopt-workspace-authority-local",
+      "requirements": [
+        "AH-039"
+      ],
+      "target": "resource_adapter"
+    },
+    {
+      "name": "apply-replacement",
+      "requirements": [
+        "AH-034"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "name": "attach-source-local",
+      "requirements": [
+        "AH-031",
+        "AH-033"
+      ],
+      "target": "host_adapter"
+    },
+    {
+      "name": "cancel-local",
+      "requirements": [
+        "AH-008"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "name": "checkpoint",
+      "requirements": [
+        "AH-032"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "name": "checkpoint-local",
+      "requirements": [
+        "AH-032"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "name": "continue-local",
+      "requirements": [
+        "AH-033"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "name": "describe-measurement-local",
+      "requirements": [
+        "AH-070"
+      ],
+      "target": "read_model"
+    },
+    {
+      "name": "describe-replacement-target-local",
+      "requirements": [
+        "AH-035"
+      ],
+      "target": "host_adapter"
+    },
+    {
+      "name": "enter",
+      "requirements": [
+        "AH-031",
+        "AH-033"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "name": "enter-local",
+      "requirements": [
+        "AH-031",
+        "AH-033"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "name": "freeze-reviewed-candidate-local",
+      "requirements": [
+        "AH-020",
+        "AH-023",
+        "AH-026"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "name": "handshake",
+      "requirements": [
+        "AH-059"
+      ],
+      "target": "host_adapter"
+    },
+    {
+      "name": "import-cross-surface-handoff-local",
+      "requirements": [
+        "AH-035",
+        "AH-056"
+      ],
+      "target": "migration_only"
+    },
+    {
+      "name": "lightweight-complete-local",
+      "requirements": [
+        "AH-017"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "name": "lineage-cutover",
+      "requirements": [
+        "AH-056",
+        "AH-077"
+      ],
+      "target": "migration_only"
+    },
+    {
+      "name": "lineage-status",
+      "requirements": [
+        "AH-056"
+      ],
+      "target": "read_model"
+    },
+    {
+      "name": "offer-handoff-local",
+      "requirements": [
+        "AH-027",
+        "AH-028"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "name": "plan-entry-local",
+      "requirements": [
+        "AH-006",
+        "AH-033"
+      ],
+      "target": "read_model"
+    },
+    {
+      "name": "prepare-entry-local",
+      "requirements": [
+        "AH-029",
+        "AH-033"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "name": "prepare-replacement",
+      "requirements": [
+        "AH-034"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "name": "prepare-replacement-local",
+      "requirements": [
+        "AH-034"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "name": "promote-workflow-local",
+      "requirements": [
+        "AH-018",
+        "AH-019"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "name": "ready-for-uat-local",
+      "requirements": [
+        "AH-014",
+        "AH-020"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "name": "reconcile-legacy-projection-local",
+      "requirements": [
+        "AH-050",
+        "AH-056"
+      ],
+      "target": "migration_only"
+    },
+    {
+      "name": "reconcile-resource-workspace-local",
+      "requirements": [
+        "AH-038",
+        "AH-039"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "name": "record-native-usage-local",
+      "requirements": [
+        "AH-070"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "name": "recover-local",
+      "requirements": [
+        "AH-033",
+        "AH-047"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "name": "recover-published-candidate-local",
+      "requirements": [
+        "AH-040",
+        "AH-044"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "name": "recover-workspace-local",
+      "requirements": [
+        "AH-036",
+        "AH-038"
+      ],
+      "target": "merged_into_resume"
+    },
+    {
+      "name": "reinit-local",
+      "requirements": [
+        "AH-036"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "name": "reopen",
+      "requirements": [
+        "AH-025",
+        "AH-036"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "name": "reopen-local",
+      "requirements": [
+        "AH-025",
+        "AH-036"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "name": "resolve-managed-workspace-local",
+      "requirements": [
+        "AH-038"
+      ],
+      "target": "resource_adapter"
+    },
+    {
+      "name": "restore-isolated-workspace-local",
+      "requirements": [
+        "AH-036",
+        "AH-038"
+      ],
+      "target": "resource_adapter"
+    },
+    {
+      "name": "revoke-grant-local",
+      "requirements": [
+        "AH-037"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "name": "rollover-local",
+      "requirements": [
+        "AH-034"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "name": "seal-cross-surface-source-local",
+      "requirements": [
+        "AH-035"
+      ],
+      "target": "new_domain_command"
+    },
+    {
+      "name": "start-local",
+      "requirements": [
+        "AH-001",
+        "AH-002",
+        "AH-016",
+        "AH-029"
+      ],
+      "target": "new_domain_command"
+    }
+  ],
+  "other_consumers": [
+    {
+      "source": "agent-harness/pyproject.toml",
+      "entry": "harness-codex-hook",
+      "requirements": [
+        "AH-060",
+        "AH-074"
+      ],
+      "target": "host_adapter"
+    },
+    {
+      "source": "agent-harness/pyproject.toml",
+      "entry": "harness-scl-reconciler",
+      "requirements": [
+        "AH-043",
+        "AH-044",
+        "AH-045"
+      ],
+      "target": "external_adapter"
+    },
+    {
+      "source": "Relay",
+      "entry": "WI / adopt / rollover / native Host consumers",
+      "requirements": [
+        "AH-015",
+        "AH-031",
+        "AH-033",
+        "AH-034",
+        "AH-059",
+        "AH-060",
+        "AH-074"
+      ],
+      "target": "host_adapter"
+    },
+    {
+      "source": "Scripts",
+      "entry": "installed launch / release / convergence callers",
+      "requirements": [
+        "AH-038",
+        "AH-041",
+        "AH-055",
+        "AH-059"
+      ],
+      "target": "external_adapter"
+    }
+  ],
+  "implementation_status": "partial",
+  "acceptance_status": "partial_isolated_adoption",
+  "current_evidence": "project-roadmap.md",
+  "status_note": "Mappings retain the fixed source baseline. Bounded source and native evidence do not establish complete entry replacement or full AH-001–080 / A-01–35 acceptance."
+}

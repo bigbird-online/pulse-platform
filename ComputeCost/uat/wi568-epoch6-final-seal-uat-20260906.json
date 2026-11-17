@@ -1,0 +1,99 @@
+{
+  "acceptance_boundary": [
+    "The sealed cloud Pi epoch validates final usage, Token conservation, and privacy.",
+    "Capture revision is unavailable because the native artifact does not independently retain a producer source revision; no revision was inferred.",
+    "Linked outcome and human-attention evidence remain unavailable, so the epoch is not measurement-eligible.",
+    "This cloud Pi epoch does not satisfy ChatGPT+GitHub prospective full coverage or the S5-001 seven-day/ten-outcome gate.",
+    "Normalized cache-write remains unavailable and was not imputed as zero."
+  ],
+  "canonical_measurement": {
+    "attribution_content_sha256": "44b8b2e1d88ca1a90a7fb046a908158de6b14d4140361fb1e852d2614f3c70ab",
+    "eligible_epoch_count": 0,
+    "epoch_measurement_eligible": false,
+    "join_validation": "pass",
+    "measurement_snapshot_sha256": "5874ea9e8375d438cfadd7aa6b905769fb0c1e92f63be1cb5dbf91c8302d8fa0",
+    "missing_producers": [
+      "human_attention",
+      "linked_task_outcome"
+    ],
+    "seal_content_sha256": "4003532a8d34fd93bb52a5e6ac33ecd643753b145bc0a9f205e2c1fa90a3fc55",
+    "status": "partial",
+    "warnings": []
+  },
+  "generated_at": "2026-09-06T07:53:11.450820Z",
+  "implementation_readback": {
+    "checked_files_sha256": {
+      "pulse_compute_cost/scl_measurement.py": "140d303bb72b4e6c000723a2c9e9a158531cf2715d1f2cd01e08a7269de27cb4",
+      "pulse_compute_cost/wi_report.py": "dba042f09b2d54f86828aee959ce70765dffba5bd51a3be749e94d71fcf07aaf",
+      "runtime/pi-usage-binding.mjs": "ef1be16dcab33d9faad273a0ee7e49ad4bf95629276c47d2e67703069dbc7b04"
+    },
+    "installed_relevant_bytes_match_validation_default": true
+  },
+  "native_artifacts": {
+    "baseline_event_count": 0,
+    "baseline_snapshot_sha256": "19ca75213c3af3b81009ee9a1a48ada00021c5bfafe54cc6041b023d35748ebd",
+    "final_event_count": 32,
+    "final_snapshot_sha256": "8677bfa3abdae08840c2c0cf128fbb15fb4b66f11fc789c620f625b676535c5e",
+    "open_snapshot_matches_final_totals": true,
+    "post_baseline_event_count": 32,
+    "regular_non_symlink_mode_0600": true
+  },
+  "next_gate": "Begin the next serial prospective UAT on macOS; do not overlap this WI across resident surfaces.",
+  "privacy": {
+    "absolute_path_scan": "pass",
+    "producer_and_consumer_schema_validation": "pass",
+    "raw_identity_or_content_persisted": false,
+    "recursive_forbidden_key_scan": "pass",
+    "status": "pass"
+  },
+  "schema": "computecost_epoch_uat_summary/v1",
+  "scope": {
+    "capture_revision": "unavailable",
+    "current_installed_revision": "187ced051c997768247ab530b12f2f8e2eed16ec",
+    "execution_epoch": 6,
+    "execution_surface": "surface_v1_cloud_linux_b",
+    "phase": "computecost_program",
+    "runtime": "pi",
+    "validation_default_revision": "307bb878ae1d7531984b946b0fc371a6bfc87c52"
+  },
+  "token_conservation": {
+    "baseline_total": {
+      "cached_input_tokens": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reasoning_output_tokens": 0,
+      "total_tokens": 0
+    },
+    "delta": {
+      "cache_write_input_tokens": "unavailable",
+      "cached_input_tokens": 1987072,
+      "input_tokens": 2201949,
+      "output_tokens": 14207,
+      "reasoning_output_tokens": 5882,
+      "total_tokens": 2216156
+    },
+    "final_total": {
+      "cached_input_tokens": 1987072,
+      "input_tokens": 2201949,
+      "output_tokens": 14207,
+      "reasoning_output_tokens": 5882,
+      "total_tokens": 2216156
+    },
+    "native_final_matches_canonical_delta": true,
+    "rules": {
+      "cached_input_lte_input": true,
+      "reasoning_output_lte_output": true,
+      "total_equals_input_plus_output": true
+    },
+    "status": "pass"
+  },
+  "uat_verdict": {
+    "attribution_and_report": "partial",
+    "chatgpt_web_github_full_coverage": "pending",
+    "epoch_6_final_seal": "pass",
+    "privacy": "pass",
+    "s5_001": "pending",
+    "token_conservation": "pass"
+  },
+  "work_item_id": "wi_20260820_568"
+}

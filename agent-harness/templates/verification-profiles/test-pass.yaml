@@ -1,0 +1,13 @@
+profile_id: test-pass
+description: "验证测试全部通过的声明"
+claim_patterns:
+  - "\\d+\\s*tests?.*pass"
+  - "tests?\\s*(all\\s*)?pass"
+  - "\\d+p/\\d+f"
+  - "全部通过"
+  - "测试通过"
+verification:
+  type: command
+  command: "cd {project_root} && python -m pytest --tb=short -q 2>&1 | tail -5"
+  pass_condition: "pytest 退出码为 0，且输出中 failed 数为 0"
+tags: [code, test]

@@ -1,0 +1,92 @@
+{
+  "cost": {
+    "actual_marginal_cash_usd": "unavailable",
+    "cash_basis": "subscription_fee_not_allocated_to_work_item",
+    "provider_estimated_cost_usd": {
+      "pi_native": "74.797038999999997950"
+    },
+    "quota_pressure": {
+      "credits": {
+        "balance": "0",
+        "has_credits": false,
+        "unlimited": false
+      },
+      "individual_limit": null,
+      "plan_type": "pro",
+      "primary": {
+        "resets_at": 1788137010,
+        "used_percent": 27,
+        "window_duration_mins": 10080
+      },
+      "scope": "account_not_work_item",
+      "secondary": null,
+      "spend_control_reached": false
+    },
+    "reference_credits": "unavailable",
+    "token_resource": "unavailable"
+  },
+  "coverage": {
+    "app_server_usage": "unavailable",
+    "cash": "unavailable",
+    "outcome_join": "unavailable",
+    "pi_usage": "exact_open",
+    "quota": "observed_account_context",
+    "rate_card": "unavailable"
+  },
+  "evidence": {
+    "account_snapshot_sha256": "86f1b1e220f6e0f42742f7fb8c754725ce4e5bb2781e3d10c67d7e862295c72c",
+    "pi_snapshot_sha256": "b962dc15b7b2e72ad568fab4fee0402b001b2c7d66b904f462b1ff0c6bee4d0a",
+    "source_seal_content_sha256": []
+  },
+  "outcome": {
+    "artifacts": "unavailable",
+    "business_value": "unavailable",
+    "downstream_effect": "unavailable",
+    "quality": "unavailable"
+  },
+  "report_sha256": "a9af22c9c9b460aee402d1003c7f008d4ab0786a0ca1b2549feabc683052459b",
+  "schema": "computecost_wi_report/v2",
+  "usage": {
+    "by_runtime_model_procurement": [],
+    "conservation": "pass",
+    "open_epochs": [],
+    "pi_native": {
+      "by_provider_model_effort": {
+        "openai-codex/gpt-5.6-sol/high": {
+          "event_count": 374,
+          "total_tokens": 85173760
+        }
+      },
+      "epoch": 1,
+      "event_count": 374,
+      "phase": "work_item",
+      "procurement_source": "chatgpt_subscription",
+      "source_prefix_sha256": "11f298a78ab2a39a294652a12d803a0dd4750bbf7cb5132ac0c3c0bcd4ed0b7e",
+      "status": "exact_open",
+      "totals": {
+        "cache_read": 83898368,
+        "cache_write": 0,
+        "input": 1107109,
+        "output": 168283,
+        "reasoning": 48574,
+        "total_tokens": 85173760
+      }
+    },
+    "producer": "openai_app_server",
+    "sealed_epochs": [],
+    "status": "unavailable",
+    "tokens": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reasoning_output_tokens": 0,
+      "total_tokens": 0
+    }
+  },
+  "warnings": [
+    "no_app_server_usage_evidence",
+    "open_pi_epoch_not_final_cost"
+  ],
+  "work_item_id": "wi_20260822_730"
+}

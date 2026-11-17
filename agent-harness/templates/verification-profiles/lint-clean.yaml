@@ -1,0 +1,12 @@
+profile_id: lint-clean
+description: "验证代码检查/静态分析通过声明"
+claim_patterns:
+  - "ruff.*(clean|pass|通过|0\\s*error)"
+  - "mypy.*(clean|pass|通过|0\\s*error)"
+  - "lint.*(clean|pass|通过)"
+  - "静态分析.*通过"
+verification:
+  type: command
+  command: "cd {project_root} && ruff check . 2>&1; echo '==='; mypy --strict . 2>&1 | tail -3"
+  pass_condition: "ruff 输出无 error 且 mypy 输出 Success"
+tags: [code, quality]

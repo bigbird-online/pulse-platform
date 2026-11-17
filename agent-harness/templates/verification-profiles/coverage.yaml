@@ -1,0 +1,12 @@
+profile_id: coverage
+description: "验证测试覆盖率声明"
+claim_patterns:
+  - "\\d+%\\s*cov"
+  - "coverage\\s*[>=≥]\\s*\\d+"
+  - "覆盖率\\s*[>=≥]?\\s*\\d+"
+  - "100%\\s*(coverage|cov|覆盖)"
+verification:
+  type: command
+  command: "cd {project_root} && python -m pytest --cov --cov-report=term-missing -q 2>&1 | grep TOTAL"
+  pass_condition: "输出中的覆盖率百分比 >= claim 中声称的百分比"
+tags: [code, test]

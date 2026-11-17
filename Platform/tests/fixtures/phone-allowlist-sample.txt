@@ -1,0 +1,3 @@
+# fixture — one entry per line; # comments ignored
++8613800138000
+13800138001

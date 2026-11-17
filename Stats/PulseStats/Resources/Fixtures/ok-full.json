@@ -1,0 +1,17 @@
+{
+  "schema_version": "pulse.monitoring.snapshot.v2",
+  "generated_at": "2099-07-22T12:19:17+08:00",
+  "expires_at": "2099-07-22T12:22:17+08:00",
+  "baseline_version": "0.2.1",
+  "overall": {"runtime_health": "ok", "coverage": "full", "open_incident_count": 0, "headline": "Runtime healthy; required coverage present"},
+  "capabilities": [{
+    "id": "s2.ack_overdue", "implementation_status": "active_validated", "health": "ok",
+    "aggregation_role": "runtime", "scope": "fixture dispatchers", "reason": "No overdue handoff in fixture",
+    "freshness": {"state": "fresh", "observed_at": "2099-07-22T12:19:00+08:00", "max_age_seconds": 2100},
+    "evidence": ["fixture:ack-ok"]
+  }],
+  "incidents": [],
+  "metrics": [{"id": "s2.ack_overdue.count", "capability_id": "s2.ack_overdue", "status": "available", "value": 0, "unit": "handoffs", "window": "current", "sample_count": 1, "quality": "validated", "scope": "fixture dispatchers", "observed_at": "2099-07-22T12:19:00+08:00", "reason": null}],
+  "alerts": [],
+  "provenance": {"producer": {"name": "pulse-stats-fixture", "version": "0.1.0"}, "source_revisions": {"fixture": "ok-full"}, "sources": [{"id": "fixture", "freshness": "fresh", "observed_at": "2099-07-22T12:19:00+08:00", "error_code": null}]}
+}

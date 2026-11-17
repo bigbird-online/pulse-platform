@@ -1,0 +1,50 @@
+{
+  "skill_name": "spec-driven-engineering",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "分析这个已有 repo，告诉我如何安全修改其中的调度模块。",
+      "expected_output": "路由到 Understand；生成 Minimum Viable Spec；定位入口、相关文件、测试和不确定项；不要求完整仓库文档。"
+    },
+    {
+      "id": 2,
+      "prompt": "做一个新的 CLI 工具，用来检查本地配置文件里的过期字段。",
+      "expected_output": "路由到 Change / 新工具；定义最小项目契约和第一条 vertical slice；提出构建、测试和验收方式。"
+    },
+    {
+      "id": 3,
+      "prompt": "给这个代码库增加 dry-run 功能，不能影响真实执行路径。",
+      "expected_output": "路由到 Change / 新功能；写 MVS，边界包含不影响真实路径；采用 acceptance-first 和相关单元/集成测试。"
+    },
+    {
+      "id": 4,
+      "prompt": "一个测试失败了，修 bug，并确保以后不回归。",
+      "expected_output": "路由到 Change / bug 修复；先复现和根因；默认 failing test 先行；修复后加入 regression baseline。"
+    },
+    {
+      "id": 5,
+      "prompt": "重构这个模块但不要改变外部行为。",
+      "expected_output": "路由到 Change / 重构；声明 behavior contract；characterization-first；禁止顺手加功能。"
+    },
+    {
+      "id": 6,
+      "prompt": "为这个功能设计测试策略，不要盲目堆 E2E。",
+      "expected_output": "路由到 Verify / 测试工程；区分测试金字塔和验证责任；按风险选择 unit/integration/contract/e2e/regression。"
+    },
+    {
+      "id": 7,
+      "prompt": "QA 这个工作流，判断它是否真的可用。",
+      "expected_output": "路由到 Verify / QA；基于 acceptance criteria、环境、数据、真实路径和异常路径输出 accepted/rejected/blocked。"
+    },
+    {
+      "id": 8,
+      "prompt": "准备这次变更发布，并确认是否需要同步 spec。",
+      "expected_output": "路由到 Ship & Sync；执行 contract drift gate；按风险给出 build/deploy/smoke/rollback 和 spec/docs sync 决策。"
+    },
+    {
+      "id": 9,
+      "prompt": "Relay cron job reports status=ok, but the expected artifact and Telegram delivery are missing. Investigate and propose the smallest platform fix.",
+      "expected_output": "识别为 PULSE high-risk；使用 pulse-adapter 的 S1 证据；区分本地成功和真实验收；提出 fake runtime/真实轻量探针验证。"
+    }
+  ]
+}

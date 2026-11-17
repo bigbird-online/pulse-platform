@@ -1,0 +1,32 @@
+{
+  "epoch": 1,
+  "generated_at": "2026-08-25T00:17:36.595277Z",
+  "mode": "read_only_live_epoch",
+  "phase": "work_item",
+  "procurement_source": "chatgpt_subscription",
+  "schema": "pi_session_probe_receipt/v1",
+  "summary": {
+    "by_provider_model_effort": {
+      "openai-codex/gpt-5.6-sol/high": {
+        "event_count": 296,
+        "total_tokens": 53080970
+      }
+    },
+    "event_count": 296,
+    "last_entry_ref": "pi_entry_v1_79dc4252705f42145abe318110f3293c78a0c09d23829abf146b45838d2d0b54",
+    "privacy": "raw_session_entry_response_content_and_path_omitted",
+    "provider_estimated_cost_usd": "40.072118999999999040",
+    "schema": "pi_native_usage_summary/v1",
+    "source_bytes": 3500581,
+    "source_prefix_sha256": "69f822f3fcb3cc06c1568e4af4451668e941d060671e2a4b52467a3dfe0ac88b",
+    "totals": {
+      "cache_read": 51964928,
+      "cache_write": 0,
+      "input": 981987,
+      "output": 134055,
+      "reasoning": 41962,
+      "total_tokens": 53080970
+    }
+  },
+  "work_item_id": "wi_20260822_730"
+}

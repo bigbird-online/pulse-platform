@@ -1,0 +1,150 @@
+{
+  "cost": {
+    "actual_marginal_cash_usd": "unavailable",
+    "cash_basis": "subscription_fee_not_allocated_to_work_item",
+    "harness_measurement": "unknown",
+    "human_attention": "unavailable",
+    "machine_pricing_authority": "openrouter.models",
+    "openrouter_equivalent": {
+      "reason": "no per-request usage is available for OpenRouter pricing",
+      "schema": "computecost_openrouter_reference_cost/v1",
+      "status": "join_conflict",
+      "work_item_id": "wi_20260821_742"
+    },
+    "quota_pressure": "unavailable",
+    "reference_credits": "unavailable",
+    "token_resource": "unavailable"
+  },
+  "coverage": {
+    "app_server_usage": "not_applicable",
+    "artifacts": "unavailable",
+    "business_value": "unavailable",
+    "cash": "unavailable",
+    "human_attention": "unavailable",
+    "outcome_join": "partial",
+    "pi_usage": "unavailable",
+    "producer_discovery": "producer_missing",
+    "quota": "unavailable",
+    "rate_card": "join_conflict"
+  },
+  "evidence": {
+    "account_snapshot_sha256": null,
+    "app_server_thread_usage_snapshot_sha256": null,
+    "business_value_evidence_refs": [],
+    "business_value_receipt_sha256": null,
+    "harness_measurement_snapshot_sha256": "12e030f61c67471c8ee5640e6f1c1ac96fe3717af33a1f05da1b2dab31687b25",
+    "harness_measurement_source_refs": [
+      ".harness/events/wi_20260821_742.events.yaml"
+    ],
+    "harness_review_evidence_refs": [],
+    "harness_review_snapshot_sha256": null,
+    "openrouter_valuation_sha256": null,
+    "pi_snapshot_sha256": null,
+    "source_seal_content_sha256": [],
+    "usage_cohort_sha256": "a5f518da83896bd2e47ad1903d982486b66056e4582c641fce1decd41c57bfcc"
+  },
+  "outcome": {
+    "artifacts": "unavailable",
+    "business_value": "unavailable",
+    "downstream_effect": "unavailable",
+    "efficiency": {
+      "delivery_accepted_at": "unknown",
+      "execution_started_at": "unknown",
+      "human_reexplanation_count": "unknown",
+      "planned_rollover_count": 0,
+      "result_cycle_seconds": "unknown",
+      "runtime_recovery_count": 0,
+      "session_segment_count": "unknown"
+    },
+    "quality": {
+      "delivery_status": "none",
+      "human_review": {
+        "final_status": "none",
+        "first_pass": "unknown",
+        "rework_rounds": "unknown"
+      },
+      "post_approval_corrections": "unknown"
+    }
+  },
+  "report_sha256": "428c46f99727b130544125a1fdc0f4d3169f8a50b12aec1e00397a02da4de2cd",
+  "schema": "computecost_wi_report/v2",
+  "usage": {
+    "by_runtime_model_procurement": [],
+    "conservation": "unavailable",
+    "open_epochs": [],
+    "pi_native": "unavailable",
+    "producer": "none_joined",
+    "sealed_epochs": [],
+    "status": "unavailable",
+    "tokens": "unavailable",
+    "usage_event_cohort": {
+      "diagnostics": {
+        "by_producer": {
+          "claude_code": {
+            "ambiguous_seed_count": 0,
+            "content_seed_count": 0,
+            "partition_evidence_consumed": false,
+            "source_file_count": 2306
+          },
+          "codex_desktop": {
+            "ambiguous_component_count": 0,
+            "ambiguous_seed_count": 0,
+            "content_seed_count": 0,
+            "indexed_seed_count": 0,
+            "indexed_title_count": 0,
+            "partition_evidence_consumed": false,
+            "seed_thread_count": 0,
+            "session_index_available": false
+          }
+        },
+        "max_model_context_window": null,
+        "max_request_input_tokens": null
+      },
+      "event_count": 0,
+      "producer_attempts": [
+        {
+          "adapters": [
+            "codex_session_index",
+            "codex_user_prompt_seed",
+            "codex_rollout"
+          ],
+          "producer": "codex_desktop",
+          "reason": "Codex producer exists but no normalized WI seed was discovered",
+          "source_refs": [
+            "codex_home_v1_16ab6ac7d28038a7ad7f0b68e60a6d6118ff5fe3db0b448ccadbfdf95a446c87"
+          ],
+          "status": "producer_missing"
+        },
+        {
+          "adapters": [
+            "cc_user_prompt_seed",
+            "cc_transcript"
+          ],
+          "producer": "claude_code",
+          "reason": "Claude Code producer exists but no normalized WI seed was discovered",
+          "source_refs": [
+            "cc_projects_v1_a626ecd9b440724b77b79a1f1f70e67f56b198bc108c0241969f4f865df6a6d1"
+          ],
+          "status": "producer_missing"
+        }
+      ],
+      "quality_flags": {},
+      "root_thread_count": 0,
+      "status": "producer_missing",
+      "tokens": {
+        "cache_read": 0,
+        "cache_write": 0,
+        "input": 0,
+        "net_new_input": 0,
+        "output": 0,
+        "reasoning": 0,
+        "total_resource_tokens": 0
+      }
+    }
+  },
+  "warnings": [
+    "harness_measurement_partial",
+    "no_joinable_usage_producer"
+  ],
+  "work_item_id": "wi_20260821_742"
+}

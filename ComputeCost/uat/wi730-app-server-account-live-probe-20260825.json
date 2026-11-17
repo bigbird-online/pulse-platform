@@ -1,0 +1,46 @@
+{
+  "generated_at": "2026-08-25T00:37:26.640094Z",
+  "privacy": "account_user_thread_identity_and_codex_home_omitted",
+  "producer": "openai_app_server",
+  "rate_limits": {
+    "coverage": "account_quota_not_wi_attribution",
+    "credits": {
+      "balance": "0",
+      "has_credits": false,
+      "unlimited": false
+    },
+    "individual_limit": null,
+    "limit_id": "codex",
+    "limit_name": null,
+    "plan_type": "pro",
+    "primary": {
+      "resets_at": 1788137010,
+      "used_percent": 27,
+      "window_duration_mins": 10080
+    },
+    "rate_limit_reached_type": null,
+    "reset_credits": {
+      "available_count": 1
+    },
+    "secondary": null,
+    "spend_control_reached": false
+  },
+  "schema": "app_server_account_snapshot/v1",
+  "snapshot_sha256": "86f1b1e220f6e0f42742f7fb8c754725ce4e5bb2781e3d10c67d7e862295c72c",
+  "usage": {
+    "coverage": "account_activity_not_wi_attribution",
+    "daily_usage": {
+      "bucket_count": 302,
+      "end_date": "2026-08-24",
+      "start_date": "2025-09-12",
+      "tokens_total": 16221198886
+    },
+    "summary": {
+      "current_streak_days": 4,
+      "lifetime_tokens": 16221198886,
+      "longest_running_turn_sec": 228251,
+      "longest_streak_days": 45,
+      "peak_daily_tokens": 1484326240
+    }
+  }
+}

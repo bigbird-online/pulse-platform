@@ -1,0 +1,111 @@
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "briefing-data-collect",
+      "name": "早报：数据采集",
+      "enabled": true,
+      "schedule": {
+        "expr": "0 6 * * *",
+        "tz": "Asia/Shanghai"
+      },
+      "agent": {
+        "workspace": "/Users/owner/Coevolution/Bigbird",
+        "prompt": "执行每日新闻数据采集。<在此填写具体 prompt>",
+        "timeout": 300
+      },
+      "delivery": {
+        "mode": "none"
+      },
+      "_state": {
+        "consecutiveErrors": 0
+      }
+    },
+    {
+      "id": "briefing-generate",
+      "name": "早报：生成简报",
+      "enabled": true,
+      "schedule": {
+        "expr": "15 6 * * *",
+        "tz": "Asia/Shanghai"
+      },
+      "agent": {
+        "workspace": "/Users/owner/Coevolution/Bigbird",
+        "prompt": "生成每日全球新闻早报。<在此填写具体 prompt>",
+        "timeout": 600
+      },
+      "delivery": {
+        "mode": "none"
+      },
+      "_state": {
+        "consecutiveErrors": 0
+      }
+    },
+    {
+      "id": "briefing-epub-push",
+      "name": "早报 EPUB 包装 + 推送",
+      "enabled": true,
+      "schedule": {
+        "expr": "0 7 * * *",
+        "tz": "Asia/Shanghai"
+      },
+      "agent": {
+        "workspace": "/Users/owner/Coevolution/PARA",
+        "prompt": "每日早报 EPUB 推送任务。<在此填写具体 prompt>",
+        "timeout": 300
+      },
+      "delivery": {
+        "mode": "announce",
+        "channel": "telegram",
+        "to": "<YOUR_TELEGRAM_CHAT_ID>"
+      },
+      "_state": {
+        "consecutiveErrors": 0
+      }
+    },
+    {
+      "id": "blood-pressure-morning",
+      "name": "早晨血压测量提醒",
+      "enabled": true,
+      "schedule": {
+        "expr": "30 7 * * *",
+        "tz": "Asia/Shanghai"
+      },
+      "agent": {
+        "workspace": "/Users/owner/Coevolution/Bigbird/LifeLab",
+        "prompt": "发送血压测量提醒给用户：该测血压了。起床→排尿→坐5分钟→测量。连测2次取均值。",
+        "timeout": 60
+      },
+      "delivery": {
+        "mode": "announce",
+        "channel": "telegram",
+        "to": "<YOUR_TELEGRAM_CHAT_ID>"
+      },
+      "_state": {
+        "consecutiveErrors": 0
+      }
+    },
+    {
+      "id": "blood-pressure-evening",
+      "name": "晚间血压测量提醒",
+      "enabled": true,
+      "schedule": {
+        "expr": "0 22 * * *",
+        "tz": "Asia/Shanghai"
+      },
+      "agent": {
+        "workspace": "/Users/owner/Coevolution/Bigbird/LifeLab",
+        "prompt": "发送血压测量提醒给用户：睡前血压测量。静坐5分钟后测，连测2次取均值。",
+        "timeout": 60
+      },
+      "delivery": {
+        "mode": "announce",
+        "channel": "telegram",
+        "to": "<YOUR_TELEGRAM_CHAT_ID>"
+      },
+      "_state": {
+        "consecutiveErrors": 0
+      }
+    }
+  ]
+}

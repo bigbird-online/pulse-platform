@@ -1,0 +1,64 @@
+{
+  "cost": {
+    "actual_marginal_cash_usd": "unavailable",
+    "cash_basis": "subscription_fee_not_allocated_to_work_item",
+    "quota_pressure": {
+      "credits": {
+        "balance": "0",
+        "has_credits": false,
+        "unlimited": false
+      },
+      "individual_limit": null,
+      "plan_type": "pro",
+      "primary": {
+        "resets_at": 1788137010,
+        "used_percent": 27,
+        "window_duration_mins": 10080
+      },
+      "scope": "account_not_work_item",
+      "secondary": null,
+      "spend_control_reached": false
+    },
+    "reference_credits": "unavailable",
+    "token_resource": "unavailable"
+  },
+  "coverage": {
+    "app_server_usage": "unavailable",
+    "cash": "unavailable",
+    "outcome_join": "unavailable",
+    "quota": "observed_account_context",
+    "rate_card": "unavailable"
+  },
+  "evidence": {
+    "account_snapshot_sha256": "86f1b1e220f6e0f42742f7fb8c754725ce4e5bb2781e3d10c67d7e862295c72c",
+    "source_seal_content_sha256": []
+  },
+  "outcome": {
+    "artifacts": "unavailable",
+    "business_value": "unavailable",
+    "downstream_effect": "unavailable",
+    "quality": "unavailable"
+  },
+  "report_sha256": "1e3b1d7eb28104704eeac831f9b51885e48306902bc7cfc0590759a98f5e22fd",
+  "schema": "computecost_wi_report/v2",
+  "usage": {
+    "by_runtime_model_procurement": [],
+    "conservation": "pass",
+    "open_epochs": [],
+    "producer": "openai_app_server",
+    "sealed_epochs": [],
+    "status": "unavailable",
+    "tokens": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reasoning_output_tokens": 0,
+      "total_tokens": 0
+    }
+  },
+  "warnings": [
+    "no_app_server_usage_evidence"
+  ],
+  "work_item_id": "wi_20260822_730"
+}

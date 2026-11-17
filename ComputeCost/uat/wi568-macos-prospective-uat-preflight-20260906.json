@@ -1,0 +1,72 @@
+{
+  "schema": "computecost_surface_uat_preflight/v1",
+  "generated_at": "2026-09-06T08:38:45Z",
+  "work_item_id": "wi_20260820_568",
+  "surface": "surface_v1_local_macos",
+  "status": "blocked_pre_baseline",
+  "frozen_scope": {
+    "validation_default_revision": "f0a1a14a7dc3ee3fe19cc8659172b9133da0e247",
+    "installed_pulse_revision": "307bb878ae1d7531984b946b0fc371a6bfc87c52",
+    "installed_relevant_bytes_match_validation_default": true,
+    "checked_files_sha256": {
+      "runtime/pi-usage-binding.mjs": "ef1be16dcab33d9faad273a0ee7e49ad4bf95629276c47d2e67703069dbc7b04",
+      "pulse_compute_cost/scl_measurement.py": "140d303bb72b4e6c000723a2c9e9a158531cf2715d1f2cd01e08a7269de27cb4",
+      "pulse_compute_cost/wi_report.py": "dba042f09b2d54f86828aee959ce70765dffba5bd51a3be749e94d71fcf07aaf"
+    }
+  },
+  "workspace_preparation": {
+    "allocation_policy": "managed_workspaces/v1",
+    "pulse_capacity_admission": {
+      "allowed": true,
+      "estimated_growth_mb": 134,
+      "usage_pct": 76,
+      "projected_usage_pct": 76,
+      "receipt_sha256": "f4cdc04817753533abfcc41de74da78ff2445aa78602dc8f4e7df0bc3f11fecb"
+    },
+    "authority_capacity_admission": {
+      "allowed": true,
+      "estimated_growth_mb": 107,
+      "usage_pct": 76,
+      "projected_usage_pct": 76,
+      "receipt_sha256": "8e710620360a7f479170dcac622310c5bdeb79af932e5c7d12b62a0feb5a4cbd"
+    },
+    "exact_allocations_created_clean": true,
+    "registration_error": "authority_unavailable",
+    "execution_from_unregistered_workspace": false,
+    "registration_command_succeeded": false,
+    "valid_registration_readback": false,
+    "partial_manifest_present_after_failed_readback": true,
+    "partial_manifest_repo_ids": [
+      "pulse"
+    ],
+    "partial_manifest_execution_admitted": false
+  },
+  "measurement": {
+    "zero_baseline_established": false,
+    "native_snapshot_count_before_entry": 0,
+    "post_baseline_event_count": "unavailable",
+    "final_seal": "unavailable",
+    "token_conservation": "unavailable",
+    "canonical_join": "unavailable",
+    "linked_outcome": "unavailable",
+    "human_attention": "unavailable",
+    "actual_cash": "unavailable"
+  },
+  "privacy": {
+    "raw_runtime_identity_persisted": false,
+    "hidden_tokens_imputed": false,
+    "historical_usage_backfilled": false
+  },
+  "blocker": "The current loaded SCL/workspace contract has no supported ordinary cross-surface replacement path: the target registration cannot acquire the active fence digest before target process admission, while recovery is inapplicable to the healthy source. A failed registration attempt retained a partial one-repository manifest, but it is not valid or executable.",
+  "next_gate": "Implement, review, merge, install, and read back one sealed cross-surface workspace-authority transition that atomically validates the complete target registration before process admission; then establish the macOS mode-0600 zero baseline and consume only naturally occurring work.",
+  "platform_contract_readback": {
+    "collaboratewithai_default_revision": "bccd918a38b46f6322d7bac6292464512fa5d06f",
+    "installed_scl_source_revision": "1582deaec585a336dd1509c19155ff2c37d47719",
+    "loaded_relevant_bytes_match_default": true,
+    "replacement_claim_records_target_surface": true,
+    "cross_surface_runtime_workspace_admission_supported": false,
+    "reason": "The loaded admission contract accepts a replacement target only when its target surface is absent or equals the current source surface; a macOS target differs from the active cloud source.",
+    "active_surface_recovery_applicable": false,
+    "recovery_exclusion": "The source is live and healthy; stale-authority recovery requires separate explicit human recovery authorization and cannot be used as an ordinary surface transfer."
+  }
+}

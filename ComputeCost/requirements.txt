@@ -1,0 +1,2 @@
+# Optional canonical Harness YAML source support; core and JSON sources use stdlib.
+PyYAML>=6.0.2,<7

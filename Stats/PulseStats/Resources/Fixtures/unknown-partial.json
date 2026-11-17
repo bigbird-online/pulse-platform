@@ -1,0 +1,10 @@
+{
+  "schema_version": "pulse.monitoring.snapshot.v2",
+  "generated_at": "2099-07-22T12:19:17+08:00",
+  "expires_at": "2099-07-22T12:22:17+08:00",
+  "baseline_version": "0.2.1",
+  "overall": {"runtime_health": "unknown", "coverage": "partial", "open_incident_count": 0, "headline": "Runtime source unavailable"},
+  "capabilities": [{"id": "meta.probe_heartbeat", "implementation_status": "active_partial", "health": "unknown", "aggregation_role": "runtime", "scope": "fixture probes", "reason": "Fixture source could not be read", "freshness": {"state": "error", "observed_at": null, "max_age_seconds": 600}, "evidence": ["fixture:source-error"]}],
+  "incidents": [], "metrics": [], "alerts": [],
+  "provenance": {"producer": {"name": "pulse-stats-fixture", "version": "0.1.0"}, "source_revisions": {"fixture": "unknown-partial"}, "sources": [{"id": "fixture", "freshness": "error", "observed_at": null, "error_code": "fixture_unavailable"}]}
+}

@@ -1,0 +1,10 @@
+{
+  "schema_version": "pulse.monitoring.snapshot.v2",
+  "generated_at": "2026-01-01T00:00:00+08:00",
+  "expires_at": "2026-01-01T00:03:00+08:00",
+  "baseline_version": "0.2.1",
+  "overall": {"runtime_health": "ok", "coverage": "full", "open_incident_count": 0, "headline": "Expired cache fixture"},
+  "capabilities": [{"id": "s2.ack_overdue", "implementation_status": "active_validated", "health": "ok", "aggregation_role": "runtime", "scope": "fixture dispatchers", "reason": "Fixture was healthy when generated", "freshness": {"state": "fresh", "observed_at": "2026-01-01T00:00:00+08:00", "max_age_seconds": 2100}, "evidence": ["fixture:expired-cache"]}],
+  "incidents": [], "metrics": [], "alerts": [],
+  "provenance": {"producer": {"name": "pulse-stats-fixture", "version": "0.1.0"}, "source_revisions": {"fixture": "expired-cache"}, "sources": [{"id": "fixture", "freshness": "fresh", "observed_at": "2026-01-01T00:00:00+08:00", "error_code": null}]}
+}

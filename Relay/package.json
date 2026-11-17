@@ -1,0 +1,49 @@
+{
+  "name": "@pulse/relay",
+  "version": "0.1.0",
+  "description": "Multi-tenant Claude Code relay gateway for Telegram/Feishu",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start:macos": "bash scripts/launch-relay-macos.sh",
+    "sync:macos-launch": "bash scripts/sync-macos-launch.sh",
+    "jobs": "node dist/relay-jobs.js",
+    "node-placement": "node dist/node-placement-cli.js",
+    "provision-agent": "node dist/provision-agent.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "model-release:check": "node scripts/model-release-gate.mjs",
+    "model-release:discover": "node scripts/model-release-gate.mjs --online",
+    "model-release:readback": "node scripts/model-release-gate.mjs --runtime-readback",
+    "model-release:control": "node scripts/model-release-control.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "private": true,
+  "devDependencies": {
+    "@types/markdown-it": "^14.2.0",
+    "@types/node": "^25.5.2",
+    "@types/ws": "^8.18.1",
+    "@vitest/coverage-v8": "^4.1.4",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2"
+  },
+  "dependencies": {
+    "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1",
+    "@larksuiteoapi/node-sdk": "^1.61.1",
+    "@openai/codex": "0.153.4",
+    "@types/node-cron": "^3.0.11",
+    "grammy": "^1.42.0",
+    "markdown-it": "^14.3.1",
+    "node-cron": "^4.2.1",
+    "ws": "^8.20.0",
+    "@modelcontextprotocol/sdk": "1.29.0"
+  },
+  "optionalDependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.261"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "generated_at": "2026-07-22T12:19:17+08:00",
+  "expires_at": "2026-07-22T12:22:17+08:00",
+  "baseline_version": "0.2.1",
+  "headline": "Fixture handoff warning",
+  "required_capability_ids": ["s2.ack_overdue", "s1.stable_interaction_identity"],
+  "capabilities": [
+    {"id": "s2.ack_overdue", "implementation_status": "active_validated", "health": "warning", "aggregation_role": "runtime", "scope": "fixture dispatchers", "reason": "Fixture threshold exceeded", "freshness": {"state": "fresh", "observed_at": "2026-07-22T12:19:00+08:00", "max_age_seconds": 2100}, "evidence": ["fixture:ack-warning"]},
+    {"id": "s1.stable_interaction_identity", "implementation_status": "not_implemented", "health": "not_applicable", "aggregation_role": "coverage_only", "scope": "eligible interactions", "reason": "Not implemented", "freshness": {"state": "not_applicable", "observed_at": null, "max_age_seconds": null}, "evidence": ["spec:pulse-stats-p1"]}
+  ],
+  "events": [
+    {"event_id": "fixture-breach-1", "kind": "breach", "capability_id": "s2.ack_overdue", "condition_key": "handoff_overdue", "scope": "fixture handoff", "normalized_scope_key": "fixture-handoff", "severity": "warning", "title": "Handoff overdue", "occurred_at": "2026-07-22T12:10:00+08:00", "reason": "Fixture handoff exceeded threshold", "impact": "Fixture work waits", "suggested_action": "Inspect fixture owner"}
+  ],
+  "metrics": [],
+  "provenance": {"producer": {"name": "pulse-stats-exporter", "version": "0.1.0"}, "source_revisions": {"fixture": "producer-input"}, "sources": [{"id": "fixture", "freshness": "fresh", "observed_at": "2026-07-22T12:19:00+08:00", "error_code": null}]}
+}

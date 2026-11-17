@@ -1,0 +1,13 @@
+schema_version: workspace_sync_authorization/v1
+enabled: true
+authorization_ref: human_authorization_v1_wi479_ownermac_four_end_sync
+authorized_by: owner
+repository_root: /Users/owner/Coevolution
+repository_slug: bigbird-online/CollaborateWithAI
+human_owner_id: owner
+work_item_id: wi_20260822_479
+agent_id: pulse
+surface_id: surface_v1_local_macos
+repo_id: collaboratewithai
+convergence_repositories:
+  - collaboratewithai-wi-authority

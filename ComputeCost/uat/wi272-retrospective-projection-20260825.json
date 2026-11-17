@@ -1,0 +1,84 @@
+{
+  "cost": {
+    "actual_marginal_cash_usd": "unavailable",
+    "cash_basis": "subscription_fee_not_allocated_to_work_item",
+    "harness_measurement": "unknown",
+    "human_attention": "unavailable",
+    "provider_estimated_cost_usd": {
+      "app_server_thread": "unavailable",
+      "pi_native": "unavailable"
+    },
+    "quota_pressure": "unavailable",
+    "reference_credits": "unavailable",
+    "token_resource": "unavailable"
+  },
+  "coverage": {
+    "app_server_usage": "unavailable",
+    "artifacts": "unavailable",
+    "business_value": "unavailable",
+    "cash": "unavailable",
+    "human_attention": "unavailable",
+    "outcome_join": "partial",
+    "pi_usage": "unavailable",
+    "quota": "unavailable",
+    "rate_card": "unavailable"
+  },
+  "evidence": {
+    "account_snapshot_sha256": null,
+    "app_server_thread_usage_snapshot_sha256": null,
+    "business_value_evidence_refs": [],
+    "business_value_receipt_sha256": null,
+    "harness_measurement_snapshot_sha256": "abbb16e4692cc653d519a07df8fbe4da94899fc09c20e286b38c860ac7290b29",
+    "harness_measurement_source_refs": [
+      ".harness/events/wi_20260820_272.events.yaml",
+      ".harness/evidence/measurements/wi_20260820_272/terminal-authority-reconciliation.yaml",
+      ".harness/evidence/outcomes/wi_20260820_272.md",
+      ".harness/reviews/wi_20260820_272.yaml"
+    ],
+    "harness_review_evidence_refs": [],
+    "harness_review_snapshot_sha256": null,
+    "pi_snapshot_sha256": null,
+    "source_seal_content_sha256": []
+  },
+  "outcome": {
+    "artifacts": "unavailable",
+    "business_value": "unavailable",
+    "downstream_effect": "unavailable",
+    "efficiency": {
+      "delivery_accepted_at": "2026-08-22T04:09:13.814027Z",
+      "execution_started_at": "2026-08-20T07:53:31.323676Z",
+      "human_reexplanation_count": "unknown",
+      "planned_rollover_count": 9,
+      "result_cycle_seconds": 159342,
+      "runtime_recovery_count": 7,
+      "session_segment_count": 3
+    },
+    "quality": {
+      "delivery_status": "accepted",
+      "human_review": {
+        "final_status": "approved",
+        "first_pass": "unknown",
+        "rework_rounds": "unknown"
+      },
+      "post_approval_corrections": "unknown"
+    }
+  },
+  "report_sha256": "c596b8462d339c998ce8039a3867899095452d97a3daf947ca39ee41bfa81c6a",
+  "schema": "computecost_wi_report/v2",
+  "usage": {
+    "by_runtime_model_procurement": [],
+    "conservation": "unavailable",
+    "open_epochs": [],
+    "pi_native": "unavailable",
+    "producer": "openai_app_server",
+    "sealed_epochs": [],
+    "status": "unavailable",
+    "tokens": "unavailable"
+  },
+  "warnings": [
+    "harness_measurement_authority_gap",
+    "harness_measurement_partial",
+    "no_app_server_usage_evidence"
+  ],
+  "work_item_id": "wi_20260820_272"
+}

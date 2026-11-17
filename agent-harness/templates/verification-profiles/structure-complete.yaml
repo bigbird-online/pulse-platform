@@ -1,0 +1,13 @@
+profile_id: structure-complete
+description: "验证文档结构完整性声明"
+claim_patterns:
+  - "(三件套|L2.*完成|requirements.*design.*tasks)"
+  - "\\d+\\s*(个|条).*章节"
+  - "结构.*完整"
+  - "所有.*段.*存在"
+verification:
+  type: grep
+  grep_pattern: "^## "
+  grep_target: "{claimed_file}"
+  pass_condition: "grep 匹配到的 H2 标题数量 >= 预期数量"
+tags: [doc, structure]

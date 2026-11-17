@@ -1,0 +1,22 @@
+{
+  "providers": {
+    "anthropic": {
+      "protocol": "anthropic",
+      "base_url_env": "ANTHROPIC_BASE_URL",
+      "api_key_pool": ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN_FALLBACK"],
+      "force_interactive": false
+    },
+    "openrouter": {
+      "protocol": "anthropic",
+      "base_url_env": "OPENROUTER_ANTHROPIC_BASE_URL",
+      "api_key_pool": ["OPENROUTER_ANTHROPIC_AUTH_TOKEN"],
+      "force_interactive": false
+    }
+  },
+  "models": [
+    { "id": "claude-fable-5", "display_name": "Claude Fable 5", "claude_alias": true },
+    { "id": "opus", "display_name": "Claude Opus（最新版）", "claude_alias": true },
+    { "id": "sonnet", "display_name": "Claude Sonnet（最新版）", "claude_alias": true },
+    { "id": "deepseek/deepseek-v4-flash-0731", "display_name": "DeepSeek V4 Flash · 快省(OpenRouter)", "provider": "openrouter", "currency": "USD", "input_price_per_million": 0.09, "output_price_per_million": 0.18 }
+  ]
+}

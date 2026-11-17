@@ -1,0 +1,23 @@
+{
+  "schema": "wi568_terminal_measurement_gaps/v1",
+  "items": [
+    {
+      "work_item_id": "wi_20260822_938",
+      "status": "stale",
+      "reason": "canonical human review artifact set is unavailable/stale without reconciliation",
+      "safe_action": "require exact-candidate human re-review or valid digest-bound terminal reconciliation; do not bypass"
+    },
+    {
+      "work_item_id": "wi_20260823_941",
+      "status": "stale",
+      "reason": "canonical human review artifact set is unavailable/stale without reconciliation",
+      "safe_action": "require exact-candidate human re-review or valid digest-bound terminal reconciliation; do not bypass"
+    },
+    {
+      "work_item_id": "wi_20260825_043",
+      "status": "stale",
+      "reason": "canonical human review is stale for the current WI candidate",
+      "safe_action": "retain failed human disposition; do not project the stale candidate as current quality"
+    }
+  ]
+}

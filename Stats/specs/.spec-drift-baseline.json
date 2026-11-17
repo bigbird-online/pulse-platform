@@ -1,0 +1,13 @@
+{
+  "allowed_drift": 262,
+  "frozen_at": "2026-11-10",
+  "note": "A/B on 2026-11-10 (WI215): unmodified origin/main b745b76961 with the scanner and specs under vultr-pulse-space, and the branch that moves them to skills/spec-anchor and Stats/specs, both report the same 262 broken anchors (identical spec/line/type/target set). Freeze only that pre-existing repository drift; 263+ remains blocked. This does not assert those anchors are correct or waive their repair. Previous freeze: 243 on 2026-09-21.",
+  "scope_note": "闸只扫 stats-*.md 这五份（从代码提炼、描述『现在是什么』）。pulse-stats.md / pulse-stats-menubar-v2.md / pulse-stats-v3-alert-triage.md 三份刻意不纳入：它们描述『该做什么』与历史设计，pulse-stats.md 实测 8 条 broken 全是 §1 已声明的 P1 未来项（spec 说了没做、代码也没做＝一致，非漂移），纳入会逼出一个恒不为零的基线，而恒不为零的基线等于没有基线。三份的诚实状态由各自 header 承载，2026-08-01 已逐份核对。",
+  "specs": [
+    "stats-exporter-collection",
+    "stats-billing-usage",
+    "stats-app-presentation",
+    "stats-core-models",
+    "stats-snapshot-contract"
+  ]
+}

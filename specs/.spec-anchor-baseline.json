@@ -1,0 +1,6 @@
+{
+  "drift_count": 0,
+  "established": "2026-08-10",
+  "scope": "specs/pulse-global-*.md（3 份：dataflow / topology / guards，121 显式锚点）",
+  "note": "基线=0：全局 spec 落地时零漂移。超过即拒绝提交；冻结已知债须在 commit message 说明。"
+}

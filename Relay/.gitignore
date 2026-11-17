@@ -1,0 +1,19 @@
+node_modules/
+dist/
+*.js
+*.d.ts
+*.js.map
+!vitest.config.ts
+.DS_Store
+coverage/
+# Scheduler config (contains actual prompts, not committed to git)
+config/cron-jobs.json
+config/cron-jobs.json.bak*
+# Local relay config (credentials, not for server)
+.relay/
+# Launch scripts contain provider API keys — keep local only
+scripts/launch-relay-macos.sh
+# Model catalog — each Relay node may have different providers/models
+config/models.json
+# Scratch directory created and removed by tests/model-catalog.test.ts
+tests/__tmp_model_catalog_test__/

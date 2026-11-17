@@ -1,0 +1,36 @@
+schema_version: github_authoritative_topology/v2
+topology_id: collaboratewithai-human-work-roots
+repo_id: collaboratewithai
+repository_slug: bigbird-online/CollaborateWithAI
+repository_boundary: independent_git_root
+authority_kind: github
+authority_remote_url: git@github.com:bigbird-online/CollaborateWithAI.git
+branch_ref: refs/heads/main
+platform_owner: pulse
+endpoint_class: human_work_root
+control_plane_role: null
+applicable_work_item_ids: []
+required_endpoint_ids:
+  - tcloud-node2-human-root
+  - ownermac-human-root
+endpoints:
+  - endpoint_id: ownermac-human-root
+    site_id: surface_v1_local_macos
+    transport: local
+    checkout_path: /Users/owner/Coevolution
+    remote_name: origin
+    expected_remote_url: git@github.com:bigbird-online/CollaborateWithAI.git
+    enrollment_status: enrolled
+    pending_reason: null
+    ssh_target: null
+    ssh_config_path: null
+  - endpoint_id: tcloud-node2-human-root
+    site_id: surface_v1_tcloud_codex
+    transport: ssh
+    checkout_path: /Users/owner/Coevolution
+    remote_name: origin
+    expected_remote_url: git@github-bigbird-collaborate:bigbird-online/CollaborateWithAI.git
+    enrollment_status: enrolled
+    pending_reason: null
+    ssh_target: tcloud-node2-pulse
+    ssh_config_path: null

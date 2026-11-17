@@ -1,0 +1,229 @@
+{
+  "cost": {
+    "actual_marginal_cash_usd": "unavailable",
+    "cash_basis": "subscription_fee_not_allocated_to_work_item",
+    "harness_measurement": "unavailable",
+    "human_attention": "unavailable",
+    "machine_pricing_authority": "openrouter.models",
+    "openrouter_equivalent": {
+      "basis": "openrouter_equivalent_not_provider_cash",
+      "catalog_sha256": "4e0846230f095692e15ce195099d0065ee10ceda1d47e4cc6e1dbcca72567b4c",
+      "partitions": [
+        {
+          "canonical_slug": "deepseek/deepseek-v3.1-terminus",
+          "components_usd": {
+            "cache_read": "0.00180576",
+            "cache_write": "0",
+            "output": "0.000357",
+            "uncached_input": "0.00373491"
+          },
+          "max_request_input_tokens": 27209,
+          "openrouter_model": "deepseek/deepseek-v3.1-terminus",
+          "price_usd_per_token": {
+            "cache_read": "0.000000135",
+            "cache_write": "0",
+            "output": "0.000001",
+            "uncached_input": "0.00000027"
+          },
+          "request_count": 1,
+          "source_model": "deepseek/deepseek-v3.1-terminus",
+          "tier": "standard",
+          "tokens": {
+            "cache_read": 13376,
+            "cache_write": 0,
+            "output": 357,
+            "uncached_input": 13833
+          },
+          "total_usd": "0.00589767"
+        },
+        {
+          "canonical_slug": "deepseek/deepseek-v4-flash-20260731",
+          "components_usd": {
+            "cache_read": "0.002806272",
+            "cache_write": "0",
+            "output": "0.00042686",
+            "uncached_input": "0.0230867"
+          },
+          "max_request_input_tokens": 39242,
+          "openrouter_model": "deepseek/deepseek-v4-flash-0731",
+          "price_usd_per_token": {
+            "cache_read": "0.000000014",
+            "cache_write": "0",
+            "output": "0.00000014",
+            "uncached_input": "0.00000007"
+          },
+          "request_count": 18,
+          "source_model": "deepseek/deepseek-v4-flash-0731",
+          "tier": "standard",
+          "tokens": {
+            "cache_read": 200448,
+            "cache_write": 0,
+            "output": 3049,
+            "uncached_input": 329810
+          },
+          "total_usd": "0.026319832"
+        }
+      ],
+      "pricing_authority": "openrouter.models",
+      "pricing_source_url": "https://openrouter.ai/api/v1/models",
+      "retrieved_at": "2026-08-28T10:10:43.256434Z",
+      "schema": "computecost_openrouter_reference_cost/v1",
+      "status": "calculated",
+      "total_usd": "0.032217502",
+      "valuation_sha256": "a2053b64a39181299e7f74235fb0228d924c8bdb08c74100edb51021e415954c",
+      "work_item_id": "wi_20260825_043"
+    },
+    "quota_pressure": "unavailable",
+    "reference_credits": "unavailable",
+    "token_resource": "observed"
+  },
+  "coverage": {
+    "app_server_usage": "not_applicable",
+    "artifacts": "unavailable",
+    "business_value": "unavailable",
+    "cash": "unavailable",
+    "human_attention": "unavailable",
+    "outcome_join": "unavailable",
+    "pi_usage": "unavailable",
+    "producer_discovery": "observed",
+    "quota": "unavailable",
+    "rate_card": "openrouter_equivalent_calculated"
+  },
+  "evidence": {
+    "account_snapshot_sha256": null,
+    "app_server_thread_usage_snapshot_sha256": null,
+    "business_value_evidence_refs": [],
+    "business_value_receipt_sha256": null,
+    "harness_measurement_snapshot_sha256": null,
+    "harness_measurement_source_refs": [],
+    "harness_review_evidence_refs": [],
+    "harness_review_snapshot_sha256": null,
+    "openrouter_valuation_sha256": "a2053b64a39181299e7f74235fb0228d924c8bdb08c74100edb51021e415954c",
+    "pi_snapshot_sha256": null,
+    "source_seal_content_sha256": [],
+    "usage_cohort_sha256": "4675150f5c635b6543d809de79c8088bd04b4e960eb5264cb7616c9bd3268d71"
+  },
+  "outcome": {
+    "artifacts": "unavailable",
+    "business_value": "unavailable",
+    "downstream_effect": "unavailable",
+    "efficiency": "unavailable",
+    "quality": "unavailable"
+  },
+  "report_sha256": "38be5e66a365ab95b182bd7a547fb79bb4ad2387c73a224589fde17f9cffdb96",
+  "schema": "computecost_wi_report/v2",
+  "usage": {
+    "by_runtime_model_procurement": [],
+    "conservation": "pass",
+    "open_epochs": [],
+    "pi_native": "unavailable",
+    "producer": "usage_event_cohort",
+    "sealed_epochs": [],
+    "status": "exact",
+    "tokens": {
+      "cache_write_input_tokens": 0,
+      "cached_input_tokens": 213824,
+      "input_tokens": 557467,
+      "output_tokens": 3406,
+      "reasoning_output_tokens": 181,
+      "total_tokens": 560873
+    },
+    "usage_event_cohort": {
+      "diagnostics": {
+        "by_producer": {
+          "claude_code": {
+            "ambiguous_seed_count": 0,
+            "content_seed_count": 7,
+            "deduplicated_events": {},
+            "emitted_events": {
+              "cc_transcript": 35
+            },
+            "malformed_rows": {},
+            "partition_evidence_consumed": false,
+            "reconciled_relay_rows": {},
+            "source_file_count": 2306,
+            "source_files": {
+              "cc_transcript": 21
+            },
+            "source_rows": {
+              "cc_transcript": 206
+            },
+            "unmatched_relay_rows": 0
+          },
+          "codex_desktop": {
+            "ambiguous_component_count": 0,
+            "ambiguous_seed_count": 0,
+            "content_seed_count": 1,
+            "deduplicated_events": {},
+            "emitted_events": {
+              "codex_rollout": 3
+            },
+            "indexed_seed_count": 0,
+            "indexed_title_count": 0,
+            "lineage_closure_count": 1,
+            "malformed_rows": {},
+            "max_model_context_window": 155648,
+            "max_request_input_tokens": 13731,
+            "partition_evidence_consumed": false,
+            "reconciled_relay_rows": {},
+            "seed_thread_count": 1,
+            "session_index_available": false,
+            "source_files": {
+              "codex_rollout": 7
+            },
+            "source_rows": {
+              "codex_rollout": 84
+            },
+            "unmatched_relay_rows": 0
+          }
+        },
+        "max_model_context_window": 155648,
+        "max_request_input_tokens": 13731
+      },
+      "event_count": 19,
+      "producer_attempts": [
+        {
+          "adapters": [
+            "codex_session_index",
+            "codex_user_prompt_seed",
+            "codex_rollout"
+          ],
+          "producer": "codex_desktop",
+          "reason": "normalized WI seeds and rollover/delegation lineage joined rollout usage",
+          "source_refs": [
+            "codex_home_v1_16ab6ac7d28038a7ad7f0b68e60a6d6118ff5fe3db0b448ccadbfdf95a446c87"
+          ],
+          "status": "observed"
+        },
+        {
+          "adapters": [
+            "cc_user_prompt_seed",
+            "cc_transcript"
+          ],
+          "producer": "claude_code",
+          "reason": "normalized WI user prompts joined Claude Code transcript usage",
+          "source_refs": [
+            "cc_projects_v1_a626ecd9b440724b77b79a1f1f70e67f56b198bc108c0241969f4f865df6a6d1"
+          ],
+          "status": "observed"
+        }
+      ],
+      "quality_flags": {
+        "relay_attribution_unavailable": 19
+      },
+      "root_thread_count": 8,
+      "status": "observed",
+      "tokens": {
+        "cache_read": 213824,
+        "cache_write": 0,
+        "input": 557467,
+        "net_new_input": 343643,
+        "output": 3406,
+        "reasoning": 181,
+        "total_resource_tokens": 560873
+      }
+    }
+  },
+  "warnings": [],
+  "work_item_id": "wi_20260825_043"
+}

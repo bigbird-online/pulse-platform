@@ -1,0 +1,3323 @@
+{
+  "review_watermark": 951,
+  "previous_reviewed_activity_sha256": "23c117d070031d713628244570237395f2a29ee361cf4ba242e9e0f2d83e82a7",
+  "scope": "finite_original_observations_only",
+  "reviews": [
+    {
+      "native_scope_ref": "ccf1_007d52f2d3817f9dc80a0de476aaed219dc9651421fca912c4eb81cb7372e48b",
+      "purpose": "none",
+      "review_reason": "Standalone lock/password-prompt diagnosis and Chrome verification.",
+      "native_record_refs": [
+        "ccf1_17fafa91374bb05ee5d363cf2ecc6ae2da8dff496a0f57e30803ef7703d26935",
+        "ccf1_28ca56972008b5812bc1aa0be53f343b523b05a9b5f124221ab76d52b2bf65ea",
+        "ccf1_2dd2b8d0658610702d03adba346027b21777f139a7b01d012c2caacd61644458",
+        "ccf1_38fe19b4681ba2c139b405f09bbf2bcb7f22348a4d45730da2f84f91a25bd641",
+        "ccf1_3cb1b6941d5657b41e6aacdb2da022fec4c26a59027df392b74fd64953001123",
+        "ccf1_3cc41141b1b445e9dc4f8c11926dbae3cddbb88c3add45601bffbb94379a356f",
+        "ccf1_700a9fd1e5038f5c944808b76715e2632347cb78592a161eab7a31424f43c604",
+        "ccf1_705d2475c484abcec98f041e30c95b50fc4653cd2a1ab9a8c069ada8a55e24d6",
+        "ccf1_7e5c334679613a4e3e6a726dd03476eeeb251531ac6c625b5563d7f85035c7b5",
+        "ccf1_acc807a67bfce6225c29ef0dcf1775c19df4dec295331eeadcd02a8f733f316c",
+        "ccf1_b5cfb4e17a89d19e95c53d493ac0c571d63add8d6ce60abae54b607ece238dc7",
+        "ccf1_c0eba34e8d4b2d8d1182118a10034b8a29759b090dbce6e11d751632c23a43e5",
+        "ccf1_cf7d34d420ad34b66d733e470dccb1234683868f2ea51e7df218b2287978e40c",
+        "ccf1_e32f3793431a12b319801e93a33faa60aca4bbb4b7dbfa16f79683970c177b8f",
+        "ccf1_e5eaa20270bf1c11bbafee9a67b333ccbd5691e4c3d143457f332af4f70d43cc",
+        "ccf1_e8e850519101451466da6cd1369b673f9780da4965df538e0a85ecc1419e284b"
+      ],
+      "evidence_ref": "ccf1_d3987acdf608016c8b557d3ef7c00cb6fc4f3cd444613168cad8416825f70beb",
+      "target_fact_refs": [
+        "ccf1_11a7ff5158344a359c40956254f4736e2bdcd14b776a316241aa1c663179ae1a",
+        "ccf1_2aff5f1fd85ec4ad203e291c3718607693d4bfc7e6c37c9f6bad1d83346683a6",
+        "ccf1_51f0e3d32f028a2b730185ead52e8b4856dadbb55a272b99f702fa1ff10bb660",
+        "ccf1_6d35762673fa0c06ff09a61b042922529fa0964bb4986d7739c2d7170bd5866b",
+        "ccf1_86a26038a0613ed43ed656946a18adde44849e1ef44f9ee2a982a3b69635c36b",
+        "ccf1_b4d1487a5334685a4c264c705502dde13973d940c61c7a072a29420fc8da17fc"
+      ]
+    },
+    {
+      "native_scope_ref": "ccf1_1c86a64212dbf3940695d92abad6ffdd1bde50a1227f3dea96fc406c21e60729",
+      "purpose": "wi_20260825_300",
+      "review_reason": "Original WI300 Desktop transport probe explicitly named in the input.",
+      "native_record_refs": [
+        "ccf1_4c6d150e4952eaece9a131fd0c66d39e9f1fe3fb970a5ac76558f07af48ab370",
+        "ccf1_c3d452e5a6834dcda722a3b7bfc42d8f58898e49602a8f419115d5d1b3117317"
+      ],
+      "evidence_ref": "ccf1_ee1532e48aab8bb892400b3f08a87277a3769c3738067a0e3d2b496a88e22560",
+      "target_fact_refs": [
+        "ccf1_2fbce8329c8cf899cb71ed588e0ba80e7e950cc4e92902da16174313870e3b30"
+      ]
+    },
+    {
+      "native_scope_ref": "ccf1_221f38fa1c85f03759dfacf007de0286977e1340c9b0c86426f64ec1a0e71ca2",
+      "purpose": "none",
+      "review_reason": "Independent timezone, archive and Claude setup operations, not a WI takeover.",
+      "native_record_refs": [
+        "ccf1_217e2d2e6daf7bef5d12e32a130bb9f606e113f9da741e2967449cd3da16a8ea",
+        "ccf1_21b2a2a79ce86afc817dc8f26c5c291e3658bc35ce4171bcb1b21b0d75707381",
+        "ccf1_2d3e68a0ca756ae2e38119d73bb75ff974e302239fd0a96e7b945ee8941a97cc",
+        "ccf1_473e8b47bfb5dec58f8033ff5fec325fdab86d96ebbec579a9926a665f7acd3b",
+        "ccf1_6399ad731db780d9731683c66291d7efac7ec90eb95b6f6526b91284a3af3da8",
+        "ccf1_7fad86244827f0fc3aa27752552247400b6769170cdc94a9ebaf3ca812d59019",
+        "ccf1_9e8b6773a824ebe6d2803e1588829d2a20d1b13b834ca6d41192e5b345476d07",
+        "ccf1_a8489593b27123d6d03bdb7db5ecdc57737998a1106af93bac57f3c49a63ab4a",
+        "ccf1_d276a998b0017457c739a02da6e821c93d25675a5f1a7a2b099b49afb815208d",
+        "ccf1_e0b1b8cc2f37baef343d7a8f31ca5c27f06c787dbacee39e553d1e710164ef7b"
+      ],
+      "evidence_ref": "ccf1_7be6ff3722d68eedd2a23324d7d36608637aa6a30282319e98afdc4efb496655",
+      "target_fact_refs": [
+        "ccf1_198be0f0b68520ff81570ebaba990e85a7fdbbf65f0e6bc8438a43e4869f5344",
+        "ccf1_2044f784a3ce9c4505c0cc978c96d1ad4f12ccc360d090a8171d0d7b9bd7e260",
+        "ccf1_35ce83a066afc5e135e0f7c358de83ffe717c07226ce137c6ef5894f69d69b00",
+        "ccf1_35d3ffb6da38a78f838342df56ae6c34bb44eb7cbaa58f9e934acc822b2839df",
+        "ccf1_a16e2ae586195435973fe2cdcb697b58298fc2bbde679787564bd9e8fb114182",
+        "ccf1_ae949d5389afcdb7e2cf8a03266ba3d5a158459f8a87fc0fb6fb059534ba0b34",
+        "ccf1_b803fd1d065bda709856d572b352f2ef8a5480c7d41dbc37be6e8d69baa8046c",
+        "ccf1_e8726bc9befa90a7b7fcf5ee1e677802e24dbb4bfb2618457c6583388ea285d0"
+      ]
+    },
+    {
+      "native_scope_ref": "ccf1_bff42fb08f6147e0e9fd41c77009bdbe096aa7a47373ba15710271a50e3c6128",
+      "purpose": "wi_20260928_219",
+      "review_reason": "Native guardian-review child of that exact Asobi WI219 takeover.",
+      "native_record_refs": [
+        "ccf1_546aaef39b08069f62016553722a20befd06311c61018fd8b41e77f270e5c5a0",
+        "ccf1_7aae6e2774a1b0cbc92b1d5ca68b988b276b531f5a0eee51c385ff48bc227949",
+        "ccf1_8cffe4b9b8266a2cbf5d874e74620a2482494717bd7ceafb5a44e44dee3c063b",
+        "ccf1_9a266564897b8261078b606cfbd2909a139495617d7032c342736abdb068032a",
+        "ccf1_f1f1c5a1757e30a98406b3d3479ce363584d44244e3fec6652aa76cec535de0d",
+        "ccf1_f6a2a2c05c1f755bceacedd4afc9a0d41c2665d1f28a24709a71c6d435bbea03"
+      ],
+      "evidence_ref": "ccf1_a8b8f752ea7252d39a4c16424425255de32ee2bf19d224eac5185e2e67c2b3f0",
+      "target_fact_refs": [
+        "ccf1_4c65c5b0d1322c8998073545c3311f90e695c9de594b026eb15561963713da03",
+        "ccf1_5f661fc6d0f5599717894dad102cd7a6b7113d28f3db03485d45f7065d4cc20a"
+      ]
+    },
+    {
+      "native_scope_ref": "ccf1_cc82f2d8eb0cfe5f270af29cab5cddd6d209dab9f3043a220c6e1bb612bca711",
+      "purpose": "none",
+      "review_reason": "Independent runner administration and repository naming requests.",
+      "native_record_refs": [
+        "ccf1_03e21ec16ee3c1bb2e720e8f2f48a47a3f78cc10994bddb6d9bbe069b75d418d",
+        "ccf1_07f34b57e0f74616b99dd965747bf95c66fab7726d750959c4c85baa0c6c4aaf",
+        "ccf1_1811b5feb5e201d9b0ef9d3f5a15b978d1b04e096800bd4234b572ffa6118942",
+        "ccf1_2a01ec111d643c0dc4b4438e46fb3dcfc87a6189f3414da88ecd6d881bbb93da",
+        "ccf1_395efe8dfc023bf12610892534273a71cb8d446c6102cd98b9f026402c49efa8",
+        "ccf1_509d803fb65609a62367dcccf3e6e4ad77543e1a2988bb7e3c7376128c9fcb4f",
+        "ccf1_55ada3d3d70e3148852ea4e7db2cf9ffa4f21fb2bbdb4b21d55c4d1ea3c59640",
+        "ccf1_5830fb0d118565410c443f1d3a98a199f2503a6f79d97df2a1e4b465a435f7da",
+        "ccf1_59f02c7bb951161e8b962191978901357c94d77b8b1580082262dc673dd6cc3b",
+        "ccf1_d55ff52c9c01f47f34835cda75adfc4d40c5aed47918eb8dab283ee53720e58e",
+        "ccf1_fc7c00aee0950502242f5903ba77942d2623d390c2059dad5552d0923af68718"
+      ],
+      "evidence_ref": "ccf1_e5e5a959138256342bb71b7752b298f5c2acedc5ed9ddedc53953167da9eccc9",
+      "target_fact_refs": [
+        "ccf1_2164cc89293d9bb52fd6cabdc2789fb595b6faf4d10dca849e5eb83aee579000",
+        "ccf1_3a884a72c5bdc33435a0ee7f33b3e3243fb9d5c8c5a8286998971d9e6814d3f0",
+        "ccf1_5205496446b7e15c7720bc16c55cad1d8b6dcd498f72cadfbb39e95f66c9fcb7",
+        "ccf1_6827f4b558a3d5407f1ccbdf6045506f80365048607aacbf80a0325d8e8e3826",
+        "ccf1_695ab6947f04346ea223706ca9fa267a2c7aab753d0fc119174cdc38b840b7c1",
+        "ccf1_81540d8790f6e2f3eabfbb217e5f56ee09cd7a37f3a6c6c72d0334ed9dd8b460",
+        "ccf1_a5178b88e686c46b0545abfc5943dde8fc46e8c7a6509f3e1e8beab133f2445e",
+        "ccf1_c94f975f6758b8d90a6a3dc5c7dd255d9fcad36040014266210c36d0a94711a0"
+      ]
+    },
+    {
+      "native_scope_ref": "ccf1_f17828328b95c24a170d73f776a5704638f18570bd60f586f690b1d8b178452c",
+      "purpose": "none",
+      "review_reason": "The two reviewed requests maintain runtime/model defaults directly.",
+      "native_record_refs": [
+        "ccf1_070d6bf918b4e831a6b9a8b5795e0e2f8cd0e863613d5b302129d7be0f484114",
+        "ccf1_5e74361ede04697938faed3e9ce2b6b6cc3b8a836f25d94fefd02013b6ac6455",
+        "ccf1_67742053c28c0f886853251b31daf23967afb670aa852e55549228e553fc5f4c",
+        "ccf1_c50c4be328721a242cf3da6031f0a019b72ce159b41b9b359cdb8919df1f8e34",
+        "ccf1_d667f4edfc14f73f17df29f40cedf04f9ef1639ef58684368d4180abf822c69f",
+        "ccf1_f9396a39c74f0fd140a42857a326eb9646e3c3c8cb993301d5a35666da2bb41f",
+        "ccf1_fee981ee9daa151c1017fdc9b87903f2dce9af92eb22958e04cafeaa322b73be"
+      ],
+      "evidence_ref": "ccf1_352f610c9e57213ba0a85aa1ec215a00b5abb6f116525ce4ade97f062edff2ea",
+      "target_fact_refs": [
+        "ccf1_9b9d095445a000a32b8d17fc78ce5b351eed8a604014c7af6bc1fbb8f2e8f9d7",
+        "ccf1_e68f535da03dfc22ac1d0974a59966e404cf7d942fccdc6f463b23e81f2ff3ee"
+      ]
+    },
+    {
+      "native_scope_ref": "ccf1_fd8d9cda08489df55b46d5c7d5262c94a606fe638259a0250db8df5c35e8d439",
+      "purpose": "wi_20260928_219",
+      "review_reason": "Original explicit Asobi WI219 takeover and continuation requests.",
+      "native_record_refs": [
+        "ccf1_7aae6e2774a1b0cbc92b1d5ca68b988b276b531f5a0eee51c385ff48bc227949",
+        "ccf1_8cffe4b9b8266a2cbf5d874e74620a2482494717bd7ceafb5a44e44dee3c063b",
+        "ccf1_f1f1c5a1757e30a98406b3d3479ce363584d44244e3fec6652aa76cec535de0d"
+      ],
+      "evidence_ref": "ccf1_1d22885d320dffcf2814c1caa6d6c62ee7ea35dadb29146f6ba2b25da9baf3ef",
+      "target_fact_refs": [
+        "ccf1_bdd9ce3cb1367754084d0380d2d699dbe9cfcdbe70a1f9ea53b481ddb34fc2e1",
+        "ccf1_cf2877dd71ab256f431b8b879f8d67132bd8639b1cac9ddae3cc82da9f5396e7"
+      ]
+    }
+  ],
+  "expected": [
+    {
+      "entity_ref": "ccf1_12d08e81b5f766d3c99ed9860f91ecbcfae0afd4d22e9ba6a961a8f58ad03385",
+      "fact_ref": "ccf1_b803fd1d065bda709856d572b352f2ef8a5480c7d41dbc37be6e8d69baa8046c",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_1bee1b3044fda6c91ba97a44a5ab8227972b7d2d94d855315c0502b862b22dd7",
+      "fact_ref": "ccf1_6d35762673fa0c06ff09a61b042922529fa0964bb4986d7739c2d7170bd5866b",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_1ef02f8eeae874061b8aa951b714b83c2796360ec1816b591e658499ac78e4cb",
+      "fact_ref": "ccf1_81540d8790f6e2f3eabfbb217e5f56ee09cd7a37f3a6c6c72d0334ed9dd8b460",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_2d548f3c17315a9bfce19bec6e269d5151c726a0d951c9ed539a487772f95956",
+      "fact_ref": "ccf1_bdd9ce3cb1367754084d0380d2d699dbe9cfcdbe70a1f9ea53b481ddb34fc2e1",
+      "purpose": "wi_20260928_219",
+      "agent": "asobi",
+      "entrypoint": "cli"
+    },
+    {
+      "entity_ref": "ccf1_378a0fb91b247c593cc25d7408395cc39fa2a154f0092831b060fa0e84f9930b",
+      "fact_ref": "ccf1_35ce83a066afc5e135e0f7c358de83ffe717c07226ce137c6ef5894f69d69b00",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_38c61586d0c1c2d4841df589c5adf8bf299930b2bc93c5071783853c1a704d68",
+      "fact_ref": "ccf1_51f0e3d32f028a2b730185ead52e8b4856dadbb55a272b99f702fa1ff10bb660",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_3dd0ab043a1194bcb34790bfdfe40fad310c1cd9a10064cf9a99f9d852f41ebc",
+      "fact_ref": "ccf1_2044f784a3ce9c4505c0cc978c96d1ad4f12ccc360d090a8171d0d7b9bd7e260",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_3eea5ce5502194908561a9d2cca0c706983922b867c6d57a543b0a17d903eefe",
+      "fact_ref": "ccf1_5205496446b7e15c7720bc16c55cad1d8b6dcd498f72cadfbb39e95f66c9fcb7",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_43fdf39680892ef05c75b767e54937761647b15811f4a5e12e77ff21cb36e2f4",
+      "fact_ref": "ccf1_2fbce8329c8cf899cb71ed588e0ba80e7e950cc4e92902da16174313870e3b30",
+      "purpose": "wi_20260825_300",
+      "agent": "pulse",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_48c43d51864cc961eaf3055bdf940641b507ff33b0c7527c757f5abc50cb745e",
+      "fact_ref": "ccf1_4c65c5b0d1322c8998073545c3311f90e695c9de594b026eb15561963713da03",
+      "purpose": "wi_20260928_219",
+      "agent": "asobi",
+      "entrypoint": null
+    },
+    {
+      "entity_ref": "ccf1_4a16f560713ac029d6c406cd606b10b9fa49fcb866c99dc54937173883bda2f4",
+      "fact_ref": "ccf1_198be0f0b68520ff81570ebaba990e85a7fdbbf65f0e6bc8438a43e4869f5344",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_51411ed0337639fa66e1c7f3d79653dff1566813e5c3e53861e9542f83c1a944",
+      "fact_ref": "ccf1_e8726bc9befa90a7b7fcf5ee1e677802e24dbb4bfb2618457c6583388ea285d0",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_6a259120091d1b2f3abaed33919225f6c6063e3461df7cd80f29f24acefb0b5a",
+      "fact_ref": "ccf1_3a884a72c5bdc33435a0ee7f33b3e3243fb9d5c8c5a8286998971d9e6814d3f0",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_7c296f1d425efe5ac1504be95e7e82d3b04e24c6f0cb9ef34eff1245364ba3e2",
+      "fact_ref": "ccf1_6827f4b558a3d5407f1ccbdf6045506f80365048607aacbf80a0325d8e8e3826",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_7d74810802439e13e1689a9fb47c9d65889d5244ddb1b1bec535b1c63ed7a5ed",
+      "fact_ref": "ccf1_a16e2ae586195435973fe2cdcb697b58298fc2bbde679787564bd9e8fb114182",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_a0848d727778190682b60816e330a42325138d0b44315cc55c425094939cdbd7",
+      "fact_ref": "ccf1_11a7ff5158344a359c40956254f4736e2bdcd14b776a316241aa1c663179ae1a",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_aa6b042b9fda129f8cdf6058725840015c6b470e434318a11e72dc7924f291f8",
+      "fact_ref": "ccf1_cf2877dd71ab256f431b8b879f8d67132bd8639b1cac9ddae3cc82da9f5396e7",
+      "purpose": "wi_20260928_219",
+      "agent": "asobi",
+      "entrypoint": "cli"
+    },
+    {
+      "entity_ref": "ccf1_b089503800d48076cd32813b38a4243ba0ba2a3ec8bae865566175a7906917b8",
+      "fact_ref": "ccf1_e68f535da03dfc22ac1d0974a59966e404cf7d942fccdc6f463b23e81f2ff3ee",
+      "purpose": "none",
+      "agent": "pulse",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_b444b35d322b81ec216665bf67c75a08611fbb42df0bd1ae963d32d64d0e89c7",
+      "fact_ref": "ccf1_2164cc89293d9bb52fd6cabdc2789fb595b6faf4d10dca849e5eb83aee579000",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_c09c9c0e908410b97ccc4a87991d61e478e80c5cfd374ae2897f97cb3c773c74",
+      "fact_ref": "ccf1_5f661fc6d0f5599717894dad102cd7a6b7113d28f3db03485d45f7065d4cc20a",
+      "purpose": "wi_20260928_219",
+      "agent": "asobi",
+      "entrypoint": null
+    },
+    {
+      "entity_ref": "ccf1_c0aa3cdf18125f39e52033731e20d6c9e641322fa777ee487a6640fb2c992a97",
+      "fact_ref": "ccf1_35d3ffb6da38a78f838342df56ae6c34bb44eb7cbaa58f9e934acc822b2839df",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_ce40998f395dd95e96105ba1aabf1a0b649ebd3aabf9e1d48e6d7f04ad5ba478",
+      "fact_ref": "ccf1_ae949d5389afcdb7e2cf8a03266ba3d5a158459f8a87fc0fb6fb059534ba0b34",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_cedcd8cb00d904e95da7f5903646f68dfdbf3fc2085b05d5e6d7692d8402fafb",
+      "fact_ref": "ccf1_695ab6947f04346ea223706ca9fa267a2c7aab753d0fc119174cdc38b840b7c1",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_d0f660f13f8073a8530345fb00516571503005da8951806cdccc2b88f52ba6f2",
+      "fact_ref": "ccf1_2aff5f1fd85ec4ad203e291c3718607693d4bfc7e6c37c9f6bad1d83346683a6",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_d6ff654d051ef39a374a8bb25f8130c4732b302bec66aaa7343339c822fee960",
+      "fact_ref": "ccf1_86a26038a0613ed43ed656946a18adde44849e1ef44f9ee2a982a3b69635c36b",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_dcba8366054c0f01cfb6c3a7f206560debf0bd06141e0f5539c43c4717977ccc",
+      "fact_ref": "ccf1_b4d1487a5334685a4c264c705502dde13973d940c61c7a072a29420fc8da17fc",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_e1d23b32b4aa51c3e7465a5886bdb0e6914d56cf33fce0078e6e174265088196",
+      "fact_ref": "ccf1_a5178b88e686c46b0545abfc5943dde8fc46e8c7a6509f3e1e8beab133f2445e",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_ecaf5b9acd6621512d33f6df1ea27f22a163db969aa80041cdf81622aa0d49b4",
+      "fact_ref": "ccf1_c94f975f6758b8d90a6a3dc5c7dd255d9fcad36040014266210c36d0a94711a0",
+      "purpose": "none",
+      "agent": "hestia",
+      "entrypoint": "codex_app"
+    },
+    {
+      "entity_ref": "ccf1_fc19f2a2e064e4ce2314eee131ec6c469d99491325e4f6a2e65390b898efa92a",
+      "fact_ref": "ccf1_9b9d095445a000a32b8d17fc78ce5b351eed8a604014c7af6bc1fbb8f2e8f9d7",
+      "purpose": "none",
+      "agent": "pulse",
+      "entrypoint": "codex_app"
+    }
+  ],
+  "facts": [
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_2d548f3c17315a9bfce19bec6e269d5151c726a0d951c9ed539a487772f95956",
+      "fact_ref": "ccf1_bdd9ce3cb1367754084d0380d2d699dbe9cfcdbe70a1f9ea53b481ddb34fc2e1",
+      "occurred_at": "2026-09-29T01:27:21.636000Z",
+      "observed_at": "2026-09-29T01:40:09.423311Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-29T01:27:21.636000Z",
+        "interval_start": "2026-09-29T01:24:14.376000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_fd8d9cda08489df55b46d5c7d5262c94a606fe638259a0250db8df5c35e8d439",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 675840,
+          "input_tokens": 764946,
+          "output_tokens": 7553
+        },
+        "provider": null,
+        "reported_total_tokens": 772499,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 675840,
+          "cache_write": 0,
+          "output": 7553,
+          "uncached_input": 89106
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_c09c9c0e908410b97ccc4a87991d61e478e80c5cfd374ae2897f97cb3c773c74",
+      "fact_ref": "ccf1_5f661fc6d0f5599717894dad102cd7a6b7113d28f3db03485d45f7065d4cc20a",
+      "occurred_at": "2026-09-29T01:29:43Z",
+      "observed_at": "2026-09-29T01:40:09.423311Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-29T01:29:43Z",
+        "interval_start": "2026-09-29T01:29:39.436000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "codex-auto-review",
+        "native_scope_ref": "ccf1_bff42fb08f6147e0e9fd41c77009bdbe096aa7a47373ba15710271a50e3c6128",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 4864,
+          "input_tokens": 23956,
+          "output_tokens": 135
+        },
+        "provider": null,
+        "reported_total_tokens": 24091,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 4864,
+          "cache_write": 0,
+          "output": 135,
+          "uncached_input": 19092
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_48c43d51864cc961eaf3055bdf940641b507ff33b0c7527c757f5abc50cb745e",
+      "fact_ref": "ccf1_4c65c5b0d1322c8998073545c3311f90e695c9de594b026eb15561963713da03",
+      "occurred_at": "2026-09-29T01:32:14Z",
+      "observed_at": "2026-09-29T01:40:09.423311Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-29T01:32:14Z",
+        "interval_start": "2026-09-29T01:32:10.967000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "codex-auto-review",
+        "native_scope_ref": "ccf1_bff42fb08f6147e0e9fd41c77009bdbe096aa7a47373ba15710271a50e3c6128",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 28160,
+          "input_tokens": 59203,
+          "output_tokens": 237
+        },
+        "provider": null,
+        "reported_total_tokens": 35349,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 23296,
+          "cache_write": 0,
+          "output": 102,
+          "uncached_input": 11951
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_aa6b042b9fda129f8cdf6058725840015c6b470e434318a11e72dc7924f291f8",
+      "fact_ref": "ccf1_cf2877dd71ab256f431b8b879f8d67132bd8639b1cac9ddae3cc82da9f5396e7",
+      "occurred_at": "2026-09-29T01:34:44.234000Z",
+      "observed_at": "2026-09-29T01:40:09.423311Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-29T01:34:44.234000Z",
+        "interval_start": "2026-09-29T01:28:44.269000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_fd8d9cda08489df55b46d5c7d5262c94a606fe638259a0250db8df5c35e8d439",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 2835712,
+          "input_tokens": 2966574,
+          "output_tokens": 18124
+        },
+        "provider": null,
+        "reported_total_tokens": 2212199,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 2159872,
+          "cache_write": 0,
+          "output": 10571,
+          "uncached_input": 41756
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_6a259120091d1b2f3abaed33919225f6c6063e3461df7cd80f29f24acefb0b5a",
+      "fact_ref": "ccf1_3a884a72c5bdc33435a0ee7f33b3e3243fb9d5c8c5a8286998971d9e6814d3f0",
+      "occurred_at": "2026-09-29T01:41:01.203000Z",
+      "observed_at": "2026-09-29T01:40:09.423311Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-29T01:41:01.203000Z",
+        "interval_start": "2026-09-29T01:36:06.977000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_cc82f2d8eb0cfe5f270af29cab5cddd6d209dab9f3043a220c6e1bb612bca711",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 1664000,
+          "input_tokens": 1762473,
+          "output_tokens": 8110
+        },
+        "provider": null,
+        "reported_total_tokens": 1770583,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 1664000,
+          "cache_write": 0,
+          "output": 8110,
+          "uncached_input": 98473
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_46d889a6d99477676177ea1ca03bb5ec2922c4d763a265e3f5626c7a2edb2484",
+      "fact_ref": "ccf1_9d457bb177599043e096bedbec2271a1e43a649a392c244dd6f2857b792f1edf",
+      "occurred_at": "2026-09-29T01:24:14.376000Z",
+      "observed_at": "2026-09-29T01:40:09.423311Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_898368d8145d1829eee91e3f140c5f4882c24f431fe658134adb36a2844d3d50",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": null,
+          "node": "ownermac",
+          "workspace_ref": "ccf1_81e8a0337b8b14e8b66ec21c2d1bd96e073cf0046dc8b81f435a8be8ff17a739"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-29T01:24:14.376000Z",
+        "executor": "asobi",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_2d548f3c17315a9bfce19bec6e269d5151c726a0d951c9ed539a487772f95956",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_89ea1c829e1322389c9f9e02d2b56660d0871b65035b14a873c5299b5b1469aa",
+      "fact_ref": "ccf1_cec3b172588d93200dc3f2d9e0289e38dcc0f7d257c54338659e688fa21fb739",
+      "occurred_at": "2026-09-29T01:29:39.436000Z",
+      "observed_at": "2026-09-29T01:40:09.423311Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_81ba1b7553c93b15fb1c1278010cd1aa2e0459a03371f6cab551582ecc047dc1",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": null,
+          "node": "ownermac",
+          "workspace_ref": "ccf1_81e8a0337b8b14e8b66ec21c2d1bd96e073cf0046dc8b81f435a8be8ff17a739"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-29T01:29:39.436000Z",
+        "executor": "asobi",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_c09c9c0e908410b97ccc4a87991d61e478e80c5cfd374ae2897f97cb3c773c74",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_df6a635b1395562c15c404ac151217ce6f4d45ad24467506c5d3175fe8c395ae",
+      "fact_ref": "ccf1_b52a9018071f4523eb772c818d1d624b5cc485b20e1407f086179424086bd211",
+      "occurred_at": "2026-09-29T01:32:10.967000Z",
+      "observed_at": "2026-09-29T01:40:09.423311Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_81ba1b7553c93b15fb1c1278010cd1aa2e0459a03371f6cab551582ecc047dc1",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": null,
+          "node": "ownermac",
+          "workspace_ref": "ccf1_81e8a0337b8b14e8b66ec21c2d1bd96e073cf0046dc8b81f435a8be8ff17a739"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-29T01:32:10.967000Z",
+        "executor": "asobi",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_48c43d51864cc961eaf3055bdf940641b507ff33b0c7527c757f5abc50cb745e",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_8107e55200e1055906f88a487fd6d986019598451e8cbe1a5d53699fae9398bc",
+      "fact_ref": "ccf1_e1714425207e2ecb2e29324c4e022b16b461199f2ba6d02b45e13c07c49df7af",
+      "occurred_at": "2026-09-29T01:28:44.269000Z",
+      "observed_at": "2026-09-29T01:40:09.423311Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_898368d8145d1829eee91e3f140c5f4882c24f431fe658134adb36a2844d3d50",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": null,
+          "node": "ownermac",
+          "workspace_ref": "ccf1_81e8a0337b8b14e8b66ec21c2d1bd96e073cf0046dc8b81f435a8be8ff17a739"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-29T01:28:44.269000Z",
+        "executor": "asobi",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_aa6b042b9fda129f8cdf6058725840015c6b470e434318a11e72dc7924f291f8",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_e6b581e24c7203c63fd73dcc061756055ff71ff95ac2800884f4a39eeb7f938f",
+      "fact_ref": "ccf1_0933e75d2bc12880c3008d040f6c6969083a7ce7e2955f2b81b13a7197baf7ca",
+      "occurred_at": "2026-09-29T01:36:06.977000Z",
+      "observed_at": "2026-09-29T01:40:09.423311Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_22bca3e328d0c987dda5ae87b5438a2065e73965b190b55276a05d39437137f4",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-29T01:36:06.977000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_6a259120091d1b2f3abaed33919225f6c6063e3461df7cd80f29f24acefb0b5a",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_43fdf39680892ef05c75b767e54937761647b15811f4a5e12e77ff21cb36e2f4",
+      "fact_ref": "ccf1_2fbce8329c8cf899cb71ed588e0ba80e7e950cc4e92902da16174313870e3b30",
+      "occurred_at": "2026-09-29T02:01:30.750000Z",
+      "observed_at": "2026-09-29T02:04:00.965352Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-29T02:01:30.750000Z",
+        "interval_start": "2026-09-29T02:00:54.218000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_1c86a64212dbf3940695d92abad6ffdd1bde50a1227f3dea96fc406c21e60729",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 124800,
+          "input_tokens": 157577,
+          "output_tokens": 516
+        },
+        "provider": null,
+        "reported_total_tokens": 158093,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 124800,
+          "cache_write": 0,
+          "output": 516,
+          "uncached_input": 32777
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_323a456f8d0958e77166975760a08724cf3c236a72f9eee4d1332c31dea63ab0",
+      "fact_ref": "ccf1_7f6d87171a4e16e67fc685b10d2af19aea3bc88f36ac5df06933261fe684b9d6",
+      "occurred_at": "2026-09-29T02:00:54.218000Z",
+      "observed_at": "2026-09-29T02:04:00.965352Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1",
+        "ccf1_d387c9394c3a9a68565e81822c4808a4c460d5ee3c6a57dbc90a0bd8075f3286"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_58ecafb920476ef5170c3418fdae6a45a71f3ed8183bb0234c9f7dbab92cf0fa"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-29T02:00:54.218000Z",
+        "executor": "pulse",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_43fdf39680892ef05c75b767e54937761647b15811f4a5e12e77ff21cb36e2f4",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_b444b35d322b81ec216665bf67c75a08611fbb42df0bd1ae963d32d64d0e89c7",
+      "fact_ref": "ccf1_2164cc89293d9bb52fd6cabdc2789fb595b6faf4d10dca849e5eb83aee579000",
+      "occurred_at": "2026-09-29T02:13:49.877000Z",
+      "observed_at": "2026-09-29T02:27:29.701493Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-29T02:13:49.877000Z",
+        "interval_start": "2026-09-29T02:13:37.196000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_cc82f2d8eb0cfe5f270af29cab5cddd6d209dab9f3043a220c6e1bb612bca711",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 1664000,
+          "input_tokens": 1762473,
+          "output_tokens": 8110
+        },
+        "provider": null,
+        "reported_total_tokens": 0,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 0,
+          "cache_write": 0,
+          "output": 0,
+          "uncached_input": 0
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_7c296f1d425efe5ac1504be95e7e82d3b04e24c6f0cb9ef34eff1245364ba3e2",
+      "fact_ref": "ccf1_6827f4b558a3d5407f1ccbdf6045506f80365048607aacbf80a0325d8e8e3826",
+      "occurred_at": "2026-09-29T02:16:29.513000Z",
+      "observed_at": "2026-09-29T02:27:29.701493Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1",
+        "ccf1_fad462d6731022a20130164470680b806596e79a75e018c9962dee0f4016dbcc"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-29T02:16:29.513000Z",
+        "interval_start": "2026-09-29T02:13:57.085000Z",
+        "mapping": "codex_rollout_paginated.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_cc82f2d8eb0cfe5f270af29cab5cddd6d209dab9f3043a220c6e1bb612bca711",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 2655488,
+          "input_tokens": 2778697,
+          "output_tokens": 13718
+        },
+        "provider": null,
+        "reported_total_tokens": 1021832,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 991488,
+          "cache_write": 0,
+          "output": 5608,
+          "uncached_input": 24736
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_ea3095c1c2251e3be03d2420bec0b570fdaed8fda97e2bb1f208490bb5eb84a0",
+      "fact_ref": "ccf1_29208df51655356bf1e567f1034edc91d05b8330ebbc37fdc2b8438904b70e3f",
+      "occurred_at": "2026-09-29T02:13:37.196000Z",
+      "observed_at": "2026-09-29T02:27:29.701493Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_22bca3e328d0c987dda5ae87b5438a2065e73965b190b55276a05d39437137f4",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-29T02:13:37.196000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_b444b35d322b81ec216665bf67c75a08611fbb42df0bd1ae963d32d64d0e89c7",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_1b0dc9805ab79dbc93127f0fe91bc608f047993087a9e32a2bab411f9d257129",
+      "fact_ref": "ccf1_20d3383957db3f5ba4905d55620c93bf25246dd3fbd56f9ed2ceb250c775d015",
+      "occurred_at": "2026-09-29T02:13:57.085000Z",
+      "observed_at": "2026-09-29T02:27:29.701493Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_77e27c7acf6b7cad64fa20a3f894ff08cc29554f2d2e0ed96333b3b6b7c0b4a7",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-29T02:13:57.085000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_7c296f1d425efe5ac1504be95e7e82d3b04e24c6f0cb9ef34eff1245364ba3e2",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_a0848d727778190682b60816e330a42325138d0b44315cc55c425094939cdbd7",
+      "fact_ref": "ccf1_11a7ff5158344a359c40956254f4736e2bdcd14b776a316241aa1c663179ae1a",
+      "occurred_at": "2026-09-29T02:59:57.141000Z",
+      "observed_at": "2026-09-29T03:15:33.940893Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-29T02:59:57.141000Z",
+        "interval_start": "2026-09-28T13:52:38.829000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_007d52f2d3817f9dc80a0de476aaed219dc9651421fca912c4eb81cb7372e48b",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 13430528,
+          "input_tokens": 13945554,
+          "output_tokens": 40532
+        },
+        "provider": null,
+        "reported_total_tokens": 4234129,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 3996928,
+          "cache_write": 0,
+          "output": 11755,
+          "uncached_input": 225446
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_24ba8a1b529549725379a5fdbd6e3c2eaf31c35b7f2c2c5a35fab836a1f00636",
+      "fact_ref": "ccf1_8e384bd3284c17824bf66439dda8a7c8305953ac729bfd95d6985e4c2a500ea7",
+      "occurred_at": "2026-09-28T13:52:38.829000Z",
+      "observed_at": "2026-09-29T03:15:33.940893Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_81fdfaa68a31a71570f33a994af45d8e69d172f019a3d9fe713025c543873e19",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-28T13:52:38.829000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_a0848d727778190682b60816e330a42325138d0b44315cc55c425094939cdbd7",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_1bee1b3044fda6c91ba97a44a5ab8227972b7d2d94d855315c0502b862b22dd7",
+      "fact_ref": "ccf1_83ca8a0789867904ca3deef05d5986d2ed95a763e511fc5c55c34bad2d8f60ec",
+      "occurred_at": "2026-09-29T04:02:44.692000Z",
+      "observed_at": "2026-09-29T04:01:25.282482Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-29T04:02:44.692000Z",
+        "interval_start": "2026-09-29T03:56:05.481000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_007d52f2d3817f9dc80a0de476aaed219dc9651421fca912c4eb81cb7372e48b",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 15619968,
+          "input_tokens": 16191565,
+          "output_tokens": 51481
+        },
+        "provider": null,
+        "reported_total_tokens": 2256960,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 2189440,
+          "cache_write": 0,
+          "output": 10949,
+          "uncached_input": 56571
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_fb0555329ec793169bc10c8c98b69c02ee10181ff82ad55e1ccd4d3b87945180",
+      "fact_ref": "ccf1_7053e7d56879bd92a194d8386bc7038303c16d6a25ffec4c122cbf6fde5f19dd",
+      "occurred_at": "2026-09-29T03:56:05.481000Z",
+      "observed_at": "2026-09-29T04:01:25.282482Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_81fdfaa68a31a71570f33a994af45d8e69d172f019a3d9fe713025c543873e19",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-29T03:56:05.481000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_1bee1b3044fda6c91ba97a44a5ab8227972b7d2d94d855315c0502b862b22dd7",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_1bee1b3044fda6c91ba97a44a5ab8227972b7d2d94d855315c0502b862b22dd7",
+      "fact_ref": "ccf1_6d35762673fa0c06ff09a61b042922529fa0964bb4986d7739c2d7170bd5866b",
+      "occurred_at": "2026-09-29T04:10:12.248000Z",
+      "observed_at": "2026-09-29T04:25:50.515780Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": "ccf1_83ca8a0789867904ca3deef05d5986d2ed95a763e511fc5c55c34bad2d8f60ec",
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-29T04:10:12.248000Z",
+        "interval_start": "2026-09-29T03:56:05.481000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_007d52f2d3817f9dc80a0de476aaed219dc9651421fca912c4eb81cb7372e48b",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 19063680,
+          "input_tokens": 19670449,
+          "output_tokens": 67164
+        },
+        "provider": null,
+        "reported_total_tokens": 5751527,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 5633152,
+          "cache_write": 0,
+          "output": 26632,
+          "uncached_input": 91743
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_dcba8366054c0f01cfb6c3a7f206560debf0bd06141e0f5539c43c4717977ccc",
+      "fact_ref": "ccf1_2b3f974116d8c9600a52da64f404b43e47d139a4b647e26e9498c1902951399c",
+      "occurred_at": "2026-09-29T05:35:46.487000Z",
+      "observed_at": "2026-09-29T05:34:54.195947Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-29T05:35:46.487000Z",
+        "interval_start": "2026-09-29T05:30:38.418000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_007d52f2d3817f9dc80a0de476aaed219dc9651421fca912c4eb81cb7372e48b",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 21945344,
+          "input_tokens": 22688473,
+          "output_tokens": 77352
+        },
+        "provider": null,
+        "reported_total_tokens": 3028212,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 2881664,
+          "cache_write": 0,
+          "output": 10188,
+          "uncached_input": 136360
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_af7acac93c629699fba1c2b61a7d6f8d105e17b296d69dfbe1a0178e69c57d60",
+      "fact_ref": "ccf1_5509cd914255ed03dede3e6c9119643be5647e2a93266591a03d1b6bb95bd9de",
+      "occurred_at": "2026-09-29T05:30:38.418000Z",
+      "observed_at": "2026-09-29T05:34:54.195947Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_81fdfaa68a31a71570f33a994af45d8e69d172f019a3d9fe713025c543873e19",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-29T05:30:38.418000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_dcba8366054c0f01cfb6c3a7f206560debf0bd06141e0f5539c43c4717977ccc",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_dcba8366054c0f01cfb6c3a7f206560debf0bd06141e0f5539c43c4717977ccc",
+      "fact_ref": "ccf1_b4d1487a5334685a4c264c705502dde13973d940c61c7a072a29420fc8da17fc",
+      "occurred_at": "2026-09-29T05:37:43.445000Z",
+      "observed_at": "2026-09-29T05:58:56.640945Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": "ccf1_2b3f974116d8c9600a52da64f404b43e47d139a4b647e26e9498c1902951399c",
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-29T05:37:43.445000Z",
+        "interval_start": "2026-09-29T05:30:38.418000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_007d52f2d3817f9dc80a0de476aaed219dc9651421fca912c4eb81cb7372e48b",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 22481920,
+          "input_tokens": 23229518,
+          "output_tokens": 82043
+        },
+        "provider": null,
+        "reported_total_tokens": 3573948,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 3418240,
+          "cache_write": 0,
+          "output": 14879,
+          "uncached_input": 140829
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_38c61586d0c1c2d4841df589c5adf8bf299930b2bc93c5071783853c1a704d68",
+      "fact_ref": "ccf1_51f0e3d32f028a2b730185ead52e8b4856dadbb55a272b99f702fa1ff10bb660",
+      "occurred_at": "2026-09-29T05:42:13.970000Z",
+      "observed_at": "2026-09-29T05:58:56.640945Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-29T05:42:13.970000Z",
+        "interval_start": "2026-09-29T05:40:57.192000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_007d52f2d3817f9dc80a0de476aaed219dc9651421fca912c4eb81cb7372e48b",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 23334144,
+          "input_tokens": 24091452,
+          "output_tokens": 84704
+        },
+        "provider": null,
+        "reported_total_tokens": 864595,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 852224,
+          "cache_write": 0,
+          "output": 2661,
+          "uncached_input": 9710
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_d6ff654d051ef39a374a8bb25f8130c4732b302bec66aaa7343339c822fee960",
+      "fact_ref": "ccf1_86a26038a0613ed43ed656946a18adde44849e1ef44f9ee2a982a3b69635c36b",
+      "occurred_at": "2026-09-29T05:45:37.777000Z",
+      "observed_at": "2026-09-29T05:58:56.640945Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-29T05:45:37.777000Z",
+        "interval_start": "2026-09-29T05:42:13.970000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_007d52f2d3817f9dc80a0de476aaed219dc9651421fca912c4eb81cb7372e48b",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 24562176,
+          "input_tokens": 25330615,
+          "output_tokens": 91291
+        },
+        "provider": null,
+        "reported_total_tokens": 1245750,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 1228032,
+          "cache_write": 0,
+          "output": 6587,
+          "uncached_input": 11131
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_29f2e394c05ebf2ba08c720140da968be6d6e748a5a502fcd7c711dd05797485",
+      "fact_ref": "ccf1_7827c6d98a9dd0ee8a5493e76520049a7604d08d6ea462eaabf5e8a02965f0a5",
+      "occurred_at": "2026-09-29T05:40:57.192000Z",
+      "observed_at": "2026-09-29T05:58:56.640945Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_81fdfaa68a31a71570f33a994af45d8e69d172f019a3d9fe713025c543873e19",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-29T05:40:57.192000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_38c61586d0c1c2d4841df589c5adf8bf299930b2bc93c5071783853c1a704d68",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_7560c65480da55fc52fb7835af98ba7c1ae894ee40ff2bd08cc4b53fdd8078e8",
+      "fact_ref": "ccf1_319c35300b6d6bd850e09a5b55d107d6102abdcd2cbccd5180f00334d153ce02",
+      "occurred_at": "2026-09-29T05:42:13.970000Z",
+      "observed_at": "2026-09-29T05:58:56.640945Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_81fdfaa68a31a71570f33a994af45d8e69d172f019a3d9fe713025c543873e19",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-29T05:42:13.970000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_d6ff654d051ef39a374a8bb25f8130c4732b302bec66aaa7343339c822fee960",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_d0f660f13f8073a8530345fb00516571503005da8951806cdccc2b88f52ba6f2",
+      "fact_ref": "ccf1_2aff5f1fd85ec4ad203e291c3718607693d4bfc7e6c37c9f6bad1d83346683a6",
+      "occurred_at": "2026-09-29T07:09:03.067000Z",
+      "observed_at": "2026-09-29T07:14:00.273611Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-29T07:09:03.067000Z",
+        "interval_start": "2026-09-29T07:07:32.238000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_007d52f2d3817f9dc80a0de476aaed219dc9651421fca912c4eb81cb7372e48b",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 25055744,
+          "input_tokens": 25991104,
+          "output_tokens": 93645
+        },
+        "provider": null,
+        "reported_total_tokens": 662843,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 493568,
+          "cache_write": 0,
+          "output": 2354,
+          "uncached_input": 166921
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_1807a72efa643f74daddca4fe3122415fc6219ef3ffccccbe17d0eabe5a73e35",
+      "fact_ref": "ccf1_915cfbfeb711e72d52dc03dd3dbd941ae53f3ca4db139f1f3d4a79a75482cda7",
+      "occurred_at": "2026-09-29T07:07:32.238000Z",
+      "observed_at": "2026-09-29T07:14:00.273611Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_81fdfaa68a31a71570f33a994af45d8e69d172f019a3d9fe713025c543873e19",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-29T07:07:32.238000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_d0f660f13f8073a8530345fb00516571503005da8951806cdccc2b88f52ba6f2",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_7d74810802439e13e1689a9fb47c9d65889d5244ddb1b1bec535b1c63ed7a5ed",
+      "fact_ref": "ccf1_a16e2ae586195435973fe2cdcb697b58298fc2bbde679787564bd9e8fb114182",
+      "occurred_at": "2026-09-30T02:25:27.549000Z",
+      "observed_at": "2026-09-30T02:32:06.684304Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T02:25:27.549000Z",
+        "interval_start": "2026-09-30T02:18:52.767000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_221f38fa1c85f03759dfacf007de0286977e1340c9b0c86426f64ec1a0e71ca2",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 1225344,
+          "input_tokens": 1299482,
+          "output_tokens": 10179
+        },
+        "provider": null,
+        "reported_total_tokens": 1309661,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 1225344,
+          "cache_write": 0,
+          "output": 10179,
+          "uncached_input": 74138
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_12d08e81b5f766d3c99ed9860f91ecbcfae0afd4d22e9ba6a961a8f58ad03385",
+      "fact_ref": "ccf1_4458e46dd476592c217bd2c4b5621b9bf634ef1fa4cc9205db7332065dfd79aa",
+      "occurred_at": "2026-09-30T02:32:39.330000Z",
+      "observed_at": "2026-09-30T02:32:06.684304Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T02:32:39.330000Z",
+        "interval_start": "2026-09-30T02:27:34.281000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_221f38fa1c85f03759dfacf007de0286977e1340c9b0c86426f64ec1a0e71ca2",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 1614976,
+          "input_tokens": 1706977,
+          "output_tokens": 19024
+        },
+        "provider": null,
+        "reported_total_tokens": 416340,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 389632,
+          "cache_write": 0,
+          "output": 8845,
+          "uncached_input": 17863
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_5d0ce10ed4bb2d4d0b7d4b9bc655dee4305a9e9f2073f757dad2c1b7390d6561",
+      "fact_ref": "ccf1_bd544a7aff1e6314e881a28aa7e1f76dd2f6bcbe6389f9c3a6547d06608eab95",
+      "occurred_at": "2026-09-30T02:18:52.767000Z",
+      "observed_at": "2026-09-30T02:32:06.684304Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1",
+        "ccf1_d4437475d9821507e033e366481d7687202b6a817769397e5e5c03fae974a9a3"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-30T02:18:52.767000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_7d74810802439e13e1689a9fb47c9d65889d5244ddb1b1bec535b1c63ed7a5ed",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_30ba9305a8b92b9dd926110b06f4b17ebfc4eb0457c39b0a822d8ec08cfc75a1",
+      "fact_ref": "ccf1_c4f193e24b17cedcce9cfe73caa5a87173efa32dd2597b7de8fe29eb80bb71fb",
+      "occurred_at": "2026-09-30T02:27:34.281000Z",
+      "observed_at": "2026-09-30T02:32:06.684304Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1",
+        "ccf1_d4437475d9821507e033e366481d7687202b6a817769397e5e5c03fae974a9a3"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-30T02:27:34.281000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_12d08e81b5f766d3c99ed9860f91ecbcfae0afd4d22e9ba6a961a8f58ad03385",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_12d08e81b5f766d3c99ed9860f91ecbcfae0afd4d22e9ba6a961a8f58ad03385",
+      "fact_ref": "ccf1_b803fd1d065bda709856d572b352f2ef8a5480c7d41dbc37be6e8d69baa8046c",
+      "occurred_at": "2026-09-30T02:47:21.890000Z",
+      "observed_at": "2026-09-30T02:55:35.382060Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": "ccf1_4458e46dd476592c217bd2c4b5621b9bf634ef1fa4cc9205db7332065dfd79aa",
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T02:47:21.890000Z",
+        "interval_start": "2026-09-30T02:27:34.281000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_221f38fa1c85f03759dfacf007de0286977e1340c9b0c86426f64ec1a0e71ca2",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 3388032,
+          "input_tokens": 3532901,
+          "output_tokens": 42195
+        },
+        "provider": null,
+        "reported_total_tokens": 2265435,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 2162688,
+          "cache_write": 0,
+          "output": 32016,
+          "uncached_input": 70731
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_51411ed0337639fa66e1c7f3d79653dff1566813e5c3e53861e9542f83c1a944",
+      "fact_ref": "ccf1_bb7280cd053bbbaa5de93059ca7a6cdffbe22d346c0a4d2ec60c1773f08999c0",
+      "occurred_at": "2026-09-30T03:17:55.655000Z",
+      "observed_at": "2026-09-30T03:18:37.805797Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T03:17:55.655000Z",
+        "interval_start": "2026-09-30T03:11:43.508000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_221f38fa1c85f03759dfacf007de0286977e1340c9b0c86426f64ec1a0e71ca2",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 3828736,
+          "input_tokens": 4043289,
+          "output_tokens": 49653
+        },
+        "provider": null,
+        "reported_total_tokens": 517846,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 440704,
+          "cache_write": 0,
+          "output": 7458,
+          "uncached_input": 69684
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_ac69f2a1eb46765e48b3ab4d81e86fdb2c4ac63eb52aa80dfa727965750c67f5",
+      "fact_ref": "ccf1_8798a3409646db44e41b413dee8f6442e2957ad129fd5cc78047e03d519ad44a",
+      "occurred_at": "2026-09-30T03:11:43.508000Z",
+      "observed_at": "2026-09-30T03:18:37.805797Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1",
+        "ccf1_d4437475d9821507e033e366481d7687202b6a817769397e5e5c03fae974a9a3"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-30T03:11:43.508000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_51411ed0337639fa66e1c7f3d79653dff1566813e5c3e53861e9542f83c1a944",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_51411ed0337639fa66e1c7f3d79653dff1566813e5c3e53861e9542f83c1a944",
+      "fact_ref": "ccf1_067c1536a00e052710cc31df8d5affcb01806f6addc2d66ce632a47088698c42",
+      "occurred_at": "2026-09-30T03:43:16.287000Z",
+      "observed_at": "2026-09-30T03:41:57.394201Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": "ccf1_bb7280cd053bbbaa5de93059ca7a6cdffbe22d346c0a4d2ec60c1773f08999c0",
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T03:43:16.287000Z",
+        "interval_start": "2026-09-30T03:11:43.508000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_221f38fa1c85f03759dfacf007de0286977e1340c9b0c86426f64ec1a0e71ca2",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 6278784,
+          "input_tokens": 6550421,
+          "output_tokens": 74266
+        },
+        "provider": null,
+        "reported_total_tokens": 3049591,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 2890752,
+          "cache_write": 0,
+          "output": 32071,
+          "uncached_input": 126768
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_51411ed0337639fa66e1c7f3d79653dff1566813e5c3e53861e9542f83c1a944",
+      "fact_ref": "ccf1_e8726bc9befa90a7b7fcf5ee1e677802e24dbb4bfb2618457c6583388ea285d0",
+      "occurred_at": "2026-09-30T04:03:39.929000Z",
+      "observed_at": "2026-09-30T04:05:16.075292Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": "ccf1_067c1536a00e052710cc31df8d5affcb01806f6addc2d66ce632a47088698c42",
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T04:03:39.929000Z",
+        "interval_start": "2026-09-30T03:11:43.508000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_221f38fa1c85f03759dfacf007de0286977e1340c9b0c86426f64ec1a0e71ca2",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 7688320,
+          "input_tokens": 8029115,
+          "output_tokens": 96907
+        },
+        "provider": null,
+        "reported_total_tokens": 4550926,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 4300288,
+          "cache_write": 0,
+          "output": 54712,
+          "uncached_input": 195926
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_c0aa3cdf18125f39e52033731e20d6c9e641322fa777ee487a6640fb2c992a97",
+      "fact_ref": "ccf1_35d3ffb6da38a78f838342df56ae6c34bb44eb7cbaa58f9e934acc822b2839df",
+      "occurred_at": "2026-09-30T04:29:56.809000Z",
+      "observed_at": "2026-09-30T04:52:12.478734Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T04:29:56.809000Z",
+        "interval_start": "2026-09-30T04:28:40.547000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_221f38fa1c85f03759dfacf007de0286977e1340c9b0c86426f64ec1a0e71ca2",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 7770880,
+          "input_tokens": 8115360,
+          "output_tokens": 98429
+        },
+        "provider": null,
+        "reported_total_tokens": 87767,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 82560,
+          "cache_write": 0,
+          "output": 1522,
+          "uncached_input": 3685
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_ce40998f395dd95e96105ba1aabf1a0b649ebd3aabf9e1d48e6d7f04ad5ba478",
+      "fact_ref": "ccf1_ae949d5389afcdb7e2cf8a03266ba3d5a158459f8a87fc0fb6fb059534ba0b34",
+      "occurred_at": "2026-09-30T04:38:07.901000Z",
+      "observed_at": "2026-09-30T04:52:12.478734Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T04:38:07.901000Z",
+        "interval_start": "2026-09-30T04:30:51.026000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_221f38fa1c85f03759dfacf007de0286977e1340c9b0c86426f64ec1a0e71ca2",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 8713856,
+          "input_tokens": 9076590,
+          "output_tokens": 106800
+        },
+        "provider": null,
+        "reported_total_tokens": 969601,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 942976,
+          "cache_write": 0,
+          "output": 8371,
+          "uncached_input": 18254
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_a8a36a534cf6ff038d54a522dd56d43a2e1a1f5d17096048d7d165d291c0522f",
+      "fact_ref": "ccf1_4e95df5aa86762d5e1ddf6321d5e17b2ab382d39eb4b112a3571cd3c2f01c0c1",
+      "occurred_at": "2026-09-30T04:28:40.547000Z",
+      "observed_at": "2026-09-30T04:52:12.478734Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1",
+        "ccf1_d4437475d9821507e033e366481d7687202b6a817769397e5e5c03fae974a9a3"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-30T04:28:40.547000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_c0aa3cdf18125f39e52033731e20d6c9e641322fa777ee487a6640fb2c992a97",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_785fb7df509381ba9fa03e832db2aa0ddd1fa66f2f6169cdf97ccf491a48e8ef",
+      "fact_ref": "ccf1_b5f3f87110bd5fbb9ce230ff5f2504e171dc931a8d1790428ad7cf68d3f22253",
+      "occurred_at": "2026-09-30T04:30:51.026000Z",
+      "observed_at": "2026-09-30T04:52:12.478734Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1",
+        "ccf1_d4437475d9821507e033e366481d7687202b6a817769397e5e5c03fae974a9a3"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-30T04:30:51.026000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_ce40998f395dd95e96105ba1aabf1a0b649ebd3aabf9e1d48e6d7f04ad5ba478",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_4a16f560713ac029d6c406cd606b10b9fa49fcb866c99dc54937173883bda2f4",
+      "fact_ref": "ccf1_0c6f2776cee145fb71683c042ab8893b2f1a131d58dca0021e69409c7006d424",
+      "occurred_at": "2026-09-30T05:38:34.979000Z",
+      "observed_at": "2026-09-30T05:39:37.786086Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T05:38:34.979000Z",
+        "interval_start": "2026-09-30T05:24:03.060000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_221f38fa1c85f03759dfacf007de0286977e1340c9b0c86426f64ec1a0e71ca2",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 11549824,
+          "input_tokens": 12059229,
+          "output_tokens": 121902
+        },
+        "provider": null,
+        "reported_total_tokens": 2997741,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 2835968,
+          "cache_write": 0,
+          "output": 15102,
+          "uncached_input": 146671
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_7c7d39876217235071e19683f4c8810ebde390a50aa9449d2d08f6f2fd5993b5",
+      "fact_ref": "ccf1_d5c2264d17db97e29a5c006171bc8067eed6a32faaa4086edf098a2d487962f2",
+      "occurred_at": "2026-09-30T05:24:03.060000Z",
+      "observed_at": "2026-09-30T05:39:37.786086Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1",
+        "ccf1_d4437475d9821507e033e366481d7687202b6a817769397e5e5c03fae974a9a3"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-30T05:24:03.060000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_4a16f560713ac029d6c406cd606b10b9fa49fcb866c99dc54937173883bda2f4",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_b089503800d48076cd32813b38a4243ba0ba2a3ec8bae865566175a7906917b8",
+      "fact_ref": "ccf1_98029de6b51d2b225be2b94f475d286ec189e282a794caa701c6ea2bb4e16137",
+      "occurred_at": "2026-09-30T06:04:31.489000Z",
+      "observed_at": "2026-09-30T06:03:43.211845Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T06:04:31.489000Z",
+        "interval_start": "2026-09-30T06:02:46.061000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_f17828328b95c24a170d73f776a5704638f18570bd60f586f690b1d8b178452c",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 32471168,
+          "input_tokens": 32979190,
+          "output_tokens": 74502
+        },
+        "provider": null,
+        "reported_total_tokens": 954110,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 809472,
+          "cache_write": 0,
+          "output": 1476,
+          "uncached_input": 143162
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_4a16f560713ac029d6c406cd606b10b9fa49fcb866c99dc54937173883bda2f4",
+      "fact_ref": "ccf1_cd54ef955ca8d3c76a987fac06ef636288a123f3d56c3764c8d48c09ee28f257",
+      "occurred_at": "2026-09-30T06:05:04.006000Z",
+      "observed_at": "2026-09-30T06:03:43.211845Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": "ccf1_0c6f2776cee145fb71683c042ab8893b2f1a131d58dca0021e69409c7006d424",
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T06:05:04.006000Z",
+        "interval_start": "2026-09-30T05:24:03.060000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_221f38fa1c85f03759dfacf007de0286977e1340c9b0c86426f64ec1a0e71ca2",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 15945600,
+          "input_tokens": 16599182,
+          "output_tokens": 140788
+        },
+        "provider": null,
+        "reported_total_tokens": 7556580,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 7231744,
+          "cache_write": 0,
+          "output": 33988,
+          "uncached_input": 290848
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_e27311055a64fb141c88dba3b2a9db64966c549df688095fe7e89af0078c87a5",
+      "fact_ref": "ccf1_105124402993812168dc71d652a6d5c100bc2b9d6f4ea75021b89c2e48e278f0",
+      "occurred_at": "2026-09-30T06:02:46.061000Z",
+      "observed_at": "2026-09-30T06:03:43.211845Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_360a02035c97ca1daf9ff52b23587bca7916456f62d80d10094e322894205b20",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_58ecafb920476ef5170c3418fdae6a45a71f3ed8183bb0234c9f7dbab92cf0fa"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-30T06:02:46.061000Z",
+        "executor": "pulse",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_b089503800d48076cd32813b38a4243ba0ba2a3ec8bae865566175a7906917b8",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_4a16f560713ac029d6c406cd606b10b9fa49fcb866c99dc54937173883bda2f4",
+      "fact_ref": "ccf1_198be0f0b68520ff81570ebaba990e85a7fdbbf65f0e6bc8438a43e4869f5344",
+      "occurred_at": "2026-09-30T06:12:28.899000Z",
+      "observed_at": "2026-09-30T06:28:00.060595Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": "ccf1_cd54ef955ca8d3c76a987fac06ef636288a123f3d56c3764c8d48c09ee28f257",
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T06:12:28.899000Z",
+        "interval_start": "2026-09-30T05:24:03.060000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_221f38fa1c85f03759dfacf007de0286977e1340c9b0c86426f64ec1a0e71ca2",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 17497088,
+          "input_tokens": 18330830,
+          "output_tokens": 145667
+        },
+        "provider": null,
+        "reported_total_tokens": 9293107,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 8783232,
+          "cache_write": 0,
+          "output": 38867,
+          "uncached_input": 471008
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_b089503800d48076cd32813b38a4243ba0ba2a3ec8bae865566175a7906917b8",
+      "fact_ref": "ccf1_51803c0f1f1bfd1ea66bb9e337f1d46cff4e96f8befa5014ee2cb0714be56265",
+      "occurred_at": "2026-09-30T06:29:12.205000Z",
+      "observed_at": "2026-09-30T06:28:00.060595Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": "ccf1_98029de6b51d2b225be2b94f475d286ec189e282a794caa701c6ea2bb4e16137",
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T06:29:12.205000Z",
+        "interval_start": "2026-09-30T06:02:46.061000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_f17828328b95c24a170d73f776a5704638f18570bd60f586f690b1d8b178452c",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 38084992,
+          "input_tokens": 38750602,
+          "output_tokens": 94101
+        },
+        "provider": null,
+        "reported_total_tokens": 6745121,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 6423296,
+          "cache_write": 0,
+          "output": 21075,
+          "uncached_input": 300750
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_b089503800d48076cd32813b38a4243ba0ba2a3ec8bae865566175a7906917b8",
+      "fact_ref": "ccf1_4540f80b7d3e6ea7b5f195add5ed50fda251958bac11b2e20215b554940ade99",
+      "occurred_at": "2026-09-30T06:52:50.916000Z",
+      "observed_at": "2026-09-30T06:51:59.610192Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": "ccf1_51803c0f1f1bfd1ea66bb9e337f1d46cff4e96f8befa5014ee2cb0714be56265",
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T06:52:50.916000Z",
+        "interval_start": "2026-09-30T06:02:46.061000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_f17828328b95c24a170d73f776a5704638f18570bd60f586f690b1d8b178452c",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 41763456,
+          "input_tokens": 42497018,
+          "output_tokens": 118804
+        },
+        "provider": null,
+        "reported_total_tokens": 10516240,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 10101760,
+          "cache_write": 0,
+          "output": 45778,
+          "uncached_input": 368702
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_b089503800d48076cd32813b38a4243ba0ba2a3ec8bae865566175a7906917b8",
+      "fact_ref": "ccf1_e68f535da03dfc22ac1d0974a59966e404cf7d942fccdc6f463b23e81f2ff3ee",
+      "occurred_at": "2026-09-30T07:08:43.673000Z",
+      "observed_at": "2026-09-30T07:16:53.134464Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": "ccf1_4540f80b7d3e6ea7b5f195add5ed50fda251958bac11b2e20215b554940ade99",
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T07:08:43.673000Z",
+        "interval_start": "2026-09-30T06:02:46.061000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_f17828328b95c24a170d73f776a5704638f18570bd60f586f690b1d8b178452c",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 44273280,
+          "input_tokens": 45161943,
+          "output_tokens": 136872
+        },
+        "provider": null,
+        "reported_total_tokens": 13199233,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 12611584,
+          "cache_write": 0,
+          "output": 63846,
+          "uncached_input": 523803
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_378a0fb91b247c593cc25d7408395cc39fa2a154f0092831b060fa0e84f9930b",
+      "fact_ref": "ccf1_35ce83a066afc5e135e0f7c358de83ffe717c07226ce137c6ef5894f69d69b00",
+      "occurred_at": "2026-09-30T07:11:30.056000Z",
+      "observed_at": "2026-09-30T07:16:53.134464Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T07:11:30.056000Z",
+        "interval_start": "2026-09-30T06:12:28.899000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_221f38fa1c85f03759dfacf007de0286977e1340c9b0c86426f64ec1a0e71ca2",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 18149120,
+          "input_tokens": 19120165,
+          "output_tokens": 147990
+        },
+        "provider": null,
+        "reported_total_tokens": 791658,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 652032,
+          "cache_write": 0,
+          "output": 2323,
+          "uncached_input": 137303
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_3dd0ab043a1194bcb34790bfdfe40fad310c1cd9a10064cf9a99f9d852f41ebc",
+      "fact_ref": "ccf1_4c4cb05ffebc361e59ebd4c027e7948fa4adba98ff63783d8a398bf1c92b7cc3",
+      "occurred_at": "2026-09-30T07:17:57.387000Z",
+      "observed_at": "2026-09-30T07:16:53.134464Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T07:17:57.387000Z",
+        "interval_start": "2026-09-30T07:16:01.986000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_221f38fa1c85f03759dfacf007de0286977e1340c9b0c86426f64ec1a0e71ca2",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 18994432,
+          "input_tokens": 19978455,
+          "output_tokens": 149975
+        },
+        "provider": null,
+        "reported_total_tokens": 860275,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 845312,
+          "cache_write": 0,
+          "output": 1985,
+          "uncached_input": 12978
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_fe31c0cd8170c54aa947bea48273f2189d7aae216a35c330a0ef755fd9c0bb34",
+      "fact_ref": "ccf1_50401e18b0d2ce4476ffc6f816e4dbb9782f5d21ef8c4b4ad77737e282f0c284",
+      "occurred_at": "2026-09-30T06:12:28.899000Z",
+      "observed_at": "2026-09-30T07:16:53.134464Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1",
+        "ccf1_d4437475d9821507e033e366481d7687202b6a817769397e5e5c03fae974a9a3"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-30T06:12:28.899000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_378a0fb91b247c593cc25d7408395cc39fa2a154f0092831b060fa0e84f9930b",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_2d0f62177b16f006891c81a2d0a1972bbedcb72167a4f8a3025125e21eb126ac",
+      "fact_ref": "ccf1_a14d467578e9d44d9a139d8721b9ebff6525fc1e1684435b9201829db9887603",
+      "occurred_at": "2026-09-30T07:16:01.986000Z",
+      "observed_at": "2026-09-30T07:16:53.134464Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1",
+        "ccf1_d4437475d9821507e033e366481d7687202b6a817769397e5e5c03fae974a9a3"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-30T07:16:01.986000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_3dd0ab043a1194bcb34790bfdfe40fad310c1cd9a10064cf9a99f9d852f41ebc",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_3dd0ab043a1194bcb34790bfdfe40fad310c1cd9a10064cf9a99f9d852f41ebc",
+      "fact_ref": "ccf1_2044f784a3ce9c4505c0cc978c96d1ad4f12ccc360d090a8171d0d7b9bd7e260",
+      "occurred_at": "2026-09-30T07:21:28.404000Z",
+      "observed_at": "2026-09-30T07:42:09.126928Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": "ccf1_4c4cb05ffebc361e59ebd4c027e7948fa4adba98ff63783d8a398bf1c92b7cc3",
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T07:21:28.404000Z",
+        "interval_start": "2026-09-30T07:16:01.986000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_221f38fa1c85f03759dfacf007de0286977e1340c9b0c86426f64ec1a0e71ca2",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 19212032,
+          "input_tokens": 20196924,
+          "output_tokens": 152747
+        },
+        "provider": null,
+        "reported_total_tokens": 1081516,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 1062912,
+          "cache_write": 0,
+          "output": 4757,
+          "uncached_input": 13847
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_fc19f2a2e064e4ce2314eee131ec6c469d99491325e4f6a2e65390b898efa92a",
+      "fact_ref": "ccf1_3135ecfe2fb6b081583a837023b1233fd0b9789f858eb079488316a54c4b9fb1",
+      "occurred_at": "2026-09-30T07:43:22.775000Z",
+      "observed_at": "2026-09-30T07:42:09.126928Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T07:43:22.775000Z",
+        "interval_start": "2026-09-30T07:31:19.707000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_f17828328b95c24a170d73f776a5704638f18570bd60f586f690b1d8b178452c",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 45516160,
+          "input_tokens": 46487494,
+          "output_tokens": 145541
+        },
+        "provider": null,
+        "reported_total_tokens": 1334220,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 1242880,
+          "cache_write": 0,
+          "output": 8669,
+          "uncached_input": 82671
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_2254de05bab33ae2d8dc83924beff2ef661c97581da01119a950edb9d87e154d",
+      "fact_ref": "ccf1_76322f294245b68c06b44756d3b8744bee5ba6cc122e308436849b1ff5b77415",
+      "occurred_at": "2026-09-30T07:31:19.707000Z",
+      "observed_at": "2026-09-30T07:42:09.126928Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_360a02035c97ca1daf9ff52b23587bca7916456f62d80d10094e322894205b20",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_58ecafb920476ef5170c3418fdae6a45a71f3ed8183bb0234c9f7dbab92cf0fa"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-30T07:31:19.707000Z",
+        "executor": "pulse",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_fc19f2a2e064e4ce2314eee131ec6c469d99491325e4f6a2e65390b898efa92a",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_fc19f2a2e064e4ce2314eee131ec6c469d99491325e4f6a2e65390b898efa92a",
+      "fact_ref": "ccf1_ebf97e0d1099fec0631922fc7e345f5b5589098f9f174f5a2429e2a4cb0d3f3a",
+      "occurred_at": "2026-09-30T07:55:26.829000Z",
+      "observed_at": "2026-09-30T07:54:29.477131Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": "ccf1_3135ecfe2fb6b081583a837023b1233fd0b9789f858eb079488316a54c4b9fb1",
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T07:55:26.829000Z",
+        "interval_start": "2026-09-30T07:31:19.707000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_f17828328b95c24a170d73f776a5704638f18570bd60f586f690b1d8b178452c",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 47986304,
+          "input_tokens": 49012620,
+          "output_tokens": 158601
+        },
+        "provider": null,
+        "reported_total_tokens": 3872406,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 3713024,
+          "cache_write": 0,
+          "output": 21729,
+          "uncached_input": 137653
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_fc19f2a2e064e4ce2314eee131ec6c469d99491325e4f6a2e65390b898efa92a",
+      "fact_ref": "ccf1_538c77bda54bba307991004e5855b97afd5e8b7cdb4dcfa5b84c3e3f50eaca19",
+      "occurred_at": "2026-09-30T08:20:10.469000Z",
+      "observed_at": "2026-09-30T08:18:49.517204Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": "ccf1_ebf97e0d1099fec0631922fc7e345f5b5589098f9f174f5a2429e2a4cb0d3f3a",
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T08:20:10.469000Z",
+        "interval_start": "2026-09-30T07:31:19.707000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_f17828328b95c24a170d73f776a5704638f18570bd60f586f690b1d8b178452c",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 53421952,
+          "input_tokens": 54603146,
+          "output_tokens": 186117
+        },
+        "provider": null,
+        "reported_total_tokens": 9490448,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 9148672,
+          "cache_write": 0,
+          "output": 49245,
+          "uncached_input": 292531
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_fc19f2a2e064e4ce2314eee131ec6c469d99491325e4f6a2e65390b898efa92a",
+      "fact_ref": "ccf1_9b9d095445a000a32b8d17fc78ce5b351eed8a604014c7af6bc1fbb8f2e8f9d7",
+      "occurred_at": "2026-09-30T08:37:02.828000Z",
+      "observed_at": "2026-09-30T08:45:05.330119Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": "ccf1_538c77bda54bba307991004e5855b97afd5e8b7cdb4dcfa5b84c3e3f50eaca19",
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T08:37:02.828000Z",
+        "interval_start": "2026-09-30T07:31:19.707000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6.1-sol",
+        "native_scope_ref": "ccf1_f17828328b95c24a170d73f776a5704638f18570bd60f586f690b1d8b178452c",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 56872704,
+          "input_tokens": 58148247,
+          "output_tokens": 202675
+        },
+        "provider": null,
+        "reported_total_tokens": 13052107,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 12599424,
+          "cache_write": 0,
+          "output": 65803,
+          "uncached_input": 386880
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_5f2f5e3988235ef85f0286c82ecce33c54fe7e309ac90d306d0c061697919a33",
+      "fact_ref": "ccf1_de1ec344752f4109b4f9b9698e2d01ce1f8f0d1602c78d926d45ee0247547d21",
+      "occurred_at": "2026-09-29T01:24:14.376000Z",
+      "observed_at": "2026-09-30T14:14:58.126622Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_898368d8145d1829eee91e3f140c5f4882c24f431fe658134adb36a2844d3d50",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "cli",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_81e8a0337b8b14e8b66ec21c2d1bd96e073cf0046dc8b81f435a8be8ff17a739"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-29T01:24:14.376000Z",
+        "executor": "asobi",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_2d548f3c17315a9bfce19bec6e269d5151c726a0d951c9ed539a487772f95956",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_cfe23926f04e2fda3172c201dff73a44ff0d982aa7430668c0162e58fbcef7d1",
+      "fact_ref": "ccf1_b3264b9798efe5771dde330614fc3e754ae01203a413e09675609865f343816a",
+      "occurred_at": "2026-09-29T01:28:44.269000Z",
+      "observed_at": "2026-09-30T14:14:58.126622Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_898368d8145d1829eee91e3f140c5f4882c24f431fe658134adb36a2844d3d50",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "cli",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_81e8a0337b8b14e8b66ec21c2d1bd96e073cf0046dc8b81f435a8be8ff17a739"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-29T01:28:44.269000Z",
+        "executor": "asobi",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_aa6b042b9fda129f8cdf6058725840015c6b470e434318a11e72dc7924f291f8",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_3eea5ce5502194908561a9d2cca0c706983922b867c6d57a543b0a17d903eefe",
+      "fact_ref": "ccf1_5205496446b7e15c7720bc16c55cad1d8b6dcd498f72cadfbb39e95f66c9fcb7",
+      "occurred_at": "2026-09-30T23:07:19.999000Z",
+      "observed_at": "2026-09-30T23:12:47.823541Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-09-30T23:07:19.999000Z",
+        "interval_start": "2026-09-30T23:02:49.956000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_cc82f2d8eb0cfe5f270af29cab5cddd6d209dab9f3043a220c6e1bb612bca711",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 4931072,
+          "input_tokens": 5235263,
+          "output_tokens": 23414
+        },
+        "provider": null,
+        "reported_total_tokens": 2466262,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 2275584,
+          "cache_write": 0,
+          "output": 9696,
+          "uncached_input": 180982
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_108a94561a4010fc997d0dca28fe6a18b0d5770b60cc42ae045a6606f1bd7057",
+      "fact_ref": "ccf1_cb271af1692b058ab05a28b5b1cce01f1bc7f56efce1161e0d279f7b42d93ae7",
+      "occurred_at": "2026-09-30T23:02:49.956000Z",
+      "observed_at": "2026-09-30T23:12:47.823541Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_77e27c7acf6b7cad64fa20a3f894ff08cc29554f2d2e0ed96333b3b6b7c0b4a7",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-09-30T23:02:49.956000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_3eea5ce5502194908561a9d2cca0c706983922b867c6d57a543b0a17d903eefe",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_ecaf5b9acd6621512d33f6df1ea27f22a163db969aa80041cdf81622aa0d49b4",
+      "fact_ref": "ccf1_7eda178600ef67f8c8264e8d2572806f406cb2c2012f5899d9c015e4b49b383c",
+      "occurred_at": "2026-10-01T01:06:27.791000Z",
+      "observed_at": "2026-10-01T01:05:19.559308Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-10-01T01:06:27.791000Z",
+        "interval_start": "2026-10-01T00:55:46.738000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_cc82f2d8eb0cfe5f270af29cab5cddd6d209dab9f3043a220c6e1bb612bca711",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 12359040,
+          "input_tokens": 12994392,
+          "output_tokens": 42089
+        },
+        "provider": null,
+        "reported_total_tokens": 7777804,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 7427968,
+          "cache_write": 0,
+          "output": 18675,
+          "uncached_input": 331161
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_d4eeecb850368da31c3fbc2d6e73f13e0d150f127128735b17d63c2d964097e2",
+      "fact_ref": "ccf1_43567d1c95cb4d50cb69b18cdb72efe6b5d739684f953a4eb987b9fa027db85f",
+      "occurred_at": "2026-10-01T00:55:46.738000Z",
+      "observed_at": "2026-10-01T01:05:19.559308Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_77e27c7acf6b7cad64fa20a3f894ff08cc29554f2d2e0ed96333b3b6b7c0b4a7",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-10-01T00:55:46.738000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_ecaf5b9acd6621512d33f6df1ea27f22a163db969aa80041cdf81622aa0d49b4",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_ecaf5b9acd6621512d33f6df1ea27f22a163db969aa80041cdf81622aa0d49b4",
+      "fact_ref": "ccf1_c94f975f6758b8d90a6a3dc5c7dd255d9fcad36040014266210c36d0a94711a0",
+      "occurred_at": "2026-10-01T01:06:57.584000Z",
+      "observed_at": "2026-10-01T01:28:36.856553Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": "ccf1_7eda178600ef67f8c8264e8d2572806f406cb2c2012f5899d9c015e4b49b383c",
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-10-01T01:06:57.584000Z",
+        "interval_start": "2026-10-01T00:55:46.738000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_cc82f2d8eb0cfe5f270af29cab5cddd6d209dab9f3043a220c6e1bb612bca711",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 12483456,
+          "input_tokens": 13120401,
+          "output_tokens": 43581
+        },
+        "provider": null,
+        "reported_total_tokens": 7905305,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 7552384,
+          "cache_write": 0,
+          "output": 20167,
+          "uncached_input": 332754
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_e1d23b32b4aa51c3e7465a5886bdb0e6914d56cf33fce0078e6e174265088196",
+      "fact_ref": "ccf1_a5178b88e686c46b0545abfc5943dde8fc46e8c7a6509f3e1e8beab133f2445e",
+      "occurred_at": "2026-10-01T01:25:22.587000Z",
+      "observed_at": "2026-10-01T01:28:36.856553Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-10-01T01:25:22.587000Z",
+        "interval_start": "2026-10-01T01:23:00.616000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_cc82f2d8eb0cfe5f270af29cab5cddd6d209dab9f3043a220c6e1bb612bca711",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 13685632,
+          "input_tokens": 14342676,
+          "output_tokens": 49312
+        },
+        "provider": null,
+        "reported_total_tokens": 1228006,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 1202176,
+          "cache_write": 0,
+          "output": 5731,
+          "uncached_input": 20099
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_cedcd8cb00d904e95da7f5903646f68dfdbf3fc2085b05d5e6d7692d8402fafb",
+      "fact_ref": "ccf1_4454edb551aad008d9e064622db5bde449478dc865c3f8b03d25d23036f278c3",
+      "occurred_at": "2026-10-01T01:29:39.300000Z",
+      "observed_at": "2026-10-01T01:28:36.856553Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-10-01T01:29:39.300000Z",
+        "interval_start": "2026-10-01T01:26:19.066000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_cc82f2d8eb0cfe5f270af29cab5cddd6d209dab9f3043a220c6e1bb612bca711",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 16827904,
+          "input_tokens": 17538136,
+          "output_tokens": 57121
+        },
+        "provider": null,
+        "reported_total_tokens": 3203269,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 3142272,
+          "cache_write": 0,
+          "output": 7809,
+          "uncached_input": 53188
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_87527df689eaa2c25bf2e833052812a6359996f7bce1c085b1c067b69c5d1309",
+      "fact_ref": "ccf1_b519ac3a6248244ee30fc92547e11c3279d6279fe5dcac812a0df3110dc0b5c1",
+      "occurred_at": "2026-10-01T01:23:00.616000Z",
+      "observed_at": "2026-10-01T01:28:36.856553Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_77e27c7acf6b7cad64fa20a3f894ff08cc29554f2d2e0ed96333b3b6b7c0b4a7",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-10-01T01:23:00.616000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_e1d23b32b4aa51c3e7465a5886bdb0e6914d56cf33fce0078e6e174265088196",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_2cdd948f780675987a80a5ce4a13f4d79241814951eaaa2eb8699cf8893ae1b0",
+      "fact_ref": "ccf1_4dff75c60e1a323fbf4e44ae6b25d487913a3f76624be08fc08dda057264c4aa",
+      "occurred_at": "2026-10-01T01:26:19.066000Z",
+      "observed_at": "2026-10-01T01:28:36.856553Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_77e27c7acf6b7cad64fa20a3f894ff08cc29554f2d2e0ed96333b3b6b7c0b4a7",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-10-01T01:26:19.066000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_cedcd8cb00d904e95da7f5903646f68dfdbf3fc2085b05d5e6d7692d8402fafb",
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_cedcd8cb00d904e95da7f5903646f68dfdbf3fc2085b05d5e6d7692d8402fafb",
+      "fact_ref": "ccf1_4afea05728a32f610716a95487b85b279f51687a9ef5c9079a20cef01df63e8f",
+      "occurred_at": "2026-10-01T01:49:05.142000Z",
+      "observed_at": "2026-10-01T01:47:42.388836Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": "ccf1_4454edb551aad008d9e064622db5bde449478dc865c3f8b03d25d23036f278c3",
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": false,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-10-01T01:49:05.142000Z",
+        "interval_start": "2026-10-01T01:26:19.066000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_cc82f2d8eb0cfe5f270af29cab5cddd6d209dab9f3043a220c6e1bb612bca711",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 27637248,
+          "input_tokens": 28468743,
+          "output_tokens": 92142
+        },
+        "provider": null,
+        "reported_total_tokens": 14168897,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 13951616,
+          "cache_write": 0,
+          "output": 42830,
+          "uncached_input": 174451
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_cedcd8cb00d904e95da7f5903646f68dfdbf3fc2085b05d5e6d7692d8402fafb",
+      "fact_ref": "ccf1_695ab6947f04346ea223706ca9fa267a2c7aab753d0fc119174cdc38b840b7c1",
+      "occurred_at": "2026-10-01T02:12:31.295000Z",
+      "observed_at": "2026-10-01T02:10:52.667587Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": "ccf1_4afea05728a32f610716a95487b85b279f51687a9ef5c9079a20cef01df63e8f",
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-10-01T02:12:31.295000Z",
+        "interval_start": "2026-10-01T01:26:19.066000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_cc82f2d8eb0cfe5f270af29cab5cddd6d209dab9f3043a220c6e1bb612bca711",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 47011072,
+          "input_tokens": 47995217,
+          "output_tokens": 121087
+        },
+        "provider": null,
+        "reported_total_tokens": 33724316,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 33325440,
+          "cache_write": 0,
+          "output": 71775,
+          "uncached_input": 327101
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "usage",
+      "entity_ref": "ccf1_1ef02f8eeae874061b8aa951b714b83c2796360ec1816b591e658499ac78e4cb",
+      "fact_ref": "ccf1_81540d8790f6e2f3eabfbb217e5f56ee09cd7a37f3a6c6c72d0334ed9dd8b460",
+      "occurred_at": "2026-10-01T02:28:38.904000Z",
+      "observed_at": "2026-10-01T02:35:40.292161Z",
+      "producer": "codex_rollout.v1",
+      "evidence": [
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "coverage_ref": null,
+        "covers": [],
+        "delegator": null,
+        "execution_ref": null,
+        "executor": null,
+        "final": true,
+        "granularity": "turn_aggregate",
+        "interval_end": "2026-10-01T02:28:38.904000Z",
+        "interval_start": "2026-10-01T02:14:17.952000Z",
+        "mapping": "codex_rollout_cumulative.v1",
+        "model": "gpt-6-sol",
+        "native_scope_ref": "ccf1_cc82f2d8eb0cfe5f270af29cab5cddd6d209dab9f3043a220c6e1bb612bca711",
+        "native_tokens": {
+          "cache_write_input_tokens": 0,
+          "cached_input_tokens": 54789632,
+          "input_tokens": 56040807,
+          "output_tokens": 145098
+        },
+        "provider": null,
+        "reported_total_tokens": 8069601,
+        "responsible": null,
+        "runtime": "codex",
+        "tokens": {
+          "cache_read": 7778560,
+          "cache_write": 0,
+          "output": 24011,
+          "uncached_input": 267030
+        },
+        "wi": null
+      }
+    },
+    {
+      "schema": "computecost_collaboration_fact/v1",
+      "kind": "attribution",
+      "entity_ref": "ccf1_99881cd24ba2fa4ae3d536463dbf3f0563b77e9fe645fa133a07672511919146",
+      "fact_ref": "ccf1_581c35e7c329c754145d829764306d93ca31b5f59fcff5fd3055e1649e8639ca",
+      "occurred_at": "2026-10-01T02:14:17.952000Z",
+      "observed_at": "2026-10-01T02:35:40.292161Z",
+      "producer": "registered_runtime_actor.v1",
+      "evidence": [
+        "ccf1_77e27c7acf6b7cad64fa20a3f894ff08cc29554f2d2e0ed96333b3b6b7c0b4a7",
+        "ccf1_a0d278fe8e4e4baf3587c399543f6af65b0cb577ce1a419ef294793fb84561c1"
+      ],
+      "supersedes": null,
+      "payload": {
+        "context": {
+          "entrypoint": "codex_app",
+          "node": "ownermac",
+          "workspace_ref": "ccf1_1ee5889969e462d8c7e86d3a3aa91054a60747d1f006ed9a5f75b1dc7c1b0352"
+        },
+        "delegator": null,
+        "effective_at": "2026-10-01T02:14:17.952000Z",
+        "executor": "hestia",
+        "policy": "registered_runtime_actor.v1",
+        "responsible": null,
+        "scope": "actor",
+        "state": "assigned",
+        "target_ref": "ccf1_1ef02f8eeae874061b8aa951b714b83c2796360ec1816b591e658499ac78e4cb",
+        "wi": null
+      }
+    }
+  ]
+}

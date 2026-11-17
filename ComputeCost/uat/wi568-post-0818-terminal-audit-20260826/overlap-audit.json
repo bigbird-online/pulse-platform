@@ -1,0 +1,73 @@
+{
+  "schema": "wi568_cross_wi_usage_overlap_audit/v4",
+  "privacy": "opaque aggregate evidence only; no raw session/thread identifiers or content",
+  "pre_fix_observation": {
+    "conflicting_work_item_ids": [
+      "wi_20260820_136",
+      "wi_20260822_938"
+    ],
+    "same_root_lineage": true,
+    "same_event_set": true,
+    "overlapping_event_count": 9,
+    "duplicated_tokens_per_wi": 89786412,
+    "duplicated_current_price_reference_usd": "45.57484",
+    "naive_per_wi_sum_usd": "91.2653592",
+    "deduplicated_pre_fix_reference_usd": "45.6905192"
+  },
+  "remediation_contract": {
+    "rule": "canonicalize full, compact, and short aliases; union index and rollout evidence; taint the complete root/delegation component when multiple WorkItems are referenced",
+    "partition_evidence": "not consumed by this implementation; no multi-WI exception exists",
+    "mixed_unobserved_gaps": "retain strongest typed failure; never become zero-valued partial usage",
+    "migrated_status": "closed attribution window",
+    "short_alias_resolution": "resolve against canonical WorkItem inventory; require one candidate or one explicit full/compact disambiguator; otherwise taint every candidate"
+  },
+  "post_fix": {
+    "wi_20260820_136": {
+      "producer_discovery": "join_conflict",
+      "usage_status": "unavailable",
+      "tokens": "unavailable",
+      "reference_cost_status": "join_conflict",
+      "event_count": 0,
+      "ambiguous_seed_count_by_producer": {
+        "claude_code": 0,
+        "codex_desktop": 2
+      },
+      "ambiguous_component_count": 2,
+      "partition_evidence_consumed": false,
+      "report_sha256": "4529fe03f3d55100d4bdb29a4463269546ac57e9e4be98fc601b9e3dde8dca88"
+    },
+    "wi_20260822_938": {
+      "producer_discovery": "join_conflict",
+      "usage_status": "unavailable",
+      "tokens": "unavailable",
+      "reference_cost_status": "join_conflict",
+      "event_count": 0,
+      "ambiguous_seed_count_by_producer": {
+        "claude_code": 0,
+        "codex_desktop": 1
+      },
+      "ambiguous_component_count": 1,
+      "partition_evidence_consumed": false,
+      "report_sha256": "11dcf37bc523bd3e3919a37af86d9eab0826d8c7e165327607660384d0c08b20"
+    }
+  },
+  "result": "pass_inventory_resolved_alias_and_component_fail_closed_independently_reviewed_and_merged",
+  "review_followup": {
+    "final_disposition": "accepted_and_merged",
+    "merged_commit": "46804ee27d28b8770f0e44abebfe1445dc044ca1",
+    "review_id": 5048244924,
+    "reviewed_commit": "c4482664d9dca901251986bf35fc21683cdfb275",
+    "blocking_findings": [
+      "alias_grammar_gap",
+      "index_rollout_reconciliation_gap",
+      "root_delegation_component_taint_gap"
+    ],
+    "regression_status": "covered",
+    "second_review": {
+      "reviewed_head": "e3a67d9ae2f8a41b33dbcd465dc252aad64387c6",
+      "finding": "query_relative_short_alias_collision",
+      "regression": "two closed overlapping WorkItems sharing one suffix and one short-only provider session",
+      "status": "covered"
+    }
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "schema": "wi938_auto_discovery_uat/v1",
+  "work_item_id": "wi_20260822_938",
+  "observed_at": "2026-08-26T05:55:00Z",
+  "producer_surface": "surface_v1_local_macos",
+  "mode": "zero_caller_path_auto_discovery",
+  "inputs": {
+    "caller_supplied_harness_root": false,
+    "caller_supplied_codex_home": false,
+    "caller_supplied_session_or_thread_id": false,
+    "caller_supplied_rollout_path": false
+  },
+  "discovery": {
+    "status": "observed",
+    "normalized_seed_thread_count": 9,
+    "lineage_closure_count": 11,
+    "usage_root_thread_count": 10,
+    "usage_event_count": 52,
+    "cohort_sha256": "45891a7a1a2c7d6f2af36b8ba7f44655a88c3847a0c29ef8aa96ea149ee61bce"
+  },
+  "tokens": {
+    "input": 458237564,
+    "cache_read": 447730432,
+    "cache_write": 0,
+    "net_new_input": 10507132,
+    "output": 1348905,
+    "reasoning_subset_of_output": 408697,
+    "total_resource_tokens": 459586469
+  },
+  "request_tier_evidence": {
+    "max_request_input_tokens": 244454,
+    "max_model_context_window": 258400,
+    "openrouter_override_threshold": 272000,
+    "selected_tier": "standard"
+  },
+  "model_partitions": [
+    {
+      "model": "gpt-5.6-sol",
+      "event_count": 49,
+      "input": 449403387,
+      "cache_read": 439230464,
+      "output": 1308439,
+      "openrouter_equivalent_usd": "121.2763288"
+    },
+    {
+      "model": "gpt-5.6-terra",
+      "event_count": 3,
+      "input": 8834177,
+      "cache_read": 8499968,
+      "output": 40466,
+      "openrouter_equivalent_usd": "2.8540036"
+    }
+  ],
+  "openrouter": {
+    "basis": "openrouter_equivalent_not_provider_cash",
+    "total_usd": "124.1303324",
+    "valuation_sha256": "08100dda03021af502d0cbb1a195dcc67c54b04ad2fe5f35a09317852cd4760c"
+  },
+  "privacy": "raw session, thread, prompt, account, and filesystem identities omitted",
+  "result": "pass"
+}

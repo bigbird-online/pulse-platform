@@ -1,0 +1,36 @@
+{
+  "schema": "pulse_stats_consumer_fixture_provenance/v1",
+  "fixtures": [
+    {
+      "file": "published-legacy-six-v1.json",
+      "raw_sha256": "cbcdf9b0428de2471074a4eaecdf6c2baf25a3d4e117a9e5c0a6327bf28a93fd",
+      "publication_sha256": "4271124ab029ff047210d0c5f6429bdc9951221750140bff7aaed9838a558020",
+      "source_revision": "72005b5198beb48386cf8219c81a902f4dc3cbfe",
+      "generated_at": "2026-10-06T05:03:21.084228+00:00",
+      "watermark": 1235,
+      "periods": [
+        "today",
+        "week",
+        "month"
+      ],
+      "untouched_published_bytes": true
+    },
+    {
+      "file": "published-tenant-seven-v1.json",
+      "raw_sha256": "0f14e195a4147114a01165b70f07a4f1af6587c37efd21cd83a8ace2d6a78b92",
+      "publication_sha256": "8ea31f8b6d3641d0cf3d6deafad0c07adedd3c00466da839158963dd43e14a3d",
+      "source_revision": "781a84f1715e74679437c02fd3cb86394a5891ae",
+      "generated_at": "2026-10-06T10:29:12.424581+00:00",
+      "watermark": 1244,
+      "periods": [
+        "today",
+        "week",
+        "month"
+      ],
+      "untouched_published_bytes": true
+    }
+  ],
+  "snapshot_fixture": "published-tenant-seven-snapshot-v2.json",
+  "snapshot_derivation": "attach_cost_dashboard(ok-full.json, exact seven-dimension publication, now=publication.generated_at); no repricing or attribution changes",
+  "bounded_content": "Only cost/query/public tenant identity carriers, opaque evidence refs, and quantities; all Outcome prose items empty; no raw session, message, credential, or route contents"
+}

@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "presets": {
+    "current_safe": {
+      "status": "baseline",
+      "routes": {
+        "stats_quota_probe": {
+          "consumer_path": "stats.quota_probe",
+          "workload_shape": "repeatable",
+          "risk_class": "standard",
+          "verifier_id": "stats.token_count.window_reset.v1",
+          "base_profile": "platform_default",
+          "rollback_profile": "platform_default"
+        },
+        "hestia_30min": {
+          "consumer_path": "relay.cron.hestia_30min",
+          "workload_shape": "deterministic",
+          "risk_class": "standard",
+          "verifier_id": "hestia.new_events.gate.v1",
+          "base_profile": null,
+          "escalation_profile": "media",
+          "rollback_profile": "media"
+        },
+        "hestia_weekly_review": {
+          "consumer_path": "relay.cron.hestia_weekly_review",
+          "workload_shape": "routine_judgment",
+          "risk_class": "standard",
+          "verifier_id": "hestia.weekly_review.draft.v1",
+          "base_profile": "platform_default",
+          "rollback_profile": "platform_default"
+        },
+        "harness_pending_handoffs": {
+          "consumer_path": "harness.hit.pending_handoffs",
+          "workload_shape": "routine_judgment",
+          "risk_class": "critical_ambiguous",
+          "verifier_id": "harness.handoff.outcome.v1",
+          "base_profile": "frontier",
+          "rollback_profile": "frontier"
+        },
+        "harness_stale_work_items": {
+          "consumer_path": "harness.hit.stale_work_items",
+          "workload_shape": "routine_judgment",
+          "risk_class": "critical_ambiguous",
+          "verifier_id": "harness.work_item.outcome.v1",
+          "base_profile": "frontier",
+          "rollback_profile": "frontier"
+        }
+      }
+    },
+    "phase2_stats_canary": {
+      "status": "canary",
+      "routes": {
+        "stats_quota_probe": {
+          "consumer_path": "stats.quota_probe",
+          "workload_shape": "repeatable",
+          "risk_class": "standard",
+          "verifier_id": "stats.token_count.window_reset.v1",
+          "base_profile": "economy",
+          "rollback_profile": "platform_default"
+        },
+        "hestia_30min": {
+          "consumer_path": "relay.cron.hestia_30min",
+          "workload_shape": "deterministic",
+          "risk_class": "standard",
+          "verifier_id": "hestia.new_events.gate.v1",
+          "base_profile": null,
+          "escalation_profile": "media",
+          "rollback_profile": "media"
+        },
+        "hestia_weekly_review": {
+          "consumer_path": "relay.cron.hestia_weekly_review",
+          "workload_shape": "routine_judgment",
+          "risk_class": "standard",
+          "verifier_id": "hestia.weekly_review.draft.v1",
+          "base_profile": "platform_default",
+          "rollback_profile": "platform_default"
+        },
+        "harness_pending_handoffs": {
+          "consumer_path": "harness.hit.pending_handoffs",
+          "workload_shape": "routine_judgment",
+          "risk_class": "critical_ambiguous",
+          "verifier_id": "harness.handoff.outcome.v1",
+          "base_profile": "frontier",
+          "rollback_profile": "frontier"
+        },
+        "harness_stale_work_items": {
+          "consumer_path": "harness.hit.stale_work_items",
+          "workload_shape": "routine_judgment",
+          "risk_class": "critical_ambiguous",
+          "verifier_id": "harness.work_item.outcome.v1",
+          "base_profile": "frontier",
+          "rollback_profile": "frontier"
+        }
+      }
+    },
+    "phase23_canary": {
+      "status": "canary",
+      "routes": {
+        "stats_quota_probe": {
+          "consumer_path": "stats.quota_probe",
+          "workload_shape": "repeatable",
+          "risk_class": "standard",
+          "verifier_id": "stats.token_count.window_reset.v1",
+          "base_profile": "economy",
+          "rollback_profile": "platform_default"
+        },
+        "hestia_30min": {
+          "consumer_path": "relay.cron.hestia_30min",
+          "workload_shape": "deterministic",
+          "risk_class": "standard",
+          "verifier_id": "hestia.new_events.gate.v1",
+          "base_profile": null,
+          "escalation_profile": "media",
+          "rollback_profile": "media"
+        },
+        "hestia_weekly_review": {
+          "consumer_path": "relay.cron.hestia_weekly_review",
+          "workload_shape": "routine_judgment",
+          "risk_class": "standard",
+          "verifier_id": "hestia.weekly_review.draft.v1",
+          "base_profile": "media",
+          "rollback_profile": "platform_default"
+        },
+        "harness_pending_handoffs": {
+          "consumer_path": "harness.hit.pending_handoffs",
+          "workload_shape": "routine_judgment",
+          "risk_class": "critical_ambiguous",
+          "verifier_id": "harness.handoff.outcome.v1",
+          "base_profile": "frontier",
+          "rollback_profile": "frontier"
+        },
+        "harness_stale_work_items": {
+          "consumer_path": "harness.hit.stale_work_items",
+          "workload_shape": "routine_judgment",
+          "risk_class": "critical_ambiguous",
+          "verifier_id": "harness.work_item.outcome.v1",
+          "base_profile": "frontier",
+          "rollback_profile": "frontier"
+        }
+      }
+    }
+  }
+}

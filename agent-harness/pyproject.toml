@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-harness"
+version = "0.1.0"
+description = "Agent team OS — coordination, behavioral verification, SSOT governance"
+requires-python = ">=3.11"
+dependencies = [
+    "click>=8.1",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "packaging>=24",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pip",
+    "setuptools>=68.0",
+    "wheel",
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.3",
+    "mypy>=1.8",
+]
+
+[tool.setuptools.packages.find]
+include = ["harness_rewrite*"]
+
+[tool.setuptools.package-data]
+"harness_rewrite" = ["verifier-runner.mjs", "project_page.html", "project_page.LICENSE"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests_rewrite"]
+addopts = "--cov=harness_rewrite --cov-report=term-missing"
+
+[tool.mypy]
+strict = true
+python_version = "3.11"

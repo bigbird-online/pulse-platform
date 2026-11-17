@@ -1,0 +1,79 @@
+{
+  "schema": "reviewed_non_observations/v1",
+  "work_item_id": "wi_20260825_300",
+  "source_id": "ownermac-relay-host-spool",
+  "reason": "unit_test_fixture_written_to_production_sink",
+  "review_ref": "PULSE#923:5933112307,5966724506",
+  "records": [
+    {
+      "file": "ccf1_057677ccf4c3bb9138abe7fee0f2f6308fbef3661d7f25d820990c5cf0e27bf7.jsonl",
+      "sha256": "75613eb6c2952188f9d8faace1e559af819598e83c089187a85929ee34c9a3f4",
+      "line": 4,
+      "native_runtime": "codex",
+      "fixture_scope": "thread-tg",
+      "native_scope_ref": "ccf1_525f31718ec0a234023bea69f361b72961064b1bcbdc625b2999a03efe5381bb",
+      "usage_ref": "ccf1_0706a1e53f6785ca89c6a4fe8b769623d80d58902b901565ccf4b266423e3214",
+      "usage_fact_ref": "ccf1_45da013cd146b0a00940e71bd572152159bd348462ed51dd96b100bd7a80a033",
+      "execution_ref": "ccf1_360442f3e3a3a5d217cc238b27a6264e0640dac7013f72728c4e1b9faba597c9",
+      "execution_fact_ref": "ccf1_7a0951f5e60ea9dcadd7f78951dbf54aad5ba4c0eed64e0449455e2feedb73d9",
+      "test_path": "Relay/tests/codex-conversation-runtime.test.ts",
+      "test_sha256": "8a4ccb6547f9c59a829f3dd46c17516e69f7dfa1e7c7553b5d661393167dd8bc"
+    },
+    {
+      "file": "ccf1_04d978bbdf96b57c07bef3149e438783749f2873116b962d042b831e0ffe16b3.jsonl",
+      "sha256": "eb7dc89c7d5a166479147abc772d244c2b3f0344412c626934efafaa8571948e",
+      "line": 4,
+      "native_runtime": "pi",
+      "fixture_scope": "target",
+      "native_scope_ref": "ccf1_e18370623daa72225ed03eb288dd5c305cf69d03f012f840c794590c8fba8fd4",
+      "usage_ref": "ccf1_3460000643dfd02306850031628e720ad3466b3e9ffb3fba14d0bf7d4381ac74",
+      "usage_fact_ref": "ccf1_cce4573b5698e60baac596e5d2eba6f07575883f554fab0596f281ce95fb298d",
+      "execution_ref": "ccf1_5ece7bcb27369edc01fd5032c4c041e49cf0f8cdc09933f58689519fd7fdfbd0",
+      "execution_fact_ref": "ccf1_a42b36f91149124a80e172b159e86aab254127a4773077abdfca2a3359a6bcb8",
+      "test_path": "Relay/tests/pi-conversation-runtime.test.ts",
+      "test_sha256": "0bdc53f01ccf2851776ddf2877cd2e968906be33c20f7a687e1523cd09725b06"
+    },
+    {
+      "file": "ccf1_01b0c0609f76cdd75d5e3a1b0d585f3b597b936573e36316b267a7620453d0cb.jsonl",
+      "sha256": "5f02fa2267798b21e89f3971d9d02074cc1319197d51730e548d0f188dffe26e",
+      "line": 5,
+      "native_runtime": "pi",
+      "fixture_scope": "pi-session",
+      "native_scope_ref": "ccf1_72f1e00f02469b359ebc24ad58625e69adc441451d6f61ef853871c70ba4572f",
+      "usage_ref": "ccf1_22700ff68d2575d2c22ed7fb05e0d298cc1d2167ad6c6bea4b5daa92f8e151e9",
+      "usage_fact_ref": "ccf1_163404708c1d715521dc6c5474ef2390f34ff70125db36c5e78986792cc8fece",
+      "execution_ref": "ccf1_e4e696d19671dbcb35c67d2c4ff37454fe7d28340b741965ee2bb9e6d5cf5cc9",
+      "execution_fact_ref": "ccf1_11bcf5a5a07dd0ae2f568eb183812e58fafc22cc65754a8656fc60a2ca0dccbc",
+      "test_path": "Relay/tests/pi-conversation-runtime.test.ts",
+      "test_sha256": "0bdc53f01ccf2851776ddf2877cd2e968906be33c20f7a687e1523cd09725b06"
+    },
+    {
+      "file": "ccf1_07cbf616e4c9f0aa23e226e2167676cb34640052f7d646d2aee9a1de23253faa.jsonl",
+      "sha256": "9f10940fa6d08ed42badbf9339e7f9d377b1d492aa9df5a011c38d83dcea18fe",
+      "line": 5,
+      "native_runtime": "cc",
+      "fixture_scope": "cc-session",
+      "native_scope_ref": "ccf1_56540aefb49b18334db5555fc3da27bd6f5b23cd3839fb4967ce01364355225d",
+      "usage_ref": "ccf1_a99df41f236cec9e1dd736e5a21a555e4753184bd942cb34b1b0fad5392cf4cb",
+      "usage_fact_ref": "ccf1_4c7ec55fcdc87a1f06a217004ae74cffd769a9d08e3083096b3a979762790e81",
+      "execution_ref": "ccf1_6104ebb354bd814b293f9f800ce932dc28ae51faae9c1ca5264fd80423fc1cf5",
+      "execution_fact_ref": "ccf1_7721985eaca7662813228bf3f290323d105e5e07785000583bae71f8ff2fbac0",
+      "test_path": "Relay/tests/cc-work-process.test.ts",
+      "test_sha256": "1a51993fb4c60099387ec581f154d0e2da5dd4bf3350d5da213ef4a5897e5272"
+    },
+    {
+      "file": "ccf1_fa8d91531f6b06873eb829f31c38d7cca0748e8b3c246febccaf709bdd077d39.jsonl",
+      "sha256": "6e023d78b7a54e593e9c553069a7890408db28b2bc14cb4f9e5b76cd483a4d19",
+      "line": 6,
+      "native_runtime": "cc",
+      "fixture_scope": "cc-session",
+      "native_scope_ref": "ccf1_56540aefb49b18334db5555fc3da27bd6f5b23cd3839fb4967ce01364355225d",
+      "usage_ref": "ccf1_d755102e0ec2d0f1cad63b9315fc086b196e50af21dc8e27c545bf234d2ebf09",
+      "usage_fact_ref": "ccf1_72a1a1ec7c6326a6ee70bc68b89cae850362ea8f3131be73092707d40a9e3340",
+      "execution_ref": "ccf1_a425bff19673189f724b367fc571cc44d916325ce7d69e544372af84d32c2224",
+      "execution_fact_ref": "ccf1_e34e0be3650495f282a8e9bf4b21cecf202467a618099435bbac7b3d6f0b57bf",
+      "test_path": "Relay/tests/cc-runtime-usage.test.ts",
+      "test_sha256": "10bfcf505650c09591538f342041d6d95039b9a348ab4b88652a6d78190585d9"
+    }
+  ]
+}

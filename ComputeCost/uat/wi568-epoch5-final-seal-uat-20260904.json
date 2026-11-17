@@ -1,0 +1,191 @@
+{
+  "acceptance_boundary": [
+    "OpenRouter-equivalent USD is reference valuation, not provider cash or subscription allocation.",
+    "Actual marginal cash remains unavailable because procurement/cash authority is absent.",
+    "No hidden Token, human time, activity class, outcome, quality, downstream effect, or efficiency value was inferred.",
+    "This cloud Pi epoch does not satisfy the ChatGPT+GitHub prospective full-coverage requirement.",
+    "S5-001 remains ineligible: no seven-day window and fewer than ten eligible outcomes."
+  ],
+  "canonical_measurement": {
+    "attribution_content_sha256": "82b8000ab5de0a1f6ec3b87f03bbb0e0551fb5b388ec73995d21af60a1c128ca",
+    "attribution_present": true,
+    "eligible_epoch_count": 0,
+    "final_seal_present": true,
+    "join_validation": "pass",
+    "measurement_snapshot_sha256": "a2fb8b6f0e52bde9123a93f8d04fb40153e3f63ebff4a16b0cd348a3e1d464b7",
+    "missing_producers": [
+      "human_attention",
+      "linked_task_outcome"
+    ],
+    "procurement_source": "unknown",
+    "seal_content_sha256": "1bb29e224edf3229ceaf0c39be7b0e1dab68231413ed719d1cd6c6e4848df53a",
+    "status": "partial",
+    "usage_coverage": "exact_pi_native_snapshot_delta",
+    "warnings": []
+  },
+  "compute_cost_report": {
+    "activity_class_coverage": {
+      "adjudication": "unavailable",
+      "productive": "unavailable",
+      "recovery": "unavailable",
+      "verification": "unavailable"
+    },
+    "actual_marginal_cash_usd": "unavailable",
+    "cash_basis": "subscription_fee_not_allocated_to_work_item",
+    "conservation": "partial",
+    "downstream_effect": "unavailable",
+    "efficiency": "unavailable",
+    "human_attention": "unavailable",
+    "openrouter_equivalent": {
+      "basis": "openrouter_equivalent_not_provider_cash",
+      "catalog_sha256": "c6624e28462364575209d2b5598b2758dbf6a085cdfc6bf8347774d4e8cd2f55",
+      "partitions": [
+        {
+          "canonical_slug": "openai/gpt-5.6-sol-20260709",
+          "components_usd": {
+            "cache_read": "1.024512",
+            "cache_write": "0",
+            "output": "0.051135",
+            "uncached_input": "0.106832"
+          },
+          "max_request_input_tokens": 296323,
+          "openrouter_model": "openai/gpt-5.6-sol",
+          "price_usd_per_token": {
+            "cache_read": "0.0000004",
+            "cache_write": "0",
+            "output": "0.000015",
+            "uncached_input": "0.000004"
+          },
+          "request_count": 9,
+          "source_model": "gpt-5.6-sol",
+          "tier": "override_min_prompt_272000",
+          "tokens": {
+            "cache_read": 2561280,
+            "cache_write": 0,
+            "output": 3409,
+            "uncached_input": 26708
+          },
+          "total_usd": "1.182479"
+        },
+        {
+          "canonical_slug": "openai/gpt-5.6-sol-20260709",
+          "components_usd": {
+            "cache_read": "5.1878144",
+            "cache_write": "0",
+            "output": "0.82071",
+            "uncached_input": "0.991438"
+          },
+          "max_request_input_tokens": 270737,
+          "openrouter_model": "openai/gpt-5.6-sol",
+          "price_usd_per_token": {
+            "cache_read": "0.0000002",
+            "cache_write": "0",
+            "output": "0.00001",
+            "uncached_input": "0.000002"
+          },
+          "request_count": 180,
+          "source_model": "gpt-5.6-sol",
+          "tier": "standard",
+          "tokens": {
+            "cache_read": 25939072,
+            "cache_write": 0,
+            "output": 82071,
+            "uncached_input": 495719
+          },
+          "total_usd": "6.9999624"
+        }
+      ],
+      "pricing_authority": "openrouter.models",
+      "pricing_source_url": "https://openrouter.ai/api/v1/models",
+      "retrieved_at": "2026-09-04T13:25:15.752461Z",
+      "status": "calculated",
+      "total_usd": "8.1824414",
+      "valuation_sha256": "21c5055abad8e56c18098013a4f2e901633856abeabde525c1b40b52c7658c53"
+    },
+    "pi_usage_coverage": "exact_sealed",
+    "quality": "unavailable",
+    "quota_pressure": "unavailable",
+    "rate_card_coverage": "openrouter_equivalent_calculated",
+    "report_sha256": "391148a49c360781d567f5d12addc9a9a9803a399364136ef77872625b75bee9",
+    "schema": "computecost_wi_report/v2",
+    "scl_measurement_coverage": "partial",
+    "usage_status": "partial",
+    "warnings": [
+      "no_joinable_usage_producer",
+      "scl_measurement_partial"
+    ]
+  },
+  "generated_at": "2026-09-04T13:25:15.752461Z",
+  "implementation_readback": {
+    "checked_files": {
+      "pulse_compute_cost/scl_measurement.py": true,
+      "pulse_compute_cost/wi_report.py": true,
+      "runtime/pi-usage-binding.mjs": true
+    },
+    "installed_source_matches_default": true
+  },
+  "native_artifacts": {
+    "baseline_event_count": 0,
+    "baseline_snapshot_sha256": "67e548e7563f27e48b7f8e184f6c21ca5f9c50c66d97b5cc86198fbecfb6a6fb",
+    "final_event_count": 189,
+    "final_snapshot_sha256": "cb57b8bb918b1351e0525ee63fbff423c4b79a707ef0622264dc5a0fc4bfd620",
+    "post_baseline_event_count": 189,
+    "regular_non_symlink_mode_0600": true
+  },
+  "privacy": {
+    "absolute_path_scan": "pass",
+    "producer_and_consumer_schema_validation": "pass",
+    "raw_identity_or_content_persisted": false,
+    "recursive_forbidden_key_scan": "pass",
+    "status": "pass"
+  },
+  "schema": "computecost_epoch_uat_summary/v1",
+  "scope": {
+    "default_revision": "99504cf39959ba4cd7f9acae6d8d46e4f7bf9d5a",
+    "execution_epoch": 5,
+    "execution_surface": "surface_v1_cloud_linux_b",
+    "phase": "computecost_program",
+    "runtime": "pi"
+  },
+  "token_conservation": {
+    "baseline_total": {
+      "cached_input_tokens": 0,
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "reasoning_output_tokens": 0,
+      "total_tokens": 0
+    },
+    "cache_write_note": "unavailable_in_normalized_seal; not imputed as zero",
+    "delta": {
+      "cache_write_input_tokens": "unavailable",
+      "cached_input_tokens": 28500352,
+      "input_tokens": 29022779,
+      "output_tokens": 85480,
+      "reasoning_output_tokens": 32648,
+      "total_tokens": 29108259
+    },
+    "final_total": {
+      "cached_input_tokens": 28500352,
+      "input_tokens": 29022779,
+      "output_tokens": 85480,
+      "reasoning_output_tokens": 32648,
+      "total_tokens": 29108259
+    },
+    "native_final_matches_canonical_delta": true,
+    "rules": {
+      "cached_input_lte_input": true,
+      "reasoning_output_lte_output": true,
+      "total_equals_input_plus_output": true
+    },
+    "status": "pass"
+  },
+  "uat_verdict": {
+    "attribution_and_report": "partial",
+    "chatgpt_web_github_full_coverage": "pending",
+    "epoch_5_final_seal": "pass",
+    "privacy": "pass",
+    "s5_001": "pending",
+    "token_conservation": "pass"
+  },
+  "work_item_id": "wi_20260820_568"
+}

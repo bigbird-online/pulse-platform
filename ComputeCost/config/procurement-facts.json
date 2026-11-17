@@ -1,0 +1,21 @@
+{
+  "schema_version": "pulse_stats_procurement_facts/v1",
+  "subscriptions": [
+    {
+      "id": "chatgpt_pro_max",
+      "name": "ChatGPT Pro Max",
+      "status": "active_user_confirmed",
+      "monthly_amount_usd": "200",
+      "billing_day": 14,
+      "confirmed_on": "2026-09-13"
+    },
+    {
+      "id": "claude_code",
+      "name": "Claude Code",
+      "status": "active_user_confirmed",
+      "monthly_amount_usd": null,
+      "billing_day": null,
+      "confirmed_on": "2026-10-04"
+    }
+  ]
+}

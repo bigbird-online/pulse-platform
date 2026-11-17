@@ -1,0 +1,716 @@
+{
+  "schema_version": "pulse.monitoring.snapshot.v2",
+  "generated_at": "2099-07-22T12:19:17+08:00",
+  "expires_at": "2099-07-22T12:22:17+08:00",
+  "baseline_version": "0.2.1",
+  "overall": {
+    "runtime_health": "ok",
+    "coverage": "full",
+    "open_incident_count": 0,
+    "headline": "Runtime healthy; required coverage present"
+  },
+  "capabilities": [
+    {
+      "id": "s2.ack_overdue",
+      "implementation_status": "active_validated",
+      "health": "ok",
+      "aggregation_role": "runtime",
+      "scope": "fixture dispatchers",
+      "reason": "No overdue handoff in fixture",
+      "freshness": {
+        "state": "fresh",
+        "observed_at": "2099-07-22T12:19:00+08:00",
+        "max_age_seconds": 2100
+      },
+      "evidence": [
+        "fixture:ack-ok"
+      ]
+    }
+  ],
+  "incidents": [],
+  "metrics": [
+    {
+      "id": "s2.ack_overdue.count",
+      "capability_id": "s2.ack_overdue",
+      "status": "available",
+      "value": 0,
+      "unit": "handoffs",
+      "window": "current",
+      "sample_count": 1,
+      "quality": "validated",
+      "scope": "fixture dispatchers",
+      "observed_at": "2099-07-22T12:19:00+08:00",
+      "reason": null
+    }
+  ],
+  "alerts": [],
+  "provenance": {
+    "producer": {
+      "name": "pulse-stats-fixture",
+      "version": "0.1.0"
+    },
+    "source_revisions": {
+      "fixture": "ok-full"
+    },
+    "sources": [
+      {
+        "id": "fixture",
+        "freshness": "fresh",
+        "observed_at": "2099-07-22T12:19:00+08:00",
+        "error_code": null
+      }
+    ]
+  },
+  "cost_dashboard": {
+    "schema_version": "pulse_stats_cost_dashboard/v1",
+    "generated_at": "2026-09-13T08:00:00+00:00",
+    "expires_at": "2026-09-13T08:45:00+00:00",
+    "source_revision": "cccccccccccccccccccccccccccccccccccccccc",
+    "status": "available",
+    "reason": null,
+    "views": [
+      {
+        "period": "today",
+        "dimension": "agent",
+        "source_schema": "computecost_collaboration_query/v1",
+        "query": {
+          "agent": null,
+          "agent_role": "executor",
+          "as_of": null,
+          "cost_basis": "machine_standard",
+          "from_date": "2026-09-13",
+          "group_by": [
+            "agent"
+          ],
+          "human_hourly_rate": null,
+          "human_rate_policy": null,
+          "model": null,
+          "runtime": null,
+          "scope": "activity",
+          "timezone": "Asia/Shanghai",
+          "to_date": "2026-09-14",
+          "value_from": null,
+          "value_to": null,
+          "watermark": 1,
+          "work_items": []
+        },
+        "watermark": 1,
+        "recorded_at": "2026-09-13T08:00:00Z",
+        "catalog_sha256": "a8a9263ce8eed7691bad8c8cdcae358938c5617ba1c6bb7666b99559d6bab812",
+        "catalog_observed_at": "2026-09-13T08:00:00+00:00",
+        "report_sha256": "0ffdeecaa1cc8f93e352bf756fbcd22b2636032594ff1733c005fb1ced169403",
+        "summary": {
+          "cost": {
+            "cash_basis": "openrouter_standard_token_cash",
+            "machine_cash_usd": null,
+            "partial_machine_cash_usd": "0.000306",
+            "reasons": [
+              "execution_link_unknown",
+              "source_coverage_unknown",
+              "wi_execution_inventory_unknown"
+            ],
+            "unpriced": []
+          },
+          "usage": {
+            "known_total_tokens": 140,
+            "event_count": 1,
+            "source_coverage": "unknown",
+            "wi_inventory_coverage": "unknown"
+          }
+        },
+        "groups": [
+          {
+            "key": {
+              "agent": "pulse"
+            },
+            "cost": {
+              "cash_basis": "openrouter_standard_token_cash",
+              "machine_cash_usd": null,
+              "partial_machine_cash_usd": "0.000306",
+              "reasons": [
+                "execution_link_unknown",
+                "source_coverage_unknown",
+                "wi_execution_inventory_unknown"
+              ],
+              "unpriced": []
+            }
+          }
+        ]
+      },
+      {
+        "period": "today",
+        "dimension": "wi",
+        "source_schema": "computecost_collaboration_query/v1",
+        "query": {
+          "agent": null,
+          "agent_role": "executor",
+          "as_of": null,
+          "cost_basis": "machine_standard",
+          "from_date": "2026-09-13",
+          "group_by": [
+            "wi"
+          ],
+          "human_hourly_rate": null,
+          "human_rate_policy": null,
+          "model": null,
+          "runtime": null,
+          "scope": "activity",
+          "timezone": "Asia/Shanghai",
+          "to_date": "2026-09-14",
+          "value_from": null,
+          "value_to": null,
+          "watermark": 1,
+          "work_items": []
+        },
+        "watermark": 1,
+        "recorded_at": "2026-09-13T08:00:00Z",
+        "catalog_sha256": "a8a9263ce8eed7691bad8c8cdcae358938c5617ba1c6bb7666b99559d6bab812",
+        "catalog_observed_at": "2026-09-13T08:00:00+00:00",
+        "report_sha256": "8a9c0e71ea54e35ab4fa5ef1f22010a8190558db78e4f2c4abeeebff0db70324",
+        "summary": {
+          "cost": {
+            "cash_basis": "openrouter_standard_token_cash",
+            "machine_cash_usd": null,
+            "partial_machine_cash_usd": "0.000306",
+            "reasons": [
+              "execution_link_unknown",
+              "source_coverage_unknown",
+              "wi_execution_inventory_unknown"
+            ],
+            "unpriced": []
+          },
+          "usage": {
+            "known_total_tokens": 140,
+            "event_count": 1,
+            "source_coverage": "unknown",
+            "wi_inventory_coverage": "unknown"
+          }
+        },
+        "groups": [
+          {
+            "key": {
+              "wi": "wi_20260825_300"
+            },
+            "cost": {
+              "cash_basis": "openrouter_standard_token_cash",
+              "machine_cash_usd": null,
+              "partial_machine_cash_usd": "0.000306",
+              "reasons": [
+                "execution_link_unknown",
+                "source_coverage_unknown",
+                "wi_execution_inventory_unknown"
+              ],
+              "unpriced": []
+            }
+          }
+        ]
+      },
+      {
+        "period": "today",
+        "dimension": "model",
+        "source_schema": "computecost_collaboration_query/v1",
+        "query": {
+          "agent": null,
+          "agent_role": "executor",
+          "as_of": null,
+          "cost_basis": "machine_standard",
+          "from_date": "2026-09-13",
+          "group_by": [
+            "model"
+          ],
+          "human_hourly_rate": null,
+          "human_rate_policy": null,
+          "model": null,
+          "runtime": null,
+          "scope": "activity",
+          "timezone": "Asia/Shanghai",
+          "to_date": "2026-09-14",
+          "value_from": null,
+          "value_to": null,
+          "watermark": 1,
+          "work_items": []
+        },
+        "watermark": 1,
+        "recorded_at": "2026-09-13T08:00:00Z",
+        "catalog_sha256": "a8a9263ce8eed7691bad8c8cdcae358938c5617ba1c6bb7666b99559d6bab812",
+        "catalog_observed_at": "2026-09-13T08:00:00+00:00",
+        "report_sha256": "76f0813ccddb3f338ae8e178233598f288a349166fdb53d96e79404d16ebd9f2",
+        "summary": {
+          "cost": {
+            "cash_basis": "openrouter_standard_token_cash",
+            "machine_cash_usd": null,
+            "partial_machine_cash_usd": "0.000306",
+            "reasons": [
+              "execution_link_unknown",
+              "source_coverage_unknown",
+              "wi_execution_inventory_unknown"
+            ],
+            "unpriced": []
+          },
+          "usage": {
+            "known_total_tokens": 140,
+            "event_count": 1,
+            "source_coverage": "unknown",
+            "wi_inventory_coverage": "unknown"
+          }
+        },
+        "groups": [
+          {
+            "key": {
+              "model": "openai/gpt-4o"
+            },
+            "cost": {
+              "cash_basis": "openrouter_standard_token_cash",
+              "machine_cash_usd": null,
+              "partial_machine_cash_usd": "0.000306",
+              "reasons": [
+                "execution_link_unknown",
+                "source_coverage_unknown",
+                "wi_execution_inventory_unknown"
+              ],
+              "unpriced": []
+            }
+          }
+        ]
+      },
+      {
+        "period": "week",
+        "dimension": "agent",
+        "source_schema": "computecost_collaboration_query/v1",
+        "query": {
+          "agent": null,
+          "agent_role": "executor",
+          "as_of": null,
+          "cost_basis": "machine_standard",
+          "from_date": "2026-09-07",
+          "group_by": [
+            "agent"
+          ],
+          "human_hourly_rate": null,
+          "human_rate_policy": null,
+          "model": null,
+          "runtime": null,
+          "scope": "activity",
+          "timezone": "Asia/Shanghai",
+          "to_date": "2026-09-14",
+          "value_from": null,
+          "value_to": null,
+          "watermark": 1,
+          "work_items": []
+        },
+        "watermark": 1,
+        "recorded_at": "2026-09-13T08:00:00Z",
+        "catalog_sha256": "a8a9263ce8eed7691bad8c8cdcae358938c5617ba1c6bb7666b99559d6bab812",
+        "catalog_observed_at": "2026-09-13T08:00:00+00:00",
+        "report_sha256": "c7396e229bbb58fa34a26620a58660c5119d9bfb26f948c9be039a5a9c779289",
+        "summary": {
+          "cost": {
+            "cash_basis": "openrouter_standard_token_cash",
+            "machine_cash_usd": null,
+            "partial_machine_cash_usd": "0.000306",
+            "reasons": [
+              "execution_link_unknown",
+              "source_coverage_unknown",
+              "wi_execution_inventory_unknown"
+            ],
+            "unpriced": []
+          },
+          "usage": {
+            "known_total_tokens": 140,
+            "event_count": 1,
+            "source_coverage": "unknown",
+            "wi_inventory_coverage": "unknown"
+          }
+        },
+        "groups": [
+          {
+            "key": {
+              "agent": "pulse"
+            },
+            "cost": {
+              "cash_basis": "openrouter_standard_token_cash",
+              "machine_cash_usd": null,
+              "partial_machine_cash_usd": "0.000306",
+              "reasons": [
+                "execution_link_unknown",
+                "source_coverage_unknown",
+                "wi_execution_inventory_unknown"
+              ],
+              "unpriced": []
+            }
+          }
+        ]
+      },
+      {
+        "period": "week",
+        "dimension": "wi",
+        "source_schema": "computecost_collaboration_query/v1",
+        "query": {
+          "agent": null,
+          "agent_role": "executor",
+          "as_of": null,
+          "cost_basis": "machine_standard",
+          "from_date": "2026-09-07",
+          "group_by": [
+            "wi"
+          ],
+          "human_hourly_rate": null,
+          "human_rate_policy": null,
+          "model": null,
+          "runtime": null,
+          "scope": "activity",
+          "timezone": "Asia/Shanghai",
+          "to_date": "2026-09-14",
+          "value_from": null,
+          "value_to": null,
+          "watermark": 1,
+          "work_items": []
+        },
+        "watermark": 1,
+        "recorded_at": "2026-09-13T08:00:00Z",
+        "catalog_sha256": "a8a9263ce8eed7691bad8c8cdcae358938c5617ba1c6bb7666b99559d6bab812",
+        "catalog_observed_at": "2026-09-13T08:00:00+00:00",
+        "report_sha256": "5c5e0e57ee1557e090f09df5fd643db5be4b48d31992de80d42e15cf593c358a",
+        "summary": {
+          "cost": {
+            "cash_basis": "openrouter_standard_token_cash",
+            "machine_cash_usd": null,
+            "partial_machine_cash_usd": "0.000306",
+            "reasons": [
+              "execution_link_unknown",
+              "source_coverage_unknown",
+              "wi_execution_inventory_unknown"
+            ],
+            "unpriced": []
+          },
+          "usage": {
+            "known_total_tokens": 140,
+            "event_count": 1,
+            "source_coverage": "unknown",
+            "wi_inventory_coverage": "unknown"
+          }
+        },
+        "groups": [
+          {
+            "key": {
+              "wi": "wi_20260825_300"
+            },
+            "cost": {
+              "cash_basis": "openrouter_standard_token_cash",
+              "machine_cash_usd": null,
+              "partial_machine_cash_usd": "0.000306",
+              "reasons": [
+                "execution_link_unknown",
+                "source_coverage_unknown",
+                "wi_execution_inventory_unknown"
+              ],
+              "unpriced": []
+            }
+          }
+        ]
+      },
+      {
+        "period": "week",
+        "dimension": "model",
+        "source_schema": "computecost_collaboration_query/v1",
+        "query": {
+          "agent": null,
+          "agent_role": "executor",
+          "as_of": null,
+          "cost_basis": "machine_standard",
+          "from_date": "2026-09-07",
+          "group_by": [
+            "model"
+          ],
+          "human_hourly_rate": null,
+          "human_rate_policy": null,
+          "model": null,
+          "runtime": null,
+          "scope": "activity",
+          "timezone": "Asia/Shanghai",
+          "to_date": "2026-09-14",
+          "value_from": null,
+          "value_to": null,
+          "watermark": 1,
+          "work_items": []
+        },
+        "watermark": 1,
+        "recorded_at": "2026-09-13T08:00:00Z",
+        "catalog_sha256": "a8a9263ce8eed7691bad8c8cdcae358938c5617ba1c6bb7666b99559d6bab812",
+        "catalog_observed_at": "2026-09-13T08:00:00+00:00",
+        "report_sha256": "005de2675caa294826993e190fe7de94f77c9f586a385344344215b26fd11081",
+        "summary": {
+          "cost": {
+            "cash_basis": "openrouter_standard_token_cash",
+            "machine_cash_usd": null,
+            "partial_machine_cash_usd": "0.000306",
+            "reasons": [
+              "execution_link_unknown",
+              "source_coverage_unknown",
+              "wi_execution_inventory_unknown"
+            ],
+            "unpriced": []
+          },
+          "usage": {
+            "known_total_tokens": 140,
+            "event_count": 1,
+            "source_coverage": "unknown",
+            "wi_inventory_coverage": "unknown"
+          }
+        },
+        "groups": [
+          {
+            "key": {
+              "model": "openai/gpt-4o"
+            },
+            "cost": {
+              "cash_basis": "openrouter_standard_token_cash",
+              "machine_cash_usd": null,
+              "partial_machine_cash_usd": "0.000306",
+              "reasons": [
+                "execution_link_unknown",
+                "source_coverage_unknown",
+                "wi_execution_inventory_unknown"
+              ],
+              "unpriced": []
+            }
+          }
+        ]
+      },
+      {
+        "period": "month",
+        "dimension": "agent",
+        "source_schema": "computecost_collaboration_query/v1",
+        "query": {
+          "agent": null,
+          "agent_role": "executor",
+          "as_of": null,
+          "cost_basis": "machine_standard",
+          "from_date": "2026-09-01",
+          "group_by": [
+            "agent"
+          ],
+          "human_hourly_rate": null,
+          "human_rate_policy": null,
+          "model": null,
+          "runtime": null,
+          "scope": "activity",
+          "timezone": "Asia/Shanghai",
+          "to_date": "2026-09-14",
+          "value_from": null,
+          "value_to": null,
+          "watermark": 1,
+          "work_items": []
+        },
+        "watermark": 1,
+        "recorded_at": "2026-09-13T08:00:00Z",
+        "catalog_sha256": "a8a9263ce8eed7691bad8c8cdcae358938c5617ba1c6bb7666b99559d6bab812",
+        "catalog_observed_at": "2026-09-13T08:00:00+00:00",
+        "report_sha256": "ef6f6e34168b988e60aa2466b0c1ae041ed4d41a0983f45a4478446eca722658",
+        "summary": {
+          "cost": {
+            "cash_basis": "openrouter_standard_token_cash",
+            "machine_cash_usd": null,
+            "partial_machine_cash_usd": "0.000306",
+            "reasons": [
+              "execution_link_unknown",
+              "source_coverage_unknown",
+              "wi_execution_inventory_unknown"
+            ],
+            "unpriced": []
+          },
+          "usage": {
+            "known_total_tokens": 140,
+            "event_count": 1,
+            "source_coverage": "unknown",
+            "wi_inventory_coverage": "unknown"
+          }
+        },
+        "groups": [
+          {
+            "key": {
+              "agent": "pulse"
+            },
+            "cost": {
+              "cash_basis": "openrouter_standard_token_cash",
+              "machine_cash_usd": null,
+              "partial_machine_cash_usd": "0.000306",
+              "reasons": [
+                "execution_link_unknown",
+                "source_coverage_unknown",
+                "wi_execution_inventory_unknown"
+              ],
+              "unpriced": []
+            }
+          }
+        ]
+      },
+      {
+        "period": "month",
+        "dimension": "wi",
+        "source_schema": "computecost_collaboration_query/v1",
+        "query": {
+          "agent": null,
+          "agent_role": "executor",
+          "as_of": null,
+          "cost_basis": "machine_standard",
+          "from_date": "2026-09-01",
+          "group_by": [
+            "wi"
+          ],
+          "human_hourly_rate": null,
+          "human_rate_policy": null,
+          "model": null,
+          "runtime": null,
+          "scope": "activity",
+          "timezone": "Asia/Shanghai",
+          "to_date": "2026-09-14",
+          "value_from": null,
+          "value_to": null,
+          "watermark": 1,
+          "work_items": []
+        },
+        "watermark": 1,
+        "recorded_at": "2026-09-13T08:00:00Z",
+        "catalog_sha256": "a8a9263ce8eed7691bad8c8cdcae358938c5617ba1c6bb7666b99559d6bab812",
+        "catalog_observed_at": "2026-09-13T08:00:00+00:00",
+        "report_sha256": "f04fe9c8824889fc43a483dd6f36e2c5e7dee152ed56102e66d6aa2bccb66c3f",
+        "summary": {
+          "cost": {
+            "cash_basis": "openrouter_standard_token_cash",
+            "machine_cash_usd": null,
+            "partial_machine_cash_usd": "0.000306",
+            "reasons": [
+              "execution_link_unknown",
+              "source_coverage_unknown",
+              "wi_execution_inventory_unknown"
+            ],
+            "unpriced": []
+          },
+          "usage": {
+            "known_total_tokens": 140,
+            "event_count": 1,
+            "source_coverage": "unknown",
+            "wi_inventory_coverage": "unknown"
+          }
+        },
+        "groups": [
+          {
+            "key": {
+              "wi": "wi_20260825_300"
+            },
+            "cost": {
+              "cash_basis": "openrouter_standard_token_cash",
+              "machine_cash_usd": null,
+              "partial_machine_cash_usd": "0.000306",
+              "reasons": [
+                "execution_link_unknown",
+                "source_coverage_unknown",
+                "wi_execution_inventory_unknown"
+              ],
+              "unpriced": []
+            }
+          }
+        ]
+      },
+      {
+        "period": "month",
+        "dimension": "model",
+        "source_schema": "computecost_collaboration_query/v1",
+        "query": {
+          "agent": null,
+          "agent_role": "executor",
+          "as_of": null,
+          "cost_basis": "machine_standard",
+          "from_date": "2026-09-01",
+          "group_by": [
+            "model"
+          ],
+          "human_hourly_rate": null,
+          "human_rate_policy": null,
+          "model": null,
+          "runtime": null,
+          "scope": "activity",
+          "timezone": "Asia/Shanghai",
+          "to_date": "2026-09-14",
+          "value_from": null,
+          "value_to": null,
+          "watermark": 1,
+          "work_items": []
+        },
+        "watermark": 1,
+        "recorded_at": "2026-09-13T08:00:00Z",
+        "catalog_sha256": "a8a9263ce8eed7691bad8c8cdcae358938c5617ba1c6bb7666b99559d6bab812",
+        "catalog_observed_at": "2026-09-13T08:00:00+00:00",
+        "report_sha256": "e1cf2029857e8c7c19d216c79e49a2ac82cfc069fc63be9f4e0d3515adebef08",
+        "summary": {
+          "cost": {
+            "cash_basis": "openrouter_standard_token_cash",
+            "machine_cash_usd": null,
+            "partial_machine_cash_usd": "0.000306",
+            "reasons": [
+              "execution_link_unknown",
+              "source_coverage_unknown",
+              "wi_execution_inventory_unknown"
+            ],
+            "unpriced": []
+          },
+          "usage": {
+            "known_total_tokens": 140,
+            "event_count": 1,
+            "source_coverage": "unknown",
+            "wi_inventory_coverage": "unknown"
+          }
+        },
+        "groups": [
+          {
+            "key": {
+              "model": "openai/gpt-4o"
+            },
+            "cost": {
+              "cash_basis": "openrouter_standard_token_cash",
+              "machine_cash_usd": null,
+              "partial_machine_cash_usd": "0.000306",
+              "reasons": [
+                "execution_link_unknown",
+                "source_coverage_unknown",
+                "wi_execution_inventory_unknown"
+              ],
+              "unpriced": []
+            }
+          }
+        ]
+      }
+    ],
+    "subscriptions": [
+      {
+        "id": "chatgpt_pro_max",
+        "name": "ChatGPT Pro Max",
+        "status": "active_user_confirmed",
+        "monthly_amount_usd": "200",
+        "billing_day": 14,
+        "confirmed_on": "2026-09-13"
+      },
+      {
+        "id": "claude_code",
+        "name": "Claude Code",
+        "status": "stopped_user_confirmed",
+        "monthly_amount_usd": null,
+        "billing_day": null,
+        "confirmed_on": "2026-09-13"
+      }
+    ],
+    "openrouter": {
+      "status": "available",
+      "reason": "not_a_complete_month_bill",
+      "observed_at": "2026-09-13T08:00:00+00:00",
+      "month_utc": "2026-09",
+      "coverage": "returned_rows_only",
+      "usage_usd": "2.950298",
+      "requests": 677,
+      "first_returned_day": "2026-09-09",
+      "last_returned_day": "2026-09-09"
+    },
+    "sha256": "d90f6c6b8e275616399882c073184b2861b00bc760ee5d1e2a49ff645969aef7"
+  }
+}

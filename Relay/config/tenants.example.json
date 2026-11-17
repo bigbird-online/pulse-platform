@@ -1,0 +1,14 @@
+{
+  "tenants": [
+    {
+      "tenantId": "member-000",
+      "channel": "telegram",
+      "chatId": "YOUR_TELEGRAM_CHAT_ID",
+      "workspace": "/opt/PULSE/Tenants/member-000/",
+      "sessionId": "GENERATE_UUID_V4_HERE",
+      "maxTurns": 20,
+      "allowedTools": ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "Agent", "Task"],
+      "budgetUsd": 30
+    }
+  ]
+}

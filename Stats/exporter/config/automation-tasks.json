@@ -1,0 +1,169 @@
+{
+  "schema": "pulse_stats_automation_catalog/v2",
+  "pause": {
+    "reason": "待恢复",
+    "decision_date": "2026-10-19",
+    "source_ref": "WI422:owner-decided-restore-2026-10-19",
+    "applies_to": "currently-disabled-or-unconfigured-only"
+  },
+  "services": [
+    {
+      "id": "morning-news",
+      "title": "每日早报",
+      "owner": "aki",
+      "period": "daily",
+      "expectation": "本期早报与 EPUB 按要求送达",
+      "stages": [
+        {"job": "aki-19dad28dcce", "label": "成稿并推送"}
+      ],
+      "retired": [
+        {"job": "aki-19da9ee9105", "successor": "aki-19dad28dcce", "note": "旧 07:00 投递阶段，已并入 06:15 单任务"}
+      ]
+    },
+    {
+      "id": "daily-companion",
+      "title": "每日伴读",
+      "owner": "aki",
+      "period": "daily",
+      "expectation": "本期伴读内容按要求送达",
+      "stages": [
+        {"job": "aki-19e4fb47ffb", "label": "伴读推送"}
+      ]
+    },
+    {
+      "id": "s1-daily",
+      "title": "S1 日复盘",
+      "owner": "amanda",
+      "period": "daily",
+      "expectation": "本轮质量、效率、注意力结果件已刷新",
+      "stages": [
+        {"job": "amanda-vultr-nightpatrol-canary-20260713", "label": "夜巡"}
+      ]
+    },
+    {
+      "id": "wi-patrol",
+      "title": "WI 日巡",
+      "owner": "pulse",
+      "period": "daily",
+      "expectation": "检查当前卡点，记录结果与必要处置",
+      "stages": [
+        {"job": "pulse-daily-wi-patrol-20260727", "label": "日巡"}
+      ]
+    },
+    {
+      "id": "oikos-daily",
+      "title": "Oikos 日检",
+      "owner": "hestia",
+      "period": "daily",
+      "expectation": "漂移检查与开放项日结",
+      "stages": [
+        {"job": "hestia-19f9254e179", "label": "日检", "unproven": ["应发通知送达"]},
+        {"job": "hestia-19f9254e40c", "label": "30 分钟异常分流"}
+      ]
+    },
+    {
+      "id": "s1-weekly",
+      "title": "S1 周复盘",
+      "owner": "amanda",
+      "period": "weekly",
+      "expectation": "本周 S1 结果、缺口与下一步",
+      "stages": [
+        {"job": "amanda-s1-weekly", "label": "周复盘"}
+      ],
+      "retired": [
+        {"job": "amanda-19dc81d7811", "successor": "amanda-s1-weekly", "note": "旧周日 16:00 定义，已由 Amanda 登记的周日 18:00 任务接替"}
+      ]
+    },
+    {
+      "id": "s2-weekly",
+      "title": "S2 周复盘",
+      "owner": "pulse",
+      "period": "weekly",
+      "expectation": "本周协作体检报告及所需投递",
+      "stages": [
+        {"job": "pulse-weekly-s2-review-20260727", "label": "周复盘"}
+      ]
+    },
+    {
+      "id": "s3-weekly",
+      "title": "S3 周复盘",
+      "owner": "duke",
+      "period": "weekly",
+      "expectation": "每周一复判结论写入 WI 222；需大鸟决定时经 Duke bot 发一条汇总",
+      "stages": [
+        {"job": "duke-weekly-s3-review-20260803", "label": "周复判"}
+      ]
+    },
+    {
+      "id": "independent-weekly",
+      "title": "独立周对账",
+      "owner": "reeve",
+      "period": "weekly",
+      "expectation": "本周独立核对结果与差异",
+      "stages": [
+        {"job": "reeve-vultr-weeklyreconcile-20260731", "label": "周对账"}
+      ]
+    },
+    {
+      "id": "checkout-follow",
+      "title": "共享检出跟随 main",
+      "owner": "pulse",
+      "period": "continuous",
+      "expectation": "各节点的共享检出目录按时跟上 main",
+      "stages": [
+        {"job": "pulse-four-end-sync", "label": "同步",
+         "skip": {"status": "已同步", "detail": "各节点的共享检出本轮已与 main 一致，无需拉取。",
+                  "attention": "\\b(blocked|failed)\\b", "attention_status": "同步受阻（已告警）",
+                  "attention_detail": "有仓库同步阻塞或失败，首次已告警，本轮按约定不重复告警。"}}
+      ]
+    }
+  ],
+  "families": [
+    {
+      "id": "collab-inbox",
+      "title": "协作收件箱巡检",
+      "pattern": "([a-z][a-z0-9]*)-collab-inbox",
+      "label": "{agent}",
+      "admit": "named",
+      "show_empty": true,
+      "expectation": "发给各 Agent 的协作合同被按时巡检、接单或回音",
+      "calm": "各 Agent 的收件箱巡检本轮均按计划运行。",
+      "idle": "当前没有启用中的收件箱巡检。",
+      "unit": "个 Agent ", "count": "个",
+      "conflict": "同一 Agent 有多个启用副本或负责人不匹配。",
+      "empty": "没有未按时或失败的 Agent。",
+      "partial": "不能确认全部 Agent 按时巡检。"
+    },
+    {
+      "id": "pr-review-dispatch",
+      "title": "PR 异构审核派发",
+      "pattern": "([a-z][a-z0-9]*)-pr-review-(codex|cc)",
+      "label": "{agent}（{1}）",
+      "admit": "permitted_own",
+      "show_empty": false,
+      "skip": {"status": "无待派审核", "detail": "派审 gate 本轮没有需要派发的 PR 审核（PR_REVIEW_SKIP）；不代表任何 PR 已审核通过。"},
+      "expectation": "有待审 PR 时按轮次派给异构审核会话；派发成功不等于代码审核已完成",
+      "calm": "各 Agent 的派审 gate 本轮均按计划运行；不代表任何 PR 已审核通过。",
+      "idle": "当前没有启用中的审核派发。",
+      "unit": "项", "count": "项",
+      "conflict": "同一任务有多个启用副本或负责人不匹配。",
+      "empty": "没有未按时或失败的任务。",
+      "partial": "不能确认全部派审任务按时运行。"
+    },
+    {
+      "id": "collab-deliver",
+      "title": "协作合同投递",
+      "pattern": "([a-z][a-z0-9-]*)-collab-deliver",
+      "label": "{agent}",
+      "admit": "permitted_own",
+      "show_empty": false,
+      "expectation": "只承载对话的节点按时把发给各 Agent 的协作合同投递到其会话；不唤醒会话",
+      "calm": "各 Agent 的合同投递本轮均按计划运行；无待投合同时按约定跳过。",
+      "idle": "当前没有启用中的合同投递。",
+      "unit": "个 Agent ", "count": "个",
+      "conflict": "同一 Agent 有多个启用副本或负责人不匹配。",
+      "empty": "没有未按时或失败的 Agent。",
+      "partial": "不能确认全部 Agent 的合同按时投递。"
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  relay:
+    name: Relay build and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: Relay
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Relay/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Provide the owned-process Python path
+        # Relay's owned-process helper (cc runtime and scheduled batch runs)
+        # looks for Python at this fixed path.
+        run: |
+          mkdir -p "$HOME/.local/share/coevolution/python-env/bin"
+          ln -sf "$(command -v python)" "$HOME/.local/share/coevolution/python-env/bin/python"
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Test (Relay subset)
+        # The excluded suite exercises the optional ComputeCost integration,
+        # which needs the ComputeCost Python environment.
+        run: npx vitest run --exclude tests/compute-cost-integration.test.ts
+
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/$archive"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/$archive" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" gitleaks
+      - name: Scan working tree
+        run: '"$RUNNER_TEMP/gitleaks" dir . --config .gitleaks.toml --redact --no-banner'
+      - name: Scan history
+        run: '"$RUNNER_TEMP/gitleaks" git . --config .gitleaks.toml --redact --no-banner'

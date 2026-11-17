@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "relay_pi_runtime_manifest/v1",
+  "piVersion": "0.87.1",
+  "piCommit": "f07218c4d4bbc12bef056a7058c3dd49dfe41abe",
+  "profiles": {
+    "resident-host-native": {
+      "kind": "host-native",
+      "unattended": true,
+      "piBinary": "/opt/pulse/bin/pi",
+      "toolchainPaths": [
+        "/opt/pulse/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin"
+      ],
+      "workspaceRoots": [
+        "/srv/pulse/agent-workspaces"
+      ],
+      "nodeResourceRoots": [
+        "/opt/pulse/bin",
+        "/opt/pulse/runtime",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin"
+      ],
+      "sessionRoot": "/var/lib/pulse/pi-sessions",
+      "envAllowlist": [
+        "OPENROUTER_API_KEY",
+        "PULSE_COMPUTE_COST_PYTHON",
+        "PULSE_COMPUTE_COST_PYTHONPATH",
+        "PULSE_COMPUTE_COST_PI_SNAPSHOT_DIR"
+      ],
+      "extensions": [],
+      "computeCostHost": {
+        "extension": "/opt/pulse/runtime/compute-cost/pi-usage-binding.mjs",
+        "python": "/opt/pulse/bin/python3",
+        "pythonPath": "/opt/pulse/runtime/compute-cost",
+        "sclExecutable": "/opt/pulse/runtime/scl/bin/harness-scl",
+        "sclHarnessRoot": "/opt/pulse/runtime/harness-authority/.harness",
+        "sclKernelRoot": "/opt/pulse/runtime/scl-kernel"
+      },
+      "skills": [],
+      "contextFiles": [],
+      "workspaceContextFileNames": [
+        "CLAUDE.md"
+      ]
+    },
+    "internal-canary": {
+      "kind": "container",
+      "unattended": true,
+      "launcher": {
+        "command": "/opt/pulse/relay/scripts/pi-runtime-container-launcher.sh",
+        "args": [
+          "--engine",
+          "/usr/bin/docker",
+          "--image",
+          "registry.internal/pulse/pi-runtime@sha256:REPLACE_WITH_REVIEWED_DIGEST",
+          "--user",
+          "REPLACE_WITH_RELAY_UID:REPLACE_WITH_RELAY_GID",
+          "--network",
+          "bridge"
+        ]
+      },
+      "piBinary": "/usr/local/bin/pi",
+      "toolchainPaths": [],
+      "workspaceRoots": [
+        "/srv/pulse/tenants/pi-canary"
+      ],
+      "sessionRoot": "/var/lib/pulse/pi-sessions",
+      "envAllowlist": [
+        "ANTHROPIC_API_KEY"
+      ],
+      "extensions": [],
+      "skills": [],
+      "contextFiles": []
+    }
+  }
+}

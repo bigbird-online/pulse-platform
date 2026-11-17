@@ -1,0 +1,64 @@
+{
+  "schema_version": 2,
+  "profiles": {
+    "platform_default": {
+      "cc": {
+        "model": "claude-fable-5"
+      },
+      "codex": {
+        "model_alias": "codex-sol-latest",
+        "reasoning_effort": "xhigh"
+      }
+    },
+    "frontier": {
+      "cc": {
+        "model_alias": "claude-opus-latest",
+        "reasoning_effort": "high"
+      },
+      "codex": {
+        "model_alias": "codex-astra-latest",
+        "reasoning_effort": "high"
+      }
+    },
+    "media": {
+      "cc": {
+        "model_alias": "claude-sonnet-latest",
+        "reasoning_effort": "medium"
+      },
+      "codex": {
+        "model_alias": "codex-terra-latest",
+        "reasoning_effort": "medium"
+      }
+    },
+    "economy": {
+      "cc": {
+        "model_alias": "claude-haiku-latest",
+        "reasoning_effort": "low"
+      },
+      "codex": {
+        "model_alias": "codex-luna-latest",
+        "reasoning_effort": "low"
+      }
+    },
+    "review": {
+      "cc": {
+        "model_alias": "claude-opus-latest",
+        "reasoning_effort": "high"
+      },
+      "codex": {
+        "model_alias": "codex-sol-latest",
+        "reasoning_effort": "high"
+      }
+    },
+    "automation": {
+      "cc": {
+        "model_alias": "claude-sonnet-latest",
+        "reasoning_effort": "high"
+      },
+      "codex": {
+        "model_alias": "codex-sol-latest",
+        "reasoning_effort": "high"
+      }
+    }
+  }
+}

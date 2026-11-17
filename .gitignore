@@ -1,0 +1,33 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+
+# Local configuration and credentials: never commit these
+.env
+.env.*
+*.pem
+*.key
+relay.json
+secrets/
+Relay/config/models.json
+Relay/config/cron-jobs.json
+Relay/config/node-placement.json
+.relay/
+
+# Runtime state
+data/
+logs/
+*.log
+.harness/
+
+# OS and editor files
+.DS_Store
+._*
+.idea/
+.vscode/

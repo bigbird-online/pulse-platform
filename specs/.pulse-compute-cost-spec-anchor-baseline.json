@@ -1,0 +1,4 @@
+{
+  "allowed_drift": 5,
+  "reason": "S4/S5 design-only anchors: _desired_cost_route, _profile_rank, _materialize_cost_route, ALLOWED_COST_PRESET_TRANSITIONS"
+}

@@ -1,0 +1,30 @@
+{
+  "name": "@pulse/platform",
+  "version": "0.1.0",
+  "description": "PULSE member onboarding, payments, and tenant provisioning for Relay",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc && npm run build:web",
+    "build:web": "npm run build --prefix web",
+    "start": "node dist/index.js",
+    "dev": "npm run build && node dist/index.js",
+    "dev:web": "npm run dev --prefix web",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "private": true,
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/qrcode": "^1.5.6",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  }
+}

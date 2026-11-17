@@ -1,0 +1,255 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		200000000000000000000001 /* PulseStatsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000001 /* PulseStatsApp.swift */; };
+		200000000000000000000002 /* SnapshotModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000002 /* SnapshotModels.swift */; };
+		200000000000000000000003 /* SnapshotDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000003 /* SnapshotDecoder.swift */; };
+		200000000000000000000004 /* StatusPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000004 /* StatusPresentation.swift */; };
+		200000000000000000000005 /* SnapshotTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000005 /* SnapshotTransport.swift */; };
+		200000000000000000000006 /* SnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000006 /* SnapshotStore.swift */; };
+		200000000000000000000007 /* MenuBarLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000007 /* MenuBarLabel.swift */; };
+		200000000000000000000008 /* StatsPopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000008 /* StatsPopoverView.swift */; };
+		200000000000000000000009 /* FileSnapshotCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000010 /* FileSnapshotCache.swift */; };
+		200000000000000000000018 /* HistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000018 /* HistoryStore.swift */; };
+		210000000000000000000001 /* SnapshotDecoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000001 /* SnapshotDecoderTests.swift */; };
+		210000000000000000000002 /* StatusPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000002 /* StatusPresentationTests.swift */; };
+		210000000000000000000003 /* SnapshotStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000003 /* SnapshotStoreTests.swift */; };
+		210000000000000000000004 /* SnapshotTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000004 /* SnapshotTransportTests.swift */; };
+		210000000000000000000005 /* FileSnapshotCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000005 /* FileSnapshotCacheTests.swift */; };
+		210000000000000000000018 /* HistoryStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000018 /* HistoryStoreTests.swift */; };
+		220000000000000000000001 /* ok-full.json in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000001 /* ok-full.json */; };
+		220000000000000000000002 /* warning-partial.json in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000002 /* warning-partial.json */; };
+		220000000000000000000003 /* critical-partial.json in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000003 /* critical-partial.json */; };
+		220000000000000000000004 /* stale-partial.json in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000004 /* stale-partial.json */; };
+		220000000000000000000005 /* unknown-partial.json in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000005 /* unknown-partial.json */; };
+		220000000000000000000006 /* expired-cache.json in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000006 /* expired-cache.json */; };
+		220000000000000000000007 /* invalid.json in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000007 /* invalid.json */; };
+		220000000000000000000008 /* unknown-major.json in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000008 /* unknown-major.json */; };
+		230000000000000000000001 /* ok-full.json in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000001 /* ok-full.json */; };
+		230000000000000000000002 /* warning-partial.json in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000002 /* warning-partial.json */; };
+		230000000000000000000003 /* critical-partial.json in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000003 /* critical-partial.json */; };
+		230000000000000000000004 /* stale-partial.json in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000004 /* stale-partial.json */; };
+		230000000000000000000005 /* unknown-partial.json in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000005 /* unknown-partial.json */; };
+		230000000000000000000006 /* expired-cache.json in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000006 /* expired-cache.json */; };
+		230000000000000000000007 /* invalid.json in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000007 /* invalid.json */; };
+		230000000000000000000008 /* unknown-major.json in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000008 /* unknown-major.json */; };
+		200000000000000000000011 /* SnapshotMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000011 /* SnapshotMetrics.swift */; };
+		200000000000000000000022 /* BillingMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000022 /* BillingMetrics.swift */; };
+		200000000000000000000012 /* StatusLamp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000012 /* StatusLamp.swift */; };
+		200000000000000000000021 /* RefreshPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000021 /* RefreshPolicy.swift */; };
+		200000000000000000000013 /* StatsFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000013 /* StatsFormatting.swift */; };
+		200000000000000000000014 /* PanelViewModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000014 /* PanelViewModels.swift */; };
+		200000000000000000000015 /* PanelComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000015 /* PanelComponents.swift */; };
+		200000000000000000000016 /* RelayPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000016 /* RelayPanelView.swift */; };
+		200000000000000000000017 /* HarnessPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000017 /* HarnessPanelView.swift */; };
+		210000000000000000000006 /* MetricValueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000006 /* MetricValueTests.swift */; };
+		210000000000000000000007 /* LampRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000007 /* LampRulesTests.swift */; };
+		210000000000000000000008 /* PanelViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000008 /* PanelViewModelTests.swift */; };
+		210000000000000000000022 /* BillingMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000022 /* BillingMetricsTests.swift */; };
+		210000000000000000000009 /* MenuBarSharingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000009 /* MenuBarSharingTests.swift */; };
+		210000000000000000000021 /* RefreshPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000021 /* RefreshPolicyTests.swift */; };
+		210000000000000000000020 /* LiveTriageContractTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 110000000000000000000020 /* LiveTriageContractTests.swift */; };
+		220000000000000000000009 /* live-v2a.json in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000009 /* live-v2a.json */; };
+		230000000000000000000009 /* live-v2a.json in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000009 /* live-v2a.json */; };
+		220000000000000000000010 /* live-v3-triage.json in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000010 /* live-v3-triage.json */; };
+		230000000000000000000010 /* live-v3-triage.json in Resources */ = {isa = PBXBuildFile; fileRef = 120000000000000000000010 /* live-v3-triage.json */; };
+		05DB643626E5134547B3EF2A /* CostDashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C8DFC7B16D0D2C1D77E0EE5; };
+		C7355B85351D50B9DB3A36B7 /* CostDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FA9378C81506BB997C2C6C8; };
+		F79B3288672E96D03966A51B /* CostDashboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 394F1B407DCA0910C84DBF86; };
+		0F3C00DF563AC95942128AB5 /* cost-dashboard-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = B3397CAB9A975E6B0D9B6FD7; };
+		003D079CC99B769272A09455 /* cost-dashboard-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = B3397CAB9A975E6B0D9B6FD7; };
+		89C72134FC1F829114EC39D6 /* CostActivityTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EACE0B103C56A2EC8FA586B; };
+		353B166BBEC879F203760F88 /* CostBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBA258F6FDCBF05C96A5C69A; };
+		FBFA8656FDCE4F24BAA6DEDA /* CostBrowserViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C48EDFC35B27D3D412A6B64; };
+		ACA659F4D2405A0E466331DF /* CostRecordDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26A28E6CC916E94148AFCC4; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A00000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 600000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 500000000000000000000001;
+			remoteInfo = PulseStats;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		100000000000000000000001 /* PulseStatsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PulseStatsApp.swift; sourceTree = "<group>"; };
+		100000000000000000000002 /* SnapshotModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotModels.swift; sourceTree = "<group>"; };
+		100000000000000000000003 /* SnapshotDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotDecoder.swift; sourceTree = "<group>"; };
+		100000000000000000000004 /* StatusPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusPresentation.swift; sourceTree = "<group>"; };
+		100000000000000000000005 /* SnapshotTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotTransport.swift; sourceTree = "<group>"; };
+		100000000000000000000006 /* SnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotStore.swift; sourceTree = "<group>"; };
+		100000000000000000000007 /* MenuBarLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarLabel.swift; sourceTree = "<group>"; };
+		100000000000000000000008 /* StatsPopoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsPopoverView.swift; sourceTree = "<group>"; };
+		100000000000000000000009 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		100000000000000000000010 /* FileSnapshotCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileSnapshotCache.swift; sourceTree = "<group>"; };
+		100000000000000000000018 /* HistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryStore.swift; sourceTree = "<group>"; };
+		110000000000000000000001 /* SnapshotDecoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotDecoderTests.swift; sourceTree = "<group>"; };
+		110000000000000000000002 /* StatusPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusPresentationTests.swift; sourceTree = "<group>"; };
+		110000000000000000000003 /* SnapshotStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotStoreTests.swift; sourceTree = "<group>"; };
+		110000000000000000000004 /* SnapshotTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotTransportTests.swift; sourceTree = "<group>"; };
+		110000000000000000000005 /* FileSnapshotCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileSnapshotCacheTests.swift; sourceTree = "<group>"; };
+		110000000000000000000018 /* HistoryStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryStoreTests.swift; sourceTree = "<group>"; };
+		120000000000000000000001 /* ok-full.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "ok-full.json"; sourceTree = "<group>"; };
+		120000000000000000000002 /* warning-partial.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "warning-partial.json"; sourceTree = "<group>"; };
+		120000000000000000000003 /* critical-partial.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "critical-partial.json"; sourceTree = "<group>"; };
+		120000000000000000000004 /* stale-partial.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "stale-partial.json"; sourceTree = "<group>"; };
+		120000000000000000000005 /* unknown-partial.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "unknown-partial.json"; sourceTree = "<group>"; };
+		120000000000000000000006 /* expired-cache.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "expired-cache.json"; sourceTree = "<group>"; };
+		120000000000000000000007 /* invalid.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = invalid.json; sourceTree = "<group>"; };
+		120000000000000000000008 /* unknown-major.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "unknown-major.json"; sourceTree = "<group>"; };
+		130000000000000000000001 /* PulseStats.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PulseStats.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		130000000000000000000002 /* PulseStatsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PulseStatsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		100000000000000000000011 /* SnapshotMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotMetrics.swift; sourceTree = "<group>"; };
+		100000000000000000000022 /* BillingMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillingMetrics.swift; sourceTree = "<group>"; };
+		100000000000000000000012 /* StatusLamp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusLamp.swift; sourceTree = "<group>"; };
+		100000000000000000000021 /* RefreshPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RefreshPolicy.swift; sourceTree = "<group>"; };
+		100000000000000000000013 /* StatsFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsFormatting.swift; sourceTree = "<group>"; };
+		100000000000000000000014 /* PanelViewModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelViewModels.swift; sourceTree = "<group>"; };
+		100000000000000000000015 /* PanelComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelComponents.swift; sourceTree = "<group>"; };
+		100000000000000000000016 /* RelayPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayPanelView.swift; sourceTree = "<group>"; };
+		100000000000000000000017 /* HarnessPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HarnessPanelView.swift; sourceTree = "<group>"; };
+		110000000000000000000006 /* MetricValueTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricValueTests.swift; sourceTree = "<group>"; };
+		110000000000000000000007 /* LampRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LampRulesTests.swift; sourceTree = "<group>"; };
+		110000000000000000000008 /* PanelViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelViewModelTests.swift; sourceTree = "<group>"; };
+		110000000000000000000022 /* BillingMetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BillingMetricsTests.swift; sourceTree = "<group>"; };
+		110000000000000000000009 /* MenuBarSharingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarSharingTests.swift; sourceTree = "<group>"; };
+		110000000000000000000021 /* RefreshPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RefreshPolicyTests.swift; sourceTree = "<group>"; };
+		110000000000000000000020 /* LiveTriageContractTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTriageContractTests.swift; sourceTree = "<group>"; };
+		120000000000000000000009 /* live-v2a.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "live-v2a.json"; sourceTree = "<group>"; };
+		120000000000000000000010 /* live-v3-triage.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "live-v3-triage.json"; sourceTree = "<group>"; };
+		9C8DFC7B16D0D2C1D77E0EE5 /* CostDashboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CostDashboard.swift"; sourceTree = "<group>"; };
+		4FA9378C81506BB997C2C6C8 /* CostDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CostDashboardView.swift"; sourceTree = "<group>"; };
+		394F1B407DCA0910C84DBF86 /* CostDashboardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CostDashboardTests.swift"; sourceTree = "<group>"; };
+		B3397CAB9A975E6B0D9B6FD7 /* cost-dashboard-v1.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "cost-dashboard-v1.json"; sourceTree = "<group>"; };
+		7EACE0B103C56A2EC8FA586B /* CostActivityTable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CostActivityTable.swift; sourceTree = "<group>"; };
+		CBA258F6FDCBF05C96A5C69A /* CostBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CostBrowser.swift; sourceTree = "<group>"; };
+		7C48EDFC35B27D3D412A6B64 /* CostBrowserViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CostBrowserViews.swift; sourceTree = "<group>"; };
+		D26A28E6CC916E94148AFCC4 /* CostRecordDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CostRecordDetail.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		410000000000000000000001 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		410000000000000000000002 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		300000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				300000000000000000000002 /* PulseStats */,
+				300000000000000000000008 /* PulseStatsTests */,
+				300000000000000000000009 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		300000000000000000000002 /* PulseStats */ = {
+			isa = PBXGroup;
+			children = (
+				300000000000000000000003 /* App */,
+				300000000000000000000004 /* Core */,
+				300000000000000000000005 /* Transport */,
+				300000000000000000000006 /* Views */,
+				300000000000000000000007 /* Fixtures */,
+				100000000000000000000009 /* Info.plist */,
+			);
+			path = PulseStats;
+			sourceTree = "<group>";
+		};
+		300000000000000000000003 /* App */ = {isa = PBXGroup; children = (100000000000000000000001 /* PulseStatsApp.swift */,); path = App; sourceTree = "<group>"; };
+		300000000000000000000004 /* Core */ = {isa = PBXGroup; children = (CBA258F6FDCBF05C96A5C69A /* CostBrowser.swift */, 9C8DFC7B16D0D2C1D77E0EE5 /* CostDashboard.swift */, 100000000000000000000002 /* SnapshotModels.swift */, 100000000000000000000003 /* SnapshotDecoder.swift */, 100000000000000000000004 /* StatusPresentation.swift */, 100000000000000000000011 /* SnapshotMetrics.swift */, 100000000000000000000022 /* BillingMetrics.swift */, 100000000000000000000012 /* StatusLamp.swift */, 100000000000000000000013 /* StatsFormatting.swift */, 100000000000000000000014 /* PanelViewModels.swift */, 100000000000000000000021 /* RefreshPolicy.swift */,); path = Core; sourceTree = "<group>"; };
+		300000000000000000000005 /* Transport */ = {isa = PBXGroup; children = (100000000000000000000005 /* SnapshotTransport.swift */, 100000000000000000000006 /* SnapshotStore.swift */, 100000000000000000000010 /* FileSnapshotCache.swift */, 100000000000000000000018 /* HistoryStore.swift */,); path = Transport; sourceTree = "<group>"; };
+		300000000000000000000006 /* Views */ = {isa = PBXGroup; children = (7C48EDFC35B27D3D412A6B64 /* CostBrowserViews.swift */, D26A28E6CC916E94148AFCC4 /* CostRecordDetail.swift */, 7EACE0B103C56A2EC8FA586B /* CostActivityTable.swift */, 4FA9378C81506BB997C2C6C8 /* CostDashboardView.swift */, 100000000000000000000007 /* MenuBarLabel.swift */, 100000000000000000000008 /* StatsPopoverView.swift */, 100000000000000000000015 /* PanelComponents.swift */, 100000000000000000000016 /* RelayPanelView.swift */, 100000000000000000000017 /* HarnessPanelView.swift */,); path = Views; sourceTree = "<group>"; };
+		300000000000000000000007 /* Fixtures */ = {isa = PBXGroup; children = (B3397CAB9A975E6B0D9B6FD7 /* cost-dashboard-v1.json */, 120000000000000000000001 /* ok-full.json */, 120000000000000000000002 /* warning-partial.json */, 120000000000000000000003 /* critical-partial.json */, 120000000000000000000004 /* stale-partial.json */, 120000000000000000000005 /* unknown-partial.json */, 120000000000000000000006 /* expired-cache.json */, 120000000000000000000007 /* invalid.json */, 120000000000000000000008 /* unknown-major.json */, 120000000000000000000009 /* live-v2a.json */, 120000000000000000000010 /* live-v3-triage.json */,); path = Resources/Fixtures; sourceTree = "<group>"; };
+		300000000000000000000008 /* PulseStatsTests */ = {isa = PBXGroup; children = (394F1B407DCA0910C84DBF86 /* CostDashboardTests.swift */, 110000000000000000000001 /* SnapshotDecoderTests.swift */, 110000000000000000000002 /* StatusPresentationTests.swift */, 110000000000000000000003 /* SnapshotStoreTests.swift */, 110000000000000000000004 /* SnapshotTransportTests.swift */, 110000000000000000000005 /* FileSnapshotCacheTests.swift */, 110000000000000000000006 /* MetricValueTests.swift */, 110000000000000000000007 /* LampRulesTests.swift */, 110000000000000000000022 /* BillingMetricsTests.swift */, 110000000000000000000008 /* PanelViewModelTests.swift */, 110000000000000000000009 /* MenuBarSharingTests.swift */, 110000000000000000000018 /* HistoryStoreTests.swift */, 110000000000000000000020 /* LiveTriageContractTests.swift */, 110000000000000000000021 /* RefreshPolicyTests.swift */,); path = PulseStatsTests; sourceTree = "<group>"; };
+		300000000000000000000009 /* Products */ = {isa = PBXGroup; children = (130000000000000000000001 /* PulseStats.app */, 130000000000000000000002 /* PulseStatsTests.xctest */,); name = Products; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		500000000000000000000001 /* PulseStats */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 800000000000000000000002 /* Build configuration list for PBXNativeTarget "PulseStats" */;
+			buildPhases = (400000000000000000000001 /* Sources */, 400000000000000000000003 /* Resources */, 410000000000000000000001 /* Frameworks */,);
+			buildRules = ();
+			dependencies = ();
+			name = PulseStats;
+			productName = PulseStats;
+			productReference = 130000000000000000000001 /* PulseStats.app */;
+			productType = "com.apple.product-type.application";
+		};
+		500000000000000000000002 /* PulseStatsTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 800000000000000000000003 /* Build configuration list for PBXNativeTarget "PulseStatsTests" */;
+			buildPhases = (400000000000000000000004 /* Sources */, 400000000000000000000005 /* Resources */, 410000000000000000000002 /* Frameworks */,);
+			buildRules = ();
+			dependencies = (900000000000000000000001 /* PBXTargetDependency */,);
+			name = PulseStatsTests;
+			productName = PulseStatsTests;
+			productReference = 130000000000000000000002 /* PulseStatsTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		600000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2630;
+				LastUpgradeCheck = 2630;
+				TargetAttributes = {
+					500000000000000000000001 = {CreatedOnToolsVersion = 26.3;};
+					500000000000000000000002 = {CreatedOnToolsVersion = 26.3; TestTargetID = 500000000000000000000001;};
+				};
+			};
+			buildConfigurationList = 800000000000000000000001 /* Build configuration list for PBXProject "PulseStats" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base,);
+			mainGroup = 300000000000000000000001;
+			productRefGroup = 300000000000000000000009 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (500000000000000000000001 /* PulseStats */, 500000000000000000000002 /* PulseStatsTests */,);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		400000000000000000000003 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (0F3C00DF563AC95942128AB5, 220000000000000000000001, 220000000000000000000002, 220000000000000000000003, 220000000000000000000004, 220000000000000000000005, 220000000000000000000006, 220000000000000000000007, 220000000000000000000008, 220000000000000000000009, 220000000000000000000010,); runOnlyForDeploymentPostprocessing = 0; };
+		400000000000000000000005 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (003D079CC99B769272A09455, 230000000000000000000001, 230000000000000000000002, 230000000000000000000003, 230000000000000000000004, 230000000000000000000005, 230000000000000000000006, 230000000000000000000007, 230000000000000000000008, 230000000000000000000009, 230000000000000000000010,); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		400000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (353B166BBEC879F203760F88, FBFA8656FDCE4F24BAA6DEDA, ACA659F4D2405A0E466331DF, 89C72134FC1F829114EC39D6, C7355B85351D50B9DB3A36B7, 05DB643626E5134547B3EF2A, 200000000000000000000001, 200000000000000000000002, 200000000000000000000003, 200000000000000000000004, 200000000000000000000005, 200000000000000000000006, 200000000000000000000007, 200000000000000000000008, 200000000000000000000009, 200000000000000000000011, 200000000000000000000022, 200000000000000000000012, 200000000000000000000013, 200000000000000000000014, 200000000000000000000015, 200000000000000000000016, 200000000000000000000017, 200000000000000000000018, 200000000000000000000021,); runOnlyForDeploymentPostprocessing = 0; };
+		400000000000000000000004 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (F79B3288672E96D03966A51B, 210000000000000000000001, 210000000000000000000002, 210000000000000000000003, 210000000000000000000004, 210000000000000000000005, 210000000000000000000006, 210000000000000000000007, 210000000000000000000022, 210000000000000000000008, 210000000000000000000009, 210000000000000000000018, 210000000000000000000020, 210000000000000000000021,); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		900000000000000000000001 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = 500000000000000000000001 /* PulseStats */; targetProxy = A00000000000000000000001 /* PBXContainerItemProxy */; };
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		700000000000000000000001 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; MACOSX_DEPLOYMENT_TARGET = 15.0; ONLY_ACTIVE_ARCH = YES; SDKROOT = macosx; SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG; SWIFT_OPTIMIZATION_LEVEL = "-Onone";}; name = Debug; };
+		700000000000000000000002 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; MACOSX_DEPLOYMENT_TARGET = 15.0; SDKROOT = macosx; SWIFT_COMPILATION_MODE = wholemodule;}; name = Release; };
+		700000000000000000000003 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual; CODE_SIGNING_ALLOWED = YES; CURRENT_PROJECT_VERSION = 1; ENABLE_APP_SANDBOX = NO; ENABLE_HARDENED_RUNTIME = YES; ENABLE_TESTABILITY = YES; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = PulseStats/Info.plist; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; MACOSX_DEPLOYMENT_TARGET = 15.0; PRODUCT_BUNDLE_IDENTIFIER = io.coevolution.pulse.stats; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_STRICT_CONCURRENCY = complete; SWIFT_VERSION = 6.0;}; name = Debug; };
+		700000000000000000000004 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_IDENTITY = "-"; CODE_SIGN_STYLE = Manual; CODE_SIGNING_ALLOWED = YES; CURRENT_PROJECT_VERSION = 1; ENABLE_APP_SANDBOX = NO; ENABLE_HARDENED_RUNTIME = YES; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = PulseStats/Info.plist; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; MACOSX_DEPLOYMENT_TARGET = 15.0; PRODUCT_BUNDLE_IDENTIFIER = io.coevolution.pulse.stats; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_STRICT_CONCURRENCY = complete; SWIFT_VERSION = 6.0;}; name = Release; };
+		700000000000000000000005 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGNING_ALLOWED = NO; GENERATE_INFOPLIST_FILE = YES; MACOSX_DEPLOYMENT_TARGET = 15.0; PRODUCT_BUNDLE_IDENTIFIER = io.coevolution.pulse.stats.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_STRICT_CONCURRENCY = complete; SWIFT_VERSION = 6.0; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PulseStats.app/Contents/MacOS/PulseStats";}; name = Debug; };
+		700000000000000000000006 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = "$(TEST_HOST)"; CODE_SIGNING_ALLOWED = NO; GENERATE_INFOPLIST_FILE = YES; MACOSX_DEPLOYMENT_TARGET = 15.0; PRODUCT_BUNDLE_IDENTIFIER = io.coevolution.pulse.stats.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_STRICT_CONCURRENCY = complete; SWIFT_VERSION = 6.0; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PulseStats.app/Contents/MacOS/PulseStats";}; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		800000000000000000000001 /* Build configuration list for PBXProject "PulseStats" */ = {isa = XCConfigurationList; buildConfigurations = (700000000000000000000001, 700000000000000000000002,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		800000000000000000000002 /* Build configuration list for PBXNativeTarget "PulseStats" */ = {isa = XCConfigurationList; buildConfigurations = (700000000000000000000003, 700000000000000000000004,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		800000000000000000000003 /* Build configuration list for PBXNativeTarget "PulseStatsTests" */ = {isa = XCConfigurationList; buildConfigurations = (700000000000000000000005, 700000000000000000000006,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+	};
+	rootObject = 600000000000000000000001 /* Project object */;
+}

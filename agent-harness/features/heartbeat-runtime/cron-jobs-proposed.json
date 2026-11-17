@@ -1,0 +1,80 @@
+{
+  "_note": "本 JSON 为 agent-harness 侧 T7 提案，实际部署由 Pulse 合并到 Relay config/cron-jobs.json（/Users/owner/Coevolution/Bigbird/PULSE/Relay/config/cron-jobs.json）。切勿直接覆盖 Relay submodule 内文件——jobs 数组需由 Pulse 审核后 append 到现有 jobs 列表。schema 参考 briefing-data-collect / briefing-epub-push 两条已上线 job。",
+  "_source": "features/heartbeat-runtime/requirements.md FR-P0-006 + design.md §2/§5",
+  "_owner_map": {
+    "heartbeat-amanda-scan": "Ken（harness 语义）× Pulse（Relay 调度壳）",
+    "heartbeat-reeve-scan": "Ken（harness 语义）× Pulse（Relay 调度壳）",
+    "heartbeat-daily-flush": "Ken（harness escalation aggregator）× Pulse（调度壳）"
+  },
+  "_rollout_order": "2026-04-20：先只合 heartbeat-amanda-scan + heartbeat-daily-flush（Amanda 先行）。heartbeat-reeve-scan 暂缓等 Reeve 反向 handoff 审核通过。用户指定节奏：先跑通 Amanda → 其他 Agent 后续。",
+  "version": 2,
+  "jobs": [
+    {
+      "id": "heartbeat-amanda-scan",
+      "name": "Heartbeat: Amanda 机械扫描 + 自主分流",
+      "enabled": false,
+      "_enabled_note": "Amanda 自撰 amanda.yaml 落地 + 冒烟（AC-P0-004 tool 硬约束实证）通过后，由 Ken 手工改 true。",
+      "schedule": {
+        "expr": "*/30 * * * *",
+        "tz": "Asia/Shanghai",
+        "_note": "默认 */30；以 .harness/policies/amanda.yaml 的 frequency_hint 为准，Pulse 合入时请核对。"
+      },
+      "agent": {
+        "workspace": "/Users/owner/Coevolution",
+        "prompt": "Heartbeat Amanda 自动扫描 + dispatch。执行以下命令：\n\n```bash\nexport HARNESS_ROOT=/Users/owner/Coevolution/.harness\ncd /Users/owner/Coevolution\n\n# 1) 机械扫描：无 LLM，输出 ScanReport JSON；exit 0=clean / 1=有命中 / 2=错误\nSCAN_OUTPUT=$(harness --root $HARNESS_ROOT scan amanda --mode cron --json 2>&1)\nSCAN_EXIT=$?\n\nif [ $SCAN_EXIT -eq 0 ]; then\n  echo \"[heartbeat-amanda-scan] clean, no dispatch\"\n  exit 0\nfi\n\nif [ $SCAN_EXIT -eq 2 ]; then\n  echo \"[heartbeat-amanda-scan] scan error: $SCAN_OUTPUT\"\n  exit 1\nfi\n\n# 2) 有命中 → dispatcher 读 policy 分流\nSCAN_ID=$(echo \"$SCAN_OUTPUT\" | python3 -c 'import sys,json; print(json.loads(sys.stdin.read())[\"scan_id\"])')\nharness --root $HARNESS_ROOT dispatch \"$SCAN_ID\"\n```\n\n说明：受限 LLM 档的 CC 分身由 harness dispatcher 直接 spawn（design.md D-001），不经 Relay 再次 spawn；本 job 只负责触发外层扫描壳。policy 内容由 Amanda 自撰（agent-self-authored-policy feature）。",
+        "timeout": 120
+      },
+      "delivery": {
+        "mode": "none",
+        "_note": "通知由 harness escalation 侧推送（push_immediately 即时 / aggregate_daily 由 heartbeat-daily-flush 合并），不走 Relay delivery。"
+      },
+      "_state": {
+        "consecutiveErrors": 0
+      }
+    },
+    {
+      "id": "heartbeat-reeve-scan",
+      "name": "Heartbeat: Reeve 机械扫描 + 自主分流",
+      "enabled": false,
+      "_enabled_note": "spike 启动前由 Ken 手工改 true，关联 AC-P0-012 七日观察窗口",
+      "schedule": {
+        "expr": "*/15 * * * *",
+        "tz": "Asia/Shanghai"
+      },
+      "agent": {
+        "workspace": "/Users/owner/Coevolution",
+        "prompt": "Heartbeat Reeve 自动扫描 + dispatch。执行以下命令：\n\n```bash\nexport HARNESS_ROOT=/Users/owner/Coevolution/.harness\ncd /Users/owner/Coevolution\n\n# 1) 机械扫描：无 LLM，输出 ScanReport JSON；exit 0=clean / 1=有命中 / 2=错误\nSCAN_OUTPUT=$(harness --root $HARNESS_ROOT scan reeve --mode cron --json 2>&1)\nSCAN_EXIT=$?\n\nif [ $SCAN_EXIT -eq 0 ]; then\n  echo \"[heartbeat-reeve-scan] clean, no dispatch\"\n  exit 0\nfi\n\nif [ $SCAN_EXIT -eq 2 ]; then\n  echo \"[heartbeat-reeve-scan] scan error: $SCAN_OUTPUT\"\n  exit 1\nfi\n\n# 2) 有命中 → dispatcher 读 policy 分流\nSCAN_ID=$(echo \"$SCAN_OUTPUT\" | python3 -c 'import sys,json; print(json.loads(sys.stdin.read())[\"scan_id\"])')\nharness --root $HARNESS_ROOT dispatch \"$SCAN_ID\"\n```\n\n说明：受限 LLM 档的 CC 分身由 harness dispatcher 直接 spawn（决策-001），不经 Relay 再次 spawn；本 job 只负责触发外层扫描壳。",
+        "timeout": 120
+      },
+      "delivery": {
+        "mode": "none",
+        "_note": "通知由 harness escalation 侧推送（push_immediately 即时 / aggregate_daily 由 heartbeat-daily-flush 合并），不走 Relay delivery。"
+      },
+      "_state": {
+        "consecutiveErrors": 0
+      }
+    },
+    {
+      "id": "heartbeat-daily-flush",
+      "name": "Heartbeat: 日粒度升级事件合并推送",
+      "enabled": false,
+      "_enabled_note": "与 heartbeat-reeve-scan 同步开关",
+      "schedule": {
+        "expr": "0 20 * * *",
+        "tz": "Asia/Shanghai"
+      },
+      "agent": {
+        "workspace": "/Users/owner/Coevolution",
+        "prompt": "Heartbeat 日粒度升级事件 flush。\n\n```bash\nexport HARNESS_ROOT=/Users/owner/Coevolution/.harness\ncd /Users/owner/Coevolution\nharness --root $HARNESS_ROOT escalation flush-daily\n```\n\n行为：读当日 escalation-YYYY-MM.jsonl 中 aggregate_policy=aggregate_daily 且 push_status=pending 的事件，合并为一条 TG 汇总推送（含 cross_owner_boundary / major_drift 分组计数），逐条更新 push_status=sent。零事件静默退出 0。",
+        "timeout": 60
+      },
+      "delivery": {
+        "mode": "none",
+        "_note": "TG 推送由 harness escalation 侧 curl 完成，不走 Relay delivery。"
+      },
+      "_state": {
+        "consecutiveErrors": 0
+      }
+    }
+  ]
+}

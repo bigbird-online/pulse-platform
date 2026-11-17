@@ -1,0 +1,6 @@
+{
+  "drift_count": 0,
+  "note": "恒不为零的基线等于没有基线。已知债须以 wire::unwired / manual 锚点显式冻结进 spec，而不是抬基线。",
+  "established": "2026-08-09",
+  "source": "wi_20260804_070 KR2b 首扫（specs/harness-main-chain.md，129 显式锚点，drift=0）"
+}

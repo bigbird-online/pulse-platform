@@ -1,0 +1,36 @@
+{
+  "schema": "pulse_stats_automation_groups/v1",
+  "unassigned": {"id": "ungrouped", "title": "用途待确认"},
+  "groups": [
+    {
+      "id": "content",
+      "title": "资讯交付",
+      "rows": ["morning-news", "daily-companion"],
+      "jobs": ["aki-podcast-[a-z0-9-]+", "pulse-bot-exchange-captions", "ken-wake-(morning|publish)"]
+    },
+    {
+      "id": "patrol",
+      "title": "巡检与异常处理",
+      "rows": ["wi-patrol", "oikos-daily", "collab-inbox", "independent-weekly"],
+      "jobs": []
+    },
+    {
+      "id": "metabolism",
+      "title": "睡眠与整理",
+      "rows": [],
+      "jobs": ["hypnos"]
+    },
+    {
+      "id": "reports",
+      "title": "报告与复盘",
+      "rows": ["s1-daily", "s1-weekly", "s2-weekly", "s3-weekly"],
+      "jobs": ["vigil-weekly-health-report", "hestia-heartbeat"]
+    },
+    {
+      "id": "coordination",
+      "title": "同步与协作保障",
+      "rows": ["checkout-follow", "pr-review-dispatch", "collab-deliver"],
+      "jobs": ["pulse-pr-review-gate-audit"]
+    }
+  ]
+}

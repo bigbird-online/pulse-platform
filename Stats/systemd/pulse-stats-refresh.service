@@ -1,0 +1,18 @@
+# Stats cost publisher on oracle-node-1. Installed by Stats/deploy.py
+# receive-oracle-publisher; started only by its timer. It runs the selected
+# reader release (stats/current) and leaves room for Relay on the same host.
+[Unit]
+Description=PULSE Stats cost publisher
+
+[Service]
+Type=oneshot
+Environment=PULSE_STATS_REFRESH_SCHEDULE=before_expiry PYTHONDONTWRITEBYTECODE=1
+ExecStart=@PYTHON@ @HOME@/.local/share/pulse/stats/current/Scripts/pulse-stats-cost-refresh.py refresh --config @HOME@/.local/state/pulse/stats/refresh.json
+StandardOutput=append:@HOME@/.local/state/pulse/stats/cost-refresh.log
+StandardError=append:@HOME@/.local/state/pulse/stats/cost-refresh-error.log
+TimeoutStartSec=100min
+CPUWeight=50
+Nice=5
+MemoryHigh=7G
+MemoryMax=9G
+OOMScoreAdjust=500

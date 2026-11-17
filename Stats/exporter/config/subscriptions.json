@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "components": [
+    {
+      "component_id": "claude_code",
+      "amount_cents": 25000,
+      "currency": "USD",
+      "effective_from": "2026-07-01",
+      "effective_until": null,
+      "source_ref": "owner-reviewed:2026-07-29-claude-code-usd-250-month",
+      "attribution": "cc_mtd_output_share"
+    },
+    {
+      "component_id": "codex",
+      "amount_cents": 2000,
+      "currency": "USD",
+      "effective_from": "2026-07-01",
+      "effective_until": null,
+      "source_ref": "owner-reviewed:2026-07-29-codex-usd-20-month",
+      "attribution": "unattributed_no_agent_source"
+    }
+  ]
+}

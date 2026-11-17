@@ -1,0 +1,40 @@
+{
+  "schema": "computecost_retired_sources/v1",
+  "sources": [
+    {
+      "id": "canonical-harness",
+      "kind": "harness_root",
+      "retired_on": "2026-10-21",
+      "authorization": "5c2cc85c10dfc238806e51f01eaf20207a2d2f8484d34b07a1c46f1bdcdeb3c3",
+      "note": "旧 harness 退役"
+    },
+    {
+      "id": "ownermac-canonical-harness",
+      "kind": "harness_root",
+      "retired_on": "2026-10-21",
+      "authorization": "5c2cc85c10dfc238806e51f01eaf20207a2d2f8484d34b07a1c46f1bdcdeb3c3",
+      "note": "旧 harness 退役"
+    },
+    {
+      "id": "stats-transport-vultr",
+      "kind": "receipts",
+      "retired_on": "2026-10-18",
+      "authorization": "5c2cc85c10dfc238806e51f01eaf20207a2d2f8484d34b07a1c46f1bdcdeb3c3",
+      "note": "Vultr 节点退役"
+    },
+    {
+      "id": "vultr-relay",
+      "kind": "relay_host",
+      "retired_on": "2026-10-18",
+      "authorization": "5c2cc85c10dfc238806e51f01eaf20207a2d2f8484d34b07a1c46f1bdcdeb3c3",
+      "note": "Vultr 节点退役"
+    },
+    {
+      "id": "native-pi-9f7364c2516f2b70",
+      "kind": "pi",
+      "retired_on": "2026-10-18",
+      "authorization": "5c2cc85c10dfc238806e51f01eaf20207a2d2f8484d34b07a1c46f1bdcdeb3c3",
+      "note": "Vultr 节点退役"
+    }
+  ]
+}

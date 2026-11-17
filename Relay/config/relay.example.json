@@ -1,0 +1,62 @@
+{
+  "_comment": "relay.json v2 — 飞书 + Telegram。运行时忽略以 _ 前缀开头的说明键。",
+  "_pulse_strategy": "specs/pulse-product-strategy.md：会员/租户默认飞书、境内可达；Telegram 仅兼容遗留，勿当作本期必选或默认 onboarding。",
+  "_onboarding_ssot": "飞书配对与 /approve 检查清单：specs/features/tenant-onboarding-feishu/tasks.md；explicit 绑定以 bindings[] 为 SSOT（见 specs/features/logical-gateway/design.md）。",
+  "_v1_compat": "无 channel 且含 botToken 的 Agent 视为 Telegram。",
+  "_v2_feishu": "飞书：channel:'feishu' + feishu:{appId,appSecret,sessionId}。feishuOpenId / bindings 可在首启后由配对写入，不必手填。",
+  "_single_channel": "每个 Agent 只绑定一种渠道（TG 或 Feishu），勿混用。",
+  "_codex_yolo_default": "codexYoloDefault=true 仅用于 Pulse 这类基础设施维护 Agent；普通业务 Agent 保持缺省 false。",
+  "_runtime_defaults": "节点级 runtime capability；仅在用户显式 /runtime 选择时物化到 Agent，不改变默认 runtime，也不参与自动 fallback。",
+  "conversationRuntimeDefaults": {
+    "pi": {
+      "model": {
+        "provider": "openai-codex",
+        "model": "gpt-6-astra",
+        "reasoning": "medium"
+      },
+      "isolationProfile": "resident-host-native"
+    }
+  },
+  "bindings": [],
+  "users": [
+    {
+      "_comment_user": "推荐：仅 Feishu Agent 的租户示例（可复制本块为模板，删除下方 Telegram 块即可）",
+      "userId": "member-demo",
+      "feishuOpenId": "ou_admin_placeholder",
+      "defaultAgent": "main-feishu",
+      "agents": [
+        {
+          "id": "main-feishu",
+          "name": "TenantBot",
+          "emoji": "\ud83d\udd2e",
+          "channel": "feishu",
+          "workspace": "/opt/PULSE/Tenants/member-000/",
+          "feishu": {
+            "appId": "YOUR_FEISHU_APP_ID",
+            "appSecret": "YOUR_FEISHU_APP_SECRET",
+            "sessionId": "uuid-feishu-session"
+          },
+          "maxTurns": 1000,
+          "allowedTools": ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "Agent", "Task"]
+        }
+      ]
+    },
+    {
+      "_comment_user": "可选：Telegram v1 兼容示例（非本期会员默认路径；不需要请整段删除以避免误配 botToken）",
+      "userId": "legacy-tg-demo",
+      "chatId": "YOUR_TELEGRAM_CHAT_ID",
+      "defaultAgent": "main",
+      "agents": [
+        {
+          "id": "main",
+          "name": "LegacyTG",
+          "emoji": "\ud83c\udfb2",
+          "botToken": "YOUR_BOT_TOKEN",
+          "workspace": "/path/to/workspace",
+          "sessionId": "00000000-0000-0000-0000-000000000000",
+          "maxTurns": 20
+        }
+      ]
+    }
+  ]
+}

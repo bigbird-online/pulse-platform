@@ -1,0 +1,97 @@
+{
+  "schema_version": "pulse_model_release/v1",
+  "release": "gpt-6-astra-20260905",
+  "verified_at": "2026-09-05T14:44:00+08:00",
+  "model": {
+    "provider": "openai-codex",
+    "id": "gpt-6-astra",
+    "display_name": "GPT-6 Astra",
+    "context_window": 1050000,
+    "relay_context_window": 272000,
+    "max_output_tokens": 128000,
+    "knowledge_cutoff": "2026-04-30",
+    "reasoning_efforts": ["low", "medium", "high", "xhigh", "max"],
+    "input": ["text", "image"],
+    "output": ["text"]
+  },
+  "runtimes": {
+    "codex": {
+      "minimum_version": "0.153.4",
+      "package": "@openai/codex",
+      "reason": "First official release that fixes Astra visibility in the bundled model picker and makes it the bundled default."
+    },
+    "pi": {
+      "minimum_version": "0.84.2",
+      "required_model": "openai-codex/gpt-6-astra"
+    },
+    "claude_agent_sdk": {
+      "version": "0.3.261",
+      "applicability": "CC routes only; GPT-6 Astra must not be routed through CC."
+    }
+  },
+  "sources": [
+    {
+      "authority": "OpenAI",
+      "url": "https://developers.openai.com/api/docs/models/gpt-6-astra",
+      "canonical_sha256": "0c21cd7433be1a20a16f8d182ea37f1648bb76f4f5eec7137a1f071084efe9c4",
+      "required_text": [
+        "GPT-6 Astra",
+        "gpt-6-astra",
+        "1,050,000 context window",
+        "128,000 max output tokens",
+        "Apr 30, 2026 knowledge cutoff",
+        "reasoning.effort supports low , medium , high , xhigh , and max"
+      ]
+    },
+    {
+      "authority": "OpenAI Codex",
+      "url": "https://api.github.com/repos/openai/codex/releases/tags/rust-v0.153.4",
+      "canonical_sha256": "fac49427e830f2c1c961fb3a4dbe187361ffcd9cc00558ca0f956a3e4337d711",
+      "canonical_json_fields": ["tag_name", "published_at", "html_url", "body"],
+      "required_text": [
+        "rust-v0.153.4",
+        "Fixed Astra’s visibility in the bundled model picker",
+        "made it the bundled default"
+      ]
+    },
+    {
+      "authority": "Anthropic",
+      "url": "https://registry.npmjs.org/@anthropic-ai%2Fclaude-agent-sdk/0.3.261",
+      "canonical_sha256": "c4244569de94e68f60f33921ad03f1c8f8be0124737c6452b8a431bb84f85fba",
+      "canonical_json_fields": ["name", "version", "repository", "homepage"],
+      "required_text": ["@anthropic-ai/claude-agent-sdk", "0.3.261", "anthropics/claude-agent-sdk-typescript"]
+    },
+    {
+      "authority": "Anthropic",
+      "url": "https://api.github.com/repos/anthropics/claude-agent-sdk-typescript/releases/tags/v0.3.261",
+      "canonical_sha256": "3a5907a432989f97f63abaa48f390a6ea549628cf2eb7431baa284c750ba80c2",
+      "canonical_json_fields": ["tag_name", "published_at", "html_url", "body"],
+      "required_text": [
+        "v0.3.261",
+        "Updated to parity with Claude Code v2.1.261",
+        "npm install @anthropic-ai/claude-agent-sdk@0.3.261"
+      ]
+    }
+  ],
+  "discovery": {
+    "claude_agent_sdk": {
+      "package": "@anthropic-ai/claude-agent-sdk",
+      "pinned_version": "0.3.261",
+      "url": "https://registry.npmjs.org/@anthropic-ai%2Fclaude-agent-sdk/latest"
+    }
+  },
+  "rollout": {
+    "order": ["ownermac", "TCloud", "Vultr"],
+    "human_gate_before_activation": true,
+    "rollback": "Reactivate the immediately preceding capacity-protected release and read back runtime, model catalog, and service health.",
+    "alert_on": ["source_drift", "runtime_too_old", "model_missing", "conversation_uat_failed", "rollback_failed"],
+    "alerting": {
+      "delivery": "github-actions-failed-check",
+      "owner": "Relay operations on-call owner",
+      "owner_login": "example-owner",
+      "ack_sla_minutes": 30,
+      "rollback_failed_severity": "critical",
+      "escalation": "Stop rollout, preserve the failed check and release receipt, and require the owner to acknowledge before retry."
+    }
+  }
+}
