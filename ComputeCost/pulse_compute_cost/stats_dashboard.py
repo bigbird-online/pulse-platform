@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import re
+import sqlite3
 import stat
 import sys
 import tempfile
@@ -303,6 +304,70 @@ def with_pull_requests(view: Mapping[str, Any], merged: Mapping[str, Any]) -> di
     return result
 
 
+ENGINES = ('full', 'shadow', 'incremental')
+# refresh.json incremental.views (see incremental_modes) -> --engine.
+VIEW_ENGINES = {'off': 'full', 'shadow': 'shadow', 'on': 'incremental'}
+# refresh.json incremental.collection -> --collection-engine (same mapping).
+COLLECTION_ENGINES = ENGINES
+DIFF_LIMIT = 5
+
+
+def _attach(incremental, upto, timings, slot):
+    """The attached incremental views, or None with the reason recorded in `timings[slot]`."""
+    from .incremental_views import IncrementalUnavailable
+    started = perf_counter()
+    try:
+        if incremental is None:
+            raise IncrementalUnavailable('incremental_not_configured')
+        inc = incremental(upto)
+    except Exception as exc:  # Unavailable derived state never stops the full calculation.
+        if timings is not None:
+            timings[slot] = {'status': 'unavailable', 'seconds': round(perf_counter()-started, 3),
+                             'reason': exc.reason if isinstance(exc, IncrementalUnavailable) else 'attach_failed',
+                             **({} if isinstance(exc, IncrementalUnavailable) else {'error_type': type(exc).__name__})}
+        return None
+    if timings is not None:
+        timings[slot] = {'status': 'attached', **inc.timings}
+    return inc
+
+
+def shadow(incremental, snapshot, computed, catalog, observed, timings) -> None:
+    """Compute each view again from the resolved store and record whether it equals the published one.
+
+    Never changes the publication: any failure is recorded by its type only.
+    """
+    from .incremental_views import compare_views, unpriced_witness
+    record = {}
+    started = perf_counter()
+    try:
+        inc = _attach(incremental, snapshot['watermark'], record, 'attach')
+        if inc is None:
+            record.update(status='unavailable', reason=record['attach']['reason'])
+        else:
+            if inc.snapshot()['recorded_at'] != snapshot['recorded_at']:
+                raise ValueError('incremental prefix differs from the published snapshot')
+            compared = []
+            for query, period, dimension, view, witness in computed:
+                at = perf_counter()
+                # The published view may be a cache hit priced at an earlier retrieval of the same
+                # catalog; the comparison prices at that same observation time.
+                report = inc.query(query, catalog=catalog, catalog_observed_at=view['catalog_observed_at'])
+                mine = _view(report, period, dimension)
+                paths = compare_views(view, mine, witness, unpriced_witness(report))
+                mismatch = inc.store.reconcile(mine)
+                compared.append({'period': period, 'dimension': dimension, 'equal': not paths,
+                                 'diff_paths': paths, 'reconciled': not mismatch,
+                                 'seconds': round(perf_counter()-at, 3)})
+            inc.close()
+            record.update(status='equal' if all(c['equal'] and c['reconciled'] for c in compared) else 'different',
+                          views=compared)
+    except Exception as exc:  # The shadow never withholds the full publication.
+        record.update(status='failed', error_type=type(exc).__name__)
+    record['seconds'] = round(perf_counter()-started, 3)
+    if timings is not None:
+        timings.setdefault('incremental_shadow', []).append(record)
+
+
 def build_dashboard(ledger: UsageLedger | None, *, subscriptions: Mapping[str, Any],
                     source_revision: str, now: datetime | None = None,
                     catalog_snapshot: Mapping[str, Any] | None = None,
@@ -321,8 +386,16 @@ def build_dashboard(ledger: UsageLedger | None, *, subscriptions: Mapping[str, A
                     audit_pull_requests: bool = False,
                     kernel_merge_enforced_since: str | None = None,
                     periods: tuple[str, ...] = CURRENT_PERIODS,
-                    validity_minutes: int = VALIDITY_MINUTES[0]) -> dict[str, Any]:
+                    validity_minutes: int = VALIDITY_MINUTES[0],
+                    collection_backlog: Mapping[str, Any] | None = None,
+                    engine: str = 'full', incremental=None) -> dict[str, Any]:
+    """`engine`: `full` (one ledger snapshot, as always), `shadow` (full, plus the
+    incremental views compared in `timings['incremental_shadow']`) or
+    `incremental` (views from the resolved store; `incremental(upto)` attaches
+    it, see `incremental_views`). An unavailable store falls back to full."""
     now = now or datetime.now(timezone.utc)
+    if engine not in ENGINES:
+        raise ValueError('unsupported calculation engine')
     if validity_minutes not in VALIDITY_MINUTES:
         raise ValueError('unsupported publication validity')
     _instant(now.isoformat())
@@ -341,9 +414,14 @@ def build_dashboard(ledger: UsageLedger | None, *, subscriptions: Mapping[str, A
               'views':[], 'subscriptions':_subscriptions(subscriptions),
               'openrouter':project_openrouter(openrouter_snapshot,now=now)}
     if ledger is not None:
+        inc = None
+        if engine == 'incremental':
+            inc = _attach(incremental, None, timings, 'incremental')
+            if inc is None:
+                engine = 'full'
         try:
             started = perf_counter()
-            snapshot = ledger.receipt_snapshot()
+            snapshot = inc.snapshot() if inc is not None else ledger.receipt_snapshot()
             if timings is not None:
                 timings["ledger_snapshot_seconds"] = round(perf_counter()-started, 3)
             if snapshot['recorded_at'] is not None and _instant(snapshot['recorded_at'])>now:
@@ -356,13 +434,16 @@ def build_dashboard(ledger: UsageLedger | None, *, subscriptions: Mapping[str, A
             from dataclasses import asdict
             from .calculation_cache import CalculationCache, engine_digest
             cache = CalculationCache(calculation_cache, force=force_recompute) if calculation_cache else None
-            engine = engine_digest() if cache else None
+            engine_key = engine_digest() if cache else None
             # Already-priced native quantities remain reusable after a new
             # unrelated request or WI attribution arrives. Changed model/counts
             # or catalog bytes invalidate exactly that arithmetic key.
-            prices = cache.get("prices", engine) if cache else None
-            session = CollaborationQuerySession(snapshot, prices=prices if isinstance(prices, dict) else None,
-                                                agent_tenants=agent_tenants)
+            prices = cache.get("prices", engine_key) if cache else None
+            prices = prices if isinstance(prices, dict) else None
+            session = None if inc is not None else CollaborationQuerySession(
+                snapshot, prices=prices, agent_tenants=agent_tenants)
+            if inc is not None:
+                prices = {} if prices is None else deepcopy(prices)
             from .agent_tenants import agent_tenants_digest
             tenants_key = agent_tenants_digest(agent_tenants)
             def view_for(query, period, dimension):
@@ -371,25 +452,51 @@ def build_dashboard(ledger: UsageLedger | None, *, subscriptions: Mapping[str, A
                     if timings is not None:
                         timings.setdefault("views", []).append({"period": period, "dimension": dimension,
                             "cache_hit": hit, "seconds": round(perf_counter()-started, 3)})
-                key = [engine, snapshot['sha256'], snapshot['watermark'], snapshot['recorded_at'],
+                key = [engine_key, snapshot['sha256'], snapshot['watermark'], snapshot['recorded_at'],
                        asdict(query), digest(catalog) if catalog else None, observed is not None]
                 if tenants_key is not None:
                     key.append(tenants_key)  # A registry change re-derives tenants.
+                if inc is not None:
+                    # The view names its watermark, so it is reused only at the same one; the
+                    # window's packages, the public one and the globals decide the rest.
+                    key[1:4] = ['incremental', snapshot['watermark'], snapshot['recorded_at'], inc.window_key(query)]
                 slot = period + "-" + dimension
+                def reconciled(view):
+                    # Every published incremental view, cached or not, agrees with usage_resolved.
+                    found = inc.store.reconcile(view) if inc is not None else []
+                    if found:
+                        if timings is not None:
+                            timings.setdefault('incremental', {})['reconcile'] = found[:DIFF_LIMIT]
+                        raise PublicationWithheld('resolved_view_mismatch')
+                    return view
                 saved = cache.get(slot, key) if cache else None
                 if (isinstance(saved, dict) and
                         (observed is None or _instant(saved['catalog_observed_at']) <= _instant(observed))):
                     # Keep original calculation provenance. The managed catalog
                     # separately retains the latest successful retrieval time.
                     record_timing(True)
-                    return saved
-                report = session.query(query,catalog=catalog,catalog_observed_at=observed)
-                view = _view(report,period,dimension)
+                    if engine == 'shadow':
+                        found = cache.get(slot + '.unpriced', key)
+                        witnesses[slot] = found if isinstance(found, dict) else None
+                    return reconciled(saved)
+                if inc is not None:
+                    report = inc.query(query, catalog=catalog, catalog_observed_at=observed, price_cache=prices)
+                else:
+                    report = session.query(query,catalog=catalog,catalog_observed_at=observed)
+                    if engine == 'shadow':
+                        # The complete unpriced lists, for the comparison only; never published.
+                        from .incremental_views import unpriced_witness
+                        witnesses[slot] = unpriced_witness(report)
+                        if cache:
+                            cache.put(slot + '.unpriced', key, witnesses[slot])
+                view = reconciled(_view(report,period,dimension))
                 if cache:
                     cache.put(slot, key, view)
                 record_timing(False)
                 return view
             views = []
+            computed = []  # (query, period, dimension, view, unpriced witness) for the shadow comparison
+            witnesses = {}
             if activity_only and not activity_table:
                 raise ValueError('activity-only publication requires the joint activity view')
             for period,(start,end) in windows.items():
@@ -399,6 +506,7 @@ def build_dashboard(ledger: UsageLedger | None, *, subscriptions: Mapping[str, A
                             timezone='Asia/Shanghai',scope='activity',group_by=(dimension,),
                             watermark=snapshot['watermark'])
                         views.append(view_for(query,period,dimension))
+                        computed.append((query, period, dimension, views[-1], witnesses.get(period+'-'+dimension)))
                 if activity_table:
                     # One genuine joint grouping. Never join independent marginal
                     # totals or seed filter rows from open execution expectations.
@@ -406,13 +514,21 @@ def build_dashboard(ledger: UsageLedger | None, *, subscriptions: Mapping[str, A
                         timezone='Asia/Shanghai',scope='activity',group_by=(("tenant",) + ACTIVITY_DIMENSIONS if tenant_identity else ACTIVITY_DIMENSIONS),
                         watermark=snapshot['watermark'])
                     views.append(view_for(query,period,'activity'))
+                    computed.append((query, period, 'activity', views[-1], witnesses.get(period+'-activity')))
             if cache:
                 # Bound derivative storage; evicting entries only costs a recompute.
-                cache.put("prices", engine, session.export_prices())
+                cache.put("prices", engine_key, session.export_prices() if session is not None
+                          else dict(list(prices.items())[-50000:]))
+            if inc is not None:
+                inc.close()
+            if engine == 'shadow':
+                shadow(incremental, snapshot, computed, catalog, observed, timings)
             if pull_requests is not None:
                 views = [with_pull_requests(v, pull_requests) if v['dimension'] == 'activity' else v
                          for v in views]
             result.update(status='available',reason=None,views=views)
+        except PublicationWithheld:
+            raise
         except (OSError,ValueError,TypeError,KeyError,RuntimeError):
             # Do not publish exception messages (paths/identities) or stamp old amounts fresh.
             result.update(status='unavailable',reason='query_source_unavailable',views=[])
@@ -441,6 +557,9 @@ def build_dashboard(ledger: UsageLedger | None, *, subscriptions: Mapping[str, A
                 found = families(view, parents) if view['dimension'] == 'activity' else []
                 views.append({**view, 'work_item_families': found} if found else view)
             result['views'] = views
+    if collection_backlog is not None:
+        # Published facts are not all collected yet: the amounts stand, marked incomplete.
+        result['collection_backlog'] = dict(collection_backlog)
     result['sha256'] = digest(result)
     if len(dashboard_bytes(result)) > MAX_BYTES:
         result.update(status='unavailable',reason='query_payload_too_large',views=[])
@@ -448,10 +567,10 @@ def build_dashboard(ledger: UsageLedger | None, *, subscriptions: Mapping[str, A
     return result
 
 
-def publish_dashboard(path: Path, document: Mapping[str, Any], *, allow_row_contexts: bool = False,
-                      allow_compression: bool = False) -> None:
-    """Private atomic replace, serial writers, and no older snapshot rollback."""
-    path = Path(path)
+def publication_bytes(document: Mapping[str, Any], *, allow_row_contexts: bool = False,
+                      allow_compression: bool = False) -> tuple[bytes, Mapping[str, Any]]:
+    """The bytes publish_dashboard writes and the document they expand to, after
+    every check that needs no target: encoding, size, schema, digest, roundtrip, time."""
     if wire_encoding(document):
         # An accepted peer payload keeps its exact representation and digest.
         data = canonical(document) + b'\n'
@@ -462,12 +581,26 @@ def publish_dashboard(path: Path, document: Mapping[str, Any], *, allow_row_cont
     if ((encoding == 'row_contexts' and not allow_row_contexts)
             or (encoding == COMPRESSED_FIELD and not allow_compression)):
         raise PublicationWithheld('cost_reader_update_required')
-    if not path.is_absolute() or path.is_symlink() or len(data)>MAX_BYTES:
+    if len(data)>MAX_BYTES:
         raise ValueError('invalid publication target or size')
     if document.get('schema_version')!=SCHEMA or document.get('sha256')!=digest({k:v for k,v in document.items() if k!='sha256'}):
         raise ValueError('invalid publication document')
     if (allow_row_contexts or allow_compression) and digest(expand_dashboard(json.loads(data))) != digest(document):
         raise ValueError('compact cost publication failed its roundtrip')
+    if not isinstance(document.get('generated_at'), str):
+        raise ValueError('invalid publication time')
+    _instant(document['generated_at'])
+    return data, document
+
+
+def publish_dashboard(path: Path, document: Mapping[str, Any], *, allow_row_contexts: bool = False,
+                      allow_compression: bool = False) -> None:
+    """Private atomic replace, serial writers, and no older snapshot rollback."""
+    path = Path(path)
+    data, document = publication_bytes(document, allow_row_contexts=allow_row_contexts,
+                                       allow_compression=allow_compression)
+    if not path.is_absolute() or path.is_symlink():
+        raise ValueError('invalid publication target or size')
     instant = _instant(document['generated_at'])
     path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
     if path.parent.is_symlink() or stat.S_IMODE(path.parent.stat().st_mode)&0o077:
@@ -540,7 +673,7 @@ def work_item_display(registry: Mapping[str, Any] | None,
     return result
 
 
-# Machine-safe codes for a failed publication; never exception text (paths, identities).
+# Machine-safe codes for a failed publication; never free exception text (paths, identities).
 _LEDGER_MESSAGES = ('production observation', 'installed observation authority', 'original adoption unconfirmed')
 _last_failure: str | None = None
 
@@ -557,7 +690,7 @@ def failure_reason(error: BaseException | None) -> str:
     while error is not None and id(error) not in seen:
         seen.add(id(error))
         name = type(error).__name__
-        if isinstance(error, PublicationWithheld):
+        if isinstance(error, PublicationWithheld) or name == 'PublisherEntryStale':
             return error.reason
         if name == 'SnapshotChanged':
             return 'production_ledger_changed'
@@ -568,6 +701,121 @@ def failure_reason(error: BaseException | None) -> str:
             return 'timeout'
         error = error.__cause__ or error.__context__
     return 'publication_failed'
+
+
+# Collection refusals with one fixed text -> a stable code. Any other text
+# (one that interpolates values, or names paths) is never reported.
+_RECEIPT_ERROR_CODES = {
+    "source IDs must be present and unique": "source_ids_not_unique",
+    "unsupported registered source kind": "unsupported_source_kind",
+    "invalid native_push source registration": "invalid_native_push_registration",
+    "observation spool must be a private directory": "observation_spool_not_private",
+    "invalid consumed bundle record": "invalid_consumed_bundle_record",
+    "source work_items must be a string list": "invalid_source_work_items",
+}
+
+
+def failure_code(error: BaseException) -> str | None:
+    """The stable code of a ReceiptError whose text is one of the known fixed refusals."""
+    from .receipts import ReceiptError
+    if not isinstance(error, ReceiptError) or len(error.args) != 1 or not isinstance(error.args[0], str):
+        return None
+    return _RECEIPT_ERROR_CODES.get(error.args[0])
+
+
+# Fixed texts of the production observation path (ComputeCost's authority
+# wrapper and the installed core's Git reads and publication). A failure
+# record names them per link of its cause chain; any other text never leaves.
+_CHAIN_MESSAGES = frozenset({
+    'production observations unavailable; preserve source facts and retry',
+    'original adoption unconfirmed; resume the same retained sources',
+    'production observation save unconfirmed; retry the same source facts',
+    'installed observation authority is unavailable; no local fact fallback',
+    'production observations changed; recollect',
+    'receipt ledger snapshot changed; recollect from current watermark',
+    'Production Git operation failed',
+    'Production authority could not be observed',
+    'Production head could not be observed',
+    'Production object read timed out',
+    'Production ref could not be observed',
+    'Production history changed; read back the original request',
+    'A decision dependency changed; retry the same original request',
+    'Unrelated publications exhausted this bounded attempt; retry the original request',
+    'Publication may have committed; read back the original request before retrying',
+    'Publication result is unconfirmed; read the original request',
+    'Production rejected publication; no decision was acknowledged',
+    'Use the currently installed native production entry',
+    'Observation object is missing',
+    'Observation head differs from facts',
+    'Observation order or digest differs',
+    'Unsupported typed observation',
+    'Observation source identity differs',
+    'Observation time is unavailable',
+    'Private source bytes are not observation facts',
+    'Read original observations before appending',
+    'Truncated production record',
+})
+_CHAIN_CODE = re.compile(r'[a-z][a-z0-9_]{0,63}')
+_CHAIN_LIMIT = 8
+
+
+def failure_chain(error: BaseException | None) -> list[dict[str, str]]:
+    """Each link of the cause chain: its type, its machine code and a known fixed text.
+
+    The reason code alone cannot tell a Git timeout from a busy or changed
+    production ref; the chain does, without exception text that could carry
+    paths or received values.
+    """
+    chain, seen = [], set()
+    while error is not None and id(error) not in seen and len(chain) < _CHAIN_LIMIT:
+        seen.add(id(error))
+        link = {'type': type(error).__name__}
+        code = getattr(error, 'code', None)
+        if isinstance(code, str) and _CHAIN_CODE.fullmatch(code):
+            link['code'] = code
+        if len(error.args) == 1 and isinstance(error.args[0], str) and error.args[0] in _CHAIN_MESSAGES:
+            link['message'] = error.args[0]
+        chain.append(link)
+        error = error.__cause__ or error.__context__
+    return chain
+
+
+BACKLOG_REASON = 'observation_backlog'
+_last_backlog: dict[str, int] = {}
+
+
+def collection_backlog(registry: Mapping[str, Any], collected: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Pushing peers whose spooled observation bundles this collection left for later.
+
+    None when every spooled bundle was judged. Otherwise the publication still
+    goes out, carrying ``{"status": "partial", "reason": "observation_backlog",
+    "peers": [{"id", "deferred_bundles"}]}`` so readers know it is not complete.
+    """
+    from .incremental_collect import LOCAL_PEER, LOCAL_SOURCE_ID
+    from .receipts import reference
+    peers = {reference('source', s['id']): s['peer'] for s in registry.get('sources', [])
+             if isinstance(s, Mapping) and s.get('kind') == 'native_push'
+             and isinstance(s.get('id'), str) and isinstance(s.get('peer'), str)}
+    # This node's own observations, spooled by incremental collection (`incremental_cycle`).
+    peers[reference('source', LOCAL_SOURCE_ID)] = LOCAL_PEER
+    deferred = {}
+    for summary in collected.get('sources', []):
+        detail = summary.get('source_detail') or {}
+        # Waiting bundles decide, whatever the summary's reason: an invalid bundle
+        # keeps its own diagnosis there while later ones still wait.
+        if (summary.get('kind') == 'native_push' and summary.get('source_ref') in peers
+                and type(detail.get('deferred_bundles')) is int and detail['deferred_bundles'] > 0):
+            peer = peers[summary['source_ref']]
+            deferred[peer] = deferred.get(peer, 0) + detail['deferred_bundles']
+    if not deferred:
+        return None
+    return {'status': 'partial', 'reason': BACKLOG_REASON,
+            'peers': [{'id': peer, 'deferred_bundles': count} for peer, count in sorted(deferred.items())]}
+
+
+def last_collection_backlog() -> dict[str, int]:
+    """Peer -> bundles this process's last main() collection left spooled, for the refresh cycle."""
+    return dict(_last_backlog)
 
 
 def last_failure_reason() -> str | None:
@@ -590,6 +838,7 @@ def _withhold_regression(path: Path, document: Mapping[str, Any]) -> None:
 def main(argv=None, *, row_contexts_ready=None) -> int:
     global _last_failure
     _last_failure = None
+    _last_backlog.clear()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--ledger-root',type=Path)
     parser.add_argument('--source-registry',type=Path)
@@ -605,8 +854,19 @@ def main(argv=None, *, row_contexts_ready=None) -> int:
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--validity-minutes',type=int,choices=VALIDITY_MINUTES,default=VALIDITY_MINUTES[0],
                         help='publication validity; the Oracle publisher uses the longer one')
+    parser.add_argument('--engine',choices=ENGINES,default='full',
+                        help='views from one ledger snapshot (full), full plus the incremental comparison '
+                             '(shadow), or from the resolved store (incremental); refresh.json incremental.views')
+    parser.add_argument('--collection-engine',choices=COLLECTION_ENGINES,default='full',
+                        help='with --collect: the full collection, full plus the incremental comparison (shadow), '
+                             'or incremental collection; refresh.json incremental.collection')
     parser.add_argument('--last-week-output',type=Path,
                         help='also publish the previous complete Monday..Sunday after the current views')
+    parser.add_argument('--close-weeks', action='store_true',
+                        help='close weeks and add adjustment entries (refresh.json incremental.close; needs the '
+                             'resolved store and readers that declare adjustments)')
+    parser.add_argument('--peer-state', type=Path,
+                        help='JSON list of each peer\'s read status and collected_from, for the week close')
     args = parser.parse_args(argv)
     try:
         from .catalog_source import resolve_catalog_path, observe_catalog_snapshot
@@ -628,13 +888,29 @@ def main(argv=None, *, row_contexts_ready=None) -> int:
         ledger = registered_ledger(registry) if registry else UsageLedger(ledger_root) if ledger_root else None
         timings = {}
         started = perf_counter(); cpu_started = process_time()
+        backlog = None
         if args.collect:
             from .receipt_sources import collect_registered_sources
             collected_at = perf_counter()
             collection = {}
-            collect_registered_sources(registry, ledger, force_recompute=args.force_recompute, timings=collection)
+            if args.collection_engine == 'incremental':
+                from .incremental_cycle import publisher_round
+                collected = publisher_round(registry, ledger, timings=collection,
+                                            force_recompute=args.force_recompute)
+            elif args.collection_engine == 'shadow':
+                from .incremental_cycle import shadow_round
+                collected = shadow_round(registry, ledger, lambda now: collect_registered_sources(
+                    registry, ledger, force_recompute=args.force_recompute, timings=collection, now=now),
+                    timings=collection, force_recompute=args.force_recompute)
+            else:
+                collected = collect_registered_sources(
+                    registry, ledger, force_recompute=args.force_recompute, timings=collection)
+            backlog = collection_backlog(registry, collected)
             timings["collection_seconds"] = round(perf_counter()-collected_at, 3)
             timings["collection"] = collection
+            if backlog is not None:
+                timings["collection_backlog"] = backlog
+                _last_backlog.update((p['id'], p['deferred_bundles']) for p in backlog['peers'])
         facts = json.loads(args.procurement_facts.read_text())
         provider = json.loads(args.openrouter_snapshot.read_text()) if args.openrouter_snapshot else None
         if args.openrouter_env and args.openrouter_snapshot:
@@ -665,6 +941,9 @@ def main(argv=None, *, row_contexts_ready=None) -> int:
             facts_document = work_items = None
             timings["work_items"] = "unavailable"
         merged = read_merged(facts_document, datetime.now(timezone.utc))
+        def incremental(upto):
+            from .incremental_views import IncrementalViews
+            return IncrementalViews.attach(ledger, agent_tenants, upto=upto)
         def publication(periods, **extra):
             return build_dashboard(ledger, pull_requests=merged,
                 subscriptions=facts,catalog_snapshot=catalog,openrouter_snapshot=provider,
@@ -673,12 +952,43 @@ def main(argv=None, *, row_contexts_ready=None) -> int:
                 agent_tenants=agent_tenants,
                 calculation_cache=args.output.parent / 'calculation-cache', force_recompute=args.force_recompute,
                 timings=timings, work_items=work_items, periods=periods,
-                validity_minutes=args.validity_minutes, **extra)
+                validity_minutes=args.validity_minutes, collection_backlog=backlog,
+                **({'engine': args.engine, 'incremental': incremental} if args.engine != 'full' else {}), **extra)
         document = publication(CURRENT_PERIODS,
             pull_request_audit=load_audit(args.pull_request_audit), audit_pull_requests=True,
             kernel_merge_enforced_since=args.kernel_merge_enforced_since)
         if price_error:
             timings["price_observation"] = price_error
+        closing = {}
+        if args.close_weeks:
+            if row_contexts_ready is None or not row_contexts_ready('adjustments'):
+                timings['period_close'] = 'reader_not_ready'
+            else:
+                from .incremental_views import derived_paths
+                from .period_close import publisher_round
+                try:
+                    peers = json.loads(args.peer_state.read_text()) if args.peer_state else []
+                    closing = publisher_round(
+                        derived_paths(ledger)[1], document, now=datetime.now(timezone.utc),
+                        catalog=catalog.get('catalog') if catalog else None, peers=peers,
+                        local_pending=backlog is not None, archive_dir=args.output.parent / 'closed-weeks',
+                        last_week=lambda: publication(LAST_WEEK), timings=timings)
+                    document = closing['document']
+                except (OSError, ValueError, TypeError, KeyError, RuntimeError, sqlite3.Error) as exc:
+                    timings['period_close'] = 'failed:' + type(exc).__name__
+                    closing = {}
+        finalized = closing if closing.get('last_week_view') is not None else None
+        if args.close_weeks and finalized is None:
+            # The closing work did not run (a reader probe failed) or stopped early: a week
+            # already closed is still published from its archive, never recomputed.
+            from .incremental_views import derived_paths
+            from .period_close import archived_last_week
+            try:
+                finalized = archived_last_week(derived_paths(ledger)[1], args.output.parent / 'closed-weeks',
+                                               datetime.now(timezone.utc))
+            except (OSError, ValueError, TypeError, KeyError, sqlite3.Error) as exc:
+                finalized = 'unreadable'
+                timings['last_week_archive'] = 'failed:' + type(exc).__name__
         _withhold_regression(args.output, document)
         def publish_selected(path, value):
             encoding = wire_encoding(json.loads(dashboard_bytes(value)))
@@ -690,12 +1000,30 @@ def main(argv=None, *, row_contexts_ready=None) -> int:
                 publish_dashboard(path, value, allow_row_contexts=ready)
 
         publish_selected(args.output, document)
-        if args.last_week_output:
+        if args.last_week_output and finalized == 'unreadable':
+            # A closed week whose archive cannot be read keeps its last publication until it expires.
+            timings["last_week"] = "kept_closed_week"
+        elif args.last_week_output:
             # Its own receipt read and instant, after the current views. A
             # failure never withdraws the current publication; the previous
             # closed-week file then expires normally.
             try:
-                closed = publication(LAST_WEEK)
+                if finalized is not None:
+                    # The closed week's archive; only the envelope is new.
+                    from .period_close import closed_week_publication
+                    template = build_dashboard(None, subscriptions=facts, catalog_snapshot=catalog,
+                        openrouter_snapshot=provider, source_revision=args.source_revision, periods=LAST_WEEK,
+                        identity_dimensions=True, activity_table=True, activity_only=True,
+                        validity_minutes=args.validity_minutes)
+                    closed = closed_week_publication(template, finalized)
+                else:
+                    closed = publication(LAST_WEEK)
+                    if closing and closed['status'] == 'available':
+                        # Not closed yet (before Monday's close): computed from the current state,
+                        # with the entries the close would book in it.
+                        from .period_close import provisional_last_week
+                        closed['views'] = [provisional_last_week(v, closing) for v in closed['views']]
+                        closed['sha256'] = digest({k: v for k, v in closed.items() if k != 'sha256'})
                 _withhold_regression(args.last_week_output, closed)
                 publish_selected(args.last_week_output, closed)
                 timings["last_week"] = closed['status']
@@ -704,12 +1032,20 @@ def main(argv=None, *, row_contexts_ready=None) -> int:
         timings.update(total_seconds=round(perf_counter()-started, 3), cpu_seconds=round(process_time()-cpu_started, 3))
         print(json.dumps({"schema": "stats_cost_calculation_timing/v1", **timings}), file=sys.stderr)
         print(json.dumps({'schema_version':SCHEMA,'status':document['status'],
-                          'generated_at':document['generated_at'],'sha256':document['sha256']}))
+                          'generated_at':document['generated_at'],'sha256':document['sha256'],
+                          **({'collection_backlog': backlog} if backlog is not None else {})}))
         return 0
     except (OSError,ValueError,TypeError,KeyError,RuntimeError) as exc:
         _last_failure = failure_reason(exc)
-        print(json.dumps({'schema': 'stats_cost_publication_failure/v1', 'reason': _last_failure,
-                          'error_type': type(exc).__name__}), file=sys.stderr)
+        failure = {'schema': 'stats_cost_publication_failure/v1', 'reason': _last_failure,
+                   'error_type': type(exc).__name__}
+        code = failure_code(exc)
+        if code is not None:
+            failure['error_code'] = code
+        chain = failure_chain(exc)
+        if len(chain) > 1 or 'message' in chain[0]:
+            failure['error_chain'] = chain  # Which Git read or publication step failed.
+        print(json.dumps(failure), file=sys.stderr)
         print('Stats cost publication failed; the published snapshot stays shown with its own time.',file=sys.stderr)
         return 2
 

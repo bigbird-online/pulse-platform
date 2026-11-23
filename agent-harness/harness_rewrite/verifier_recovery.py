@@ -171,7 +171,9 @@ def continue_locked(adapter: PiDispatch, effect: Json, root: Path, proc: Path) -
         "previous_launch_fenced": receipt.get('schema') == LAUNCH_FENCE,
         "previous_launch_failed_before_exec": not raw,
         "boot": boot_identity(proc)}))
-    environment = {**os.environ, "PI_CODING_AGENT_DIR": config["agent_dir"],
+    from .pi_dispatch import dispatch_environment
+
+    environment = {**dispatch_environment(), "PI_CODING_AGENT_DIR": config["agent_dir"],
         "HARNESS_REWRITE_DISPATCH": effect["effect_id"], "HARNESS_REWRITE_ATTEMPT": attempt}
     with (target / "native-output.jsonl").open("xb") as out:
         subprocess.Popen([adapter.policy["python"], "-I", "-B", "-c",

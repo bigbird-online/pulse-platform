@@ -1,12 +1,12 @@
 import type { QuotaRetry } from './types.js';
 
-/** A scheduled slot is retried at most this many times after subscription limits. */
-export const MAX_QUOTA_RETRIES = 2;
+/** A scheduled slot is retried once after a subscription limit; a second limit fails it. */
+export const MAX_QUOTA_RETRIES = 1;
 /** Retry this long after the announced reset, so the new window has opened. */
 export const QUOTA_RETRY_MARGIN_MS = 2 * 60_000;
 /** A reset further away than this is not waited for; the slot stays failed. */
 export const MAX_QUOTA_WAIT_MS = 48 * 3_600_000;
-/** Distinct slots of one job kept waiting at once; the oldest give way first. */
+/** Distinct slots of one job kept waiting at once; a slot beyond them is not kept waiting and fails. */
 export const MAX_PENDING_QUOTA_RETRIES = 8;
 
 const LIMIT = /hit your (?:session|weekly|usage) limit[^\n]*?\bresets\s+(?:([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(?:at\s+)?)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(([^)]+)\)/i;
@@ -70,11 +70,15 @@ export interface FinishedSlot {
  */
 export function nextQuotaRetries(prior: QuotaRetry[] | undefined, run: FinishedSlot,
   currentDefinition: string | undefined): QuotaRetry[] | undefined {
-  const kept = (prior ?? []).filter(item => item.definitionHash === currentDefinition && item.scheduledFor !== run.scheduledFor);
-  const previous = (prior ?? []).find(item => item.scheduledFor === run.scheduledFor && item.definitionHash === currentDefinition);
+  // A retry beyond MAX_QUOTA_RETRIES (kept by an older Relay that allowed more) is dropped, never run.
+  const current = (prior ?? []).filter(item => item.definitionHash === currentDefinition && item.attempts <= MAX_QUOTA_RETRIES);
+  const kept = current.filter(item => item.scheduledFor !== run.scheduledFor);
+  const previous = current.find(item => item.scheduledFor === run.scheduledFor);
   if (run.scheduledFor && run.failed && run.quotaResetAt && run.definitionHash === currentDefinition) {
     const attempts = (previous?.attempts ?? 0) + 1;
-    if (attempts <= MAX_QUOTA_RETRIES) {
+    // A slot that finds every waiting place taken is not kept waiting: it fails
+    // now, so no slot already waiting is dropped without being settled.
+    if (attempts <= MAX_QUOTA_RETRIES && kept.length < MAX_PENDING_QUOTA_RETRIES) {
       kept.push({
         scheduledFor: run.scheduledFor, definitionHash: run.definitionHash,
         notBefore: new Date(Date.parse(run.quotaResetAt) + QUOTA_RETRY_MARGIN_MS).toISOString(), attempts,
@@ -82,8 +86,14 @@ export function nextQuotaRetries(prior: QuotaRetry[] | undefined, run: FinishedS
     }
   }
   kept.sort((a, b) => Date.parse(a.scheduledFor) - Date.parse(b.scheduledFor));
-  const bounded = kept.slice(-MAX_PENDING_QUOTA_RETRIES);
-  return bounded.length ? bounded : undefined;
+  return kept.length ? kept : undefined;
+}
+
+/** The retry a finished run leaves waiting for its own slot, if any. */
+export function pendingQuotaRetry(prior: QuotaRetry[] | undefined, run: FinishedSlot,
+  currentDefinition: string | undefined): QuotaRetry | undefined {
+  if (!run.scheduledFor || !run.failed) return undefined;
+  return nextQuotaRetries(prior, run, currentDefinition)?.find(item => item.scheduledFor === run.scheduledFor);
 }
 
 /**
@@ -94,7 +104,7 @@ export function dueQuotaRetry(retries: QuotaRetry[] | undefined,
   state: { definitionHash?: string; activatedAt?: string }, now: Date): Date | undefined {
   const floor = state.activatedAt ? Date.parse(state.activatedAt) : -Infinity;
   const due = (retries ?? []).find(item => item.definitionHash === state.definitionHash
-    && Date.parse(item.scheduledFor) >= floor && Date.parse(item.notBefore) <= now.getTime());
+    && item.attempts <= MAX_QUOTA_RETRIES && Date.parse(item.scheduledFor) >= floor && Date.parse(item.notBefore) <= now.getTime());
   return due ? new Date(due.scheduledFor) : undefined;
 }
 

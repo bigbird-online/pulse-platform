@@ -31,7 +31,7 @@ from .app_server_usage import (
     AppServerUsageLedger,
     EpochUsageContext,
 )
-from .events import UsageEventError
+from .events import UsageEventError, parse_timestamp
 from .ledger import LedgerError, UsageLedger
 from .managed_snapshot import ManagedCostSnapshotError, build_managed_cost_snapshot
 from .openrouter import (
@@ -86,7 +86,7 @@ def _collaboration_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--group-by", action="append", default=[], help="repeat or comma-separate wi,agent,day,week,month,runtime,model")
     parser.add_argument("--agent")
     parser.add_argument("--agent-role", choices=("executor", "responsible", "delegator", "reviewer"), default="executor")
-    parser.add_argument("--runtime-filter", choices=("pi", "codex", "cc", "cc_sdk", "unknown"))
+    parser.add_argument("--runtime-filter", choices=("pi", "codex", "cc", "cc_sdk", "agy", "unknown"))
     parser.add_argument("--model-filter")
     parser.add_argument("--as-of", help="ledger ingestion-time cutoff, not backdated source observation time")
     parser.add_argument("--watermark", type=int)
@@ -171,6 +171,37 @@ def _parser() -> argparse.ArgumentParser:
     collect = subparsers.add_parser("collect", help="import registered native/Host/Harness facts into UsageLedger")
     collect.add_argument("--source-registry", type=Path)
     collect.add_argument("--ledger-root", type=Path)
+
+    locality = subparsers.add_parser(
+        "locality-check", help="offline: judge each session package and compare with the whole ledger (WI754)")
+    locality.add_argument("--registry", dest="source_registry", type=Path, required=True)
+    locality.add_argument("--watermark", type=int, required=True)
+    locality.add_argument("--out", type=Path, required=True)
+    locality.add_argument("--phase", choices=("index", "full", "packages", "stages", "report"), required=True)
+
+    index = subparsers.add_parser(
+        "fact-index", help="build or catch up this node's fact index (<ledger root>/derived; WI754)")
+    index.add_argument("--registry", dest="source_registry", type=Path, required=True)
+
+    replay = subparsers.add_parser(
+        "collect-replay", help="offline: replay observation bundles through full and incremental collection (WI754)")
+    replay.add_argument("--registry", dest="source_registry", type=Path, required=True)
+    replay.add_argument("--out", type=Path, required=True)
+    replay.add_argument("--phase", choices=("prepare", "replay", "report"), required=True)
+    replay.add_argument("--watermark", type=int, help="prepare: the ledger prefix the replay starts from")
+    replay.add_argument("--corpus", type=Path, help="replay: a directory of copied spool bundles")
+    replay.add_argument("--peer", default="ownermac", help="the node whose bundles the corpus holds")
+    replay.add_argument("--rounds", type=int, help="replay: at most this many bundles in this run")
+
+    resolved = subparsers.add_parser(
+        "resolved", help="publisher only: rebuild or audit the resolved store of the incremental views (WI754)")
+    resolved.add_argument("action", choices=("rebuild", "audit"))
+    resolved.add_argument("--registry", dest="source_registry", type=Path, required=True)
+    resolved.add_argument("--watermark", type=int, help="rebuild: index to this batch; audit: required")
+    resolved.add_argument("--derived", type=Path, help="offline: index and store here instead of <ledger root>/derived")
+    resolved.add_argument("--stats-config", type=Path, default=Path.home() / ".local/state/pulse/stats/refresh.json",
+                          help="this node's Stats refresh.json; it must name no remote publisher")
+    resolved.add_argument("--now", help="audit: the instant whose today/week/month/last-week views are compared")
 
     saved_usage = subparsers.add_parser("import-scl-usage", help="join one saved native SCL record to the Host's existing receipt ledger")
     saved_usage.add_argument("--work-item", required=True)
@@ -558,7 +589,7 @@ def _registry(args: argparse.Namespace) -> tuple[dict[str, Any] | None, Path | N
 HEAVY_QUERY_REFUSED_SITES = frozenset({"tcloud"})
 HEAVY_QUERY_OVERRIDE_ENV = "PULSE_COMPUTE_COST_ALLOW_HEAVY_ON_PEER"
 EXIT_NODE_NOT_SERVED = 69  # sysexits EX_UNAVAILABLE: this node does not serve the command
-_NATIVE_SOURCE_KINDS = frozenset({"codex", "pi", "cc", "relay_host"})
+_NATIVE_SOURCE_KINDS = frozenset({"codex", "pi", "cc", "agy", "relay_host"})
 
 
 class HeavyQueryRefused(Exception):
@@ -604,6 +635,80 @@ def _receipt_ledger(args: argparse.Namespace, registry: Mapping[str, Any] | None
         from .observation_authority import registered_ledger
         return registered_ledger(registry)
     return UsageLedger(root)
+
+
+def _locality_check(args: argparse.Namespace) -> dict[str, Any]:
+    from .locality_check import run
+    from .observation_authority import registered_ledger
+    registry, _ = _registry(args)
+    _refuse_heavy_query_on_peer(registry)
+    # Offline: nothing under the ledger root changes (no checkpoint, no lock file).
+    return run(registry, registered_ledger(registry, read_only=True), args.out, args.watermark,
+               args.phase)
+
+
+def _fact_index(args: argparse.Namespace) -> dict[str, Any]:
+    """Open this ledger's fact index, build it when empty, catch it up; its size."""
+    from .fact_index import IndexMismatch
+    from .incremental_collect import open_index
+    from .incremental_modes import cache_mib
+    from .observation_authority import registered_ledger
+    registry, _ = _registry(args)
+    if registry is None:
+        raise LedgerError("fact-index requires the registered sources")
+    ledger = registered_ledger(registry, read_only=True)
+    index = open_index(ledger, cache_mib=cache_mib())
+    try:
+        try:
+            index.catch_up(ledger)
+        except IndexMismatch:
+            index.rebuild(ledger)
+        return {"path": str(index.path), **index.stats(), "judged_sequence": index.judged_sequence(),
+                "deferred_components": len(index.deferred()), "rejudge_queue": index.queue_length()}
+    finally:
+        index.close()
+
+
+def _collect_replay(args: argparse.Namespace) -> dict[str, Any]:
+    from .collect_replay import run
+    registry, _ = _registry(args)
+    if registry is None:
+        raise LedgerError("collect-replay requires the registered sources")
+    _refuse_heavy_query_on_peer(registry)
+    return run(registry, args.out, args.phase, watermark=args.watermark, corpus=args.corpus, peer=args.peer,
+               rounds=args.rounds)
+
+
+def _resolved(args: argparse.Namespace) -> dict[str, Any]:
+    """`resolved rebuild|audit`: heavy whole-ledger work, refused unless this node publishes Stats."""
+    from .incremental_views import audit, rebuild
+    from .observation_authority import registered_ledger
+    try:
+        config = json.loads(args.stats_config.read_bytes())
+    except (OSError, ValueError) as exc:
+        raise LedgerError("resolved store runs on the Stats publisher; its refresh.json is unreadable") from exc
+    if not isinstance(config, Mapping) or config.get("publisher") is not None:
+        raise HeavyQueryRefused("resolved store runs on the Stats publisher only; this node names a remote publisher")
+    if args.watermark is not None and (type(args.watermark) is not int or args.watermark < 1):
+        raise LedgerError("watermark must be a positive batch sequence")
+    registry, _ = _registry(args)
+    if registry is None:
+        raise LedgerError("resolved store requires the registered sources")
+    derived = args.derived
+    if derived is not None:
+        derived.mkdir(mode=0o700, parents=True, exist_ok=True)
+    agent_tenants = None
+    tenant_identity = "tenant_context.v1" in registry.get("required_receipt_features", [])
+    if tenant_identity:
+        from .agent_tenants import load_agent_tenants
+        agent_tenants = load_agent_tenants(registry)
+    if args.action == "rebuild":
+        return rebuild(registered_ledger(registry), agent_tenants, derived=derived, watermark=args.watermark)
+    if args.watermark is None:
+        raise LedgerError("audit requires --watermark")
+    now = parse_timestamp(args.now, "now") if args.now else None
+    return audit(registered_ledger(registry, read_only=True), agent_tenants, watermark=args.watermark,
+                 derived=derived, now=now, tenant_identity=tenant_identity)
 
 
 def _stage(args: argparse.Namespace) -> dict[str, Any]:
@@ -1307,6 +1412,14 @@ def main(argv: list[str] | None = None) -> int:
             result = _stage(args)
         elif args.command == "query":
             result = _query(args)
+        elif args.command == "locality-check":
+            result = _locality_check(args)
+        elif args.command == "fact-index":
+            result = _fact_index(args)
+        elif args.command == "collect-replay":
+            result = _collect_replay(args)
+        elif args.command == "resolved":
+            result = _resolved(args)
         elif args.command == "recommendation-artifact":
             result = _recommendation_artifact(args)
         elif args.command == "app-server-epoch":

@@ -160,6 +160,34 @@ def same_lineage(state: Json, item: Json) -> bool:
     )
 
 
+CHILD_TRANSFER_REFUSED = (
+    "A child work item's execution follows its parent and cannot be transferred "
+    "on its own; transfer the parent instead"
+)
+
+
+def child_transfer(state: Json, kind: str) -> bool:
+    """Full responsibility on a child: its execution authority is its parent's
+    (`children.follow`), so moving the child alone would leave an owner nobody
+    follows. Such a contract is never offered nor accepted; one offered before
+    this rule is only withdrawn by its requester."""
+    return kind == "responsibility" and state.get("parent") is not None
+
+
+def settler(state: Json, item: Json) -> str | None:
+    """Who settles a contract: its requester; for an old child transfer, the
+    child's current holder (its parent's), the one withdraw_collaboration admits,
+    since the requester may no longer hold the WI."""
+    if child_transfer(state, item["kind"]):
+        return (state.get("holder") or {}).get("actor")
+    return str(item["offered_by"]["actor"])
+
+
+def refuse_child_transfer(state: Json, kind: str) -> None:
+    if child_transfer(state, kind):
+        raise Rejected("domain_conflict", CHILD_TRANSFER_REFUSED)
+
+
 def main_only(item: Json) -> bool:
     """Contracts offered before the field existed may be handled unattended."""
     return bool(item.get("main_only", False))
@@ -194,6 +222,7 @@ def awaiting(state: Json, actor: str, viewer: Json | None = None) -> list[Json]:
         for key, item in state.get("collaborations", {}).items()
         if not item["withdrawn"]
         and actor in item["responses"]
+        and not child_transfer(state, item["kind"])
         and (viewer is None or not requesting(state, item, viewer))
         and (
             item["responses"][actor]["status"] == "pending"
@@ -232,23 +261,31 @@ def awaiting_settlement(state: Json, actor: str) -> list[Json]:
         return []
     owed = []
     for key, item in state.get("collaborations", {}).items():
-        if item["withdrawn"] or item["offered_by"]["actor"] != actor:
+        if item["withdrawn"] or settler(state, item) != actor:
             continue
         answered = {
             name: response["status"]
             for name, response in item["responses"].items()
             if response["status"] in ANSWERED
         }
-        if not answered:
+        if child_transfer(state, item["kind"]):
+            if any(r["status"] == "accepted" for r in item["responses"].values()):
+                # Accepted under the old rule: settled then, and withdraw refuses it.
+                continue
+            # Not accepted: no answer moves it on, only a withdrawal settles it.
+            status, options = "unanswerable", ["withdraw"]
+        elif not answered:
             continue
-        status = next(s for s in ANSWERED if s in answered.values())
+        else:
+            status = next(s for s in ANSWERED if s in answered.values())
+            options = SETTLEMENT[status]
         owed.append(
             {
                 "contract_id": key,
                 "kind": item["kind"],
                 "status": status,
                 "answered_by": sorted(answered),
-                "options": SETTLEMENT[status],
+                "options": options,
             }
         )
     return owed
@@ -306,6 +343,8 @@ def offer(state: Json, data: Json, context: HostContext, operation: str, wi: str
         or type(data["required"]) is not bool
     ):
         raise Rejected("invalid_input", "Unknown collaboration responsibility")
+    # Shared by offer and reassign: a reassigned contract keeps its kind.
+    refuse_child_transfer(state, data["kind"])
     recipients = data["recipients"]
     if not isinstance(recipients, list) or not 1 <= len(recipients) <= 32:
         raise Rejected("invalid_input", "Expected bounded recipients")
@@ -496,6 +535,8 @@ def decide(
                 "grant_id": None,
             },
         )
+    if decision == "accept":
+        refuse_child_transfer(state, item["kind"])
     if decision == "accept" and not same_lineage(state, item):
         raise Rejected(
             "authority_changed",

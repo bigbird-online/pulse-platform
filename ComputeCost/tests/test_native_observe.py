@@ -1,6 +1,7 @@
 """Observe-only node + judging collector reach what one full local collection reaches."""
 import gzip
 import json
+import os
 from pathlib import Path
 import unittest
 
@@ -136,6 +137,169 @@ class ObserveTests(unittest.TestCase):
         # Coverage still describes every file of the source.
         coverage = [s['coverage'] for d in documents for s in d['sources']]
         self.assertEqual(coverage[-1]['watermark'], captured[-1]['sources'][-1]['coverage']['watermark'])
+
+    def sessions(self, count):
+        """``count`` CC sessions of the same shape, each in its own transcript."""
+        from test_mcp_cc_session_wi import SESSION
+        self.case.request('a', 0); self.case.request('b', 10)
+        self.case.write()
+        text = self.case.path.read_text()
+        for n in range(1, count):
+            other = SESSION[:-4] + f'{0xd000 + n:04x}'
+            (self.case.logs / (other + '.jsonl')).write_text(
+                text.replace(SESSION, other).replace('input-', f'input{n}-').replace('prompt-', f'prompt{n}-')
+                .replace('"u-', f'"u{n}-').replace('msg-', f'msg{n}-'))
+
+    def run_observe(self, at, **kwargs):
+        """One observe run delivering each bundle to the judge as it is written; the CC sessions it read."""
+        from unittest.mock import patch
+        from pulse_compute_cost import receipt_sources
+        real, read = receipt_sources.observe_registered_sources, []
+
+        def counted(registry, **options):
+            if options.get('files'):
+                read.extend(options['files'].get('cc', ()))
+            return real(registry, **options)
+        delivered = kwargs.pop('deliver', None) or (lambda bundle: (store(self.spool, PEER, bundle.read_bytes()),
+                                                                   acknowledge(self.index, bundle)))
+        try:
+            with patch.object(receipt_sources, 'observe_registered_sources', counted):
+                result = observe(self.registry, peer=PEER, index_path=self.index, outbox=self.outbox, read_at=at,
+                                 deliver=delivered, **kwargs)
+        finally:
+            for rest in pending_bundles(self.outbox):
+                discard(rest)
+        return result, read
+
+    def judged_matches_a_full_collection(self):
+        collect_registered_sources(self.case.registry, self.case.ledger, retirements={}, recoveries={})
+        collect_registered_sources(self.judge_registry, self.judge, retirements={}, recoveries={})
+        self.assertEqual(heads(self.judge), heads(self.case.ledger))
+
+    def last_coverage(self):
+        documents = sorted(self.spool.glob('*.json.gz'))
+        return [s['coverage'] for s in json.loads(gzip.decompress(documents[-1].read_bytes()))['sources']
+                if s['config']['id'] == 'cc'][-1]
+
+    def test_a_run_out_of_time_delivers_what_it_read_and_the_next_run_continues(self):
+        from pulse_compute_cost.native_observe import INCOMPLETE_REASON
+        self.sessions(3)
+        left = []
+        for n, at in enumerate(('2026-01-01T02:00:00Z', '2026-01-01T03:00:00Z', '2026-01-01T04:00:00Z')):
+            # A deadline already passed: each run reads one session (at least one), delivers it, then stops.
+            result, read = self.run_observe(at, deadline=0)
+            self.assertEqual(len(read), 1)
+            left.append(result.remaining)
+            coverage = self.last_coverage()
+            self.assertEqual(coverage['reason'] == INCOMPLETE_REASON, n < 2)
+            self.assertEqual(coverage['status'] == 'partial', n < 2)
+        self.assertEqual(left, [2, 1, 0])
+        self.assertEqual(len(load_index(self.index)['groups']), 3)
+        self.judged_matches_a_full_collection()
+        # Nothing changed: nothing is read again.
+        result, read = self.run_observe('2026-01-01T05:00:00Z', deadline=0)
+        self.assertEqual((read, result.remaining), ([], 0))
+
+    def test_a_run_ended_mid_way_keeps_every_acknowledged_session(self):
+        from unittest.mock import patch
+        from pulse_compute_cost import native_observe
+        self.sessions(3)
+
+        def deliver(bundle):
+            # Ends like the deadline's SIGALRM once one session's record was acknowledged.
+            if load_index(self.index)['groups']:
+                raise KeyboardInterrupt
+            store(self.spool, PEER, bundle.read_bytes()); acknowledge(self.index, bundle)
+        with patch.object(native_observe, 'CHUNK_BYTES', 1), self.assertRaises(KeyboardInterrupt):
+            self.run_observe('2026-01-01T02:00:00Z', deliver=deliver)
+        kept = len(load_index(self.index)['groups'])
+        self.assertTrue(1 <= kept < 3)
+        result, read = self.run_observe('2026-01-01T03:00:00Z')
+        self.assertEqual((len(read), result.remaining), (3 - kept, 0))
+        self.judged_matches_a_full_collection()
+
+    def test_a_run_killed_inside_a_session_redoes_only_that_session(self):
+        from unittest.mock import patch
+        from pulse_compute_cost import native_observe, receipt_sources
+        # Default CHUNK_BYTES: every session's rows fit one bundle, so only the
+        # confirmation before each session keeps the sessions already read.
+        self.assertEqual(native_observe.CHUNK_BYTES, 32 * 1024 * 1024)
+        self.sessions(3)
+        real, started = receipt_sources.observe_registered_sources, []
+
+        def slow_last(registry, **options):
+            if options.get('files'):
+                started.append(sorted(options['files']['cc']))
+                if len(started) == 3:
+                    # Unacknowledged work at this moment: none but this session.
+                    self.assertEqual(pending_bundles(self.outbox), [])
+                    self.assertEqual(len(load_index(self.index)['groups']), 2)
+                    raise KeyboardInterrupt  # The 45-minute SIGALRM inside the largest session.
+            return real(registry, **options)
+        with patch.object(receipt_sources, 'observe_registered_sources', slow_last), \
+                self.assertRaises(KeyboardInterrupt):
+            observe(self.registry, peer=PEER, index_path=self.index, outbox=self.outbox,
+                    read_at='2026-01-01T02:00:00Z', deadline=float('inf'),
+                    deliver=lambda bundle: (store(self.spool, PEER, bundle.read_bytes()),
+                                            acknowledge(self.index, bundle)))
+        for rest in pending_bundles(self.outbox):
+            discard(rest)
+        result, read = self.run_observe('2026-01-01T03:00:00Z')
+        self.assertEqual((sorted(read), result.remaining), (started[2], 0))
+        self.judged_matches_a_full_collection()
+
+    def test_a_backfill_spans_runs_and_reads_each_session_once(self):
+        self.sessions(3)
+        self.run_observe('2026-01-01T02:00:00Z')
+        reads = [len(self.run_observe(at, backfill='backfill-1', deadline=0)[1])
+                 for at in ('2026-01-01T03:00:00Z', '2026-01-01T04:00:00Z', '2026-01-01T05:00:00Z',
+                            '2026-01-01T06:00:00Z')]
+        self.assertEqual(reads, [1, 1, 1, 0])
+        self.assertEqual({r.get('backfill') for r in load_index(self.index)['groups'].values()}, {'backfill-1'})
+        self.judged_matches_a_full_collection()
+
+    def test_a_backfill_waits_for_an_unreachable_source_and_reads_it_once_back(self):
+        self.sessions(3)
+        self.run_observe('2026-01-01T02:00:00Z')  # Every session indexed before the backfill starts.
+        root = Path(next(s for s in self.registry['sources'] if s.get('kind') == 'cc')['path'])
+        moved = root.with_name(root.name + '-moved')
+        root.rename(moved); root.symlink_to(moved)  # Unreachable: a symlinked root is refused.
+        result, read = self.run_observe('2026-01-01T03:00:00Z', backfill='backfill-1')
+        # Nothing read, yet the backfill still owes the three indexed sessions.
+        self.assertEqual((read, result.remaining), ([], 3))
+        self.assertEqual(self.last_coverage()['status'], 'unreachable')
+        root.unlink(); moved.rename(root)  # Back with the same signatures as when indexed.
+        result, read = self.run_observe('2026-01-01T04:00:00Z', backfill='backfill-1')
+        self.assertEqual((len(read), result.remaining), (3, 0))
+        self.assertEqual({r.get('backfill') for r in load_index(self.index)['groups'].values()}, {'backfill-1'})
+        self.judged_matches_a_full_collection()
+        # An ordinary run with the source unreachable reports it, and owes nothing to a backfill.
+        root.rename(moved); root.symlink_to(moved)
+        result, read = self.run_observe('2026-01-01T05:00:00Z')
+        self.assertEqual((read, result.remaining), ([], 0))
+
+    def test_a_source_directory_that_cannot_be_listed_is_unreachable_not_empty(self):
+        # rglob lists an unreadable directory as empty; every session would read as removed.
+        self.sessions(3)
+        self.run_observe('2026-01-01T02:00:00Z')
+        indexed = load_index(self.index)['groups']
+        root = Path(next(s for s in self.registry['sources'] if s.get('kind') == 'cc')['path'])
+        hidden = root / 'nested'
+        hidden.mkdir()
+        for unlisted, at in ((root, '03'), (hidden, '04')):
+            with self.subTest(unlisted=unlisted.name):
+                os.chmod(unlisted, 0)
+                try:
+                    result, read = self.run_observe(f'2026-01-01T{at}:00:00Z', backfill='backfill-1')
+                finally:
+                    os.chmod(unlisted, 0o700)
+                # Nothing read or removed; the backfill still owes every indexed session.
+                self.assertEqual((read, result.remaining), ([], 3))
+                self.assertEqual(self.last_coverage()['status'], 'unreachable')
+                self.assertEqual(load_index(self.index)['groups'], indexed)
+        result, read = self.run_observe('2026-01-01T05:00:00Z', backfill='backfill-1')
+        self.assertEqual((len(read), result.remaining), (3, 0))
+        self.judged_matches_a_full_collection()
 
     def test_an_unacknowledged_bundle_blocks_and_a_refused_one_is_read_again(self):
         from test_cc_request_purpose import WI
@@ -326,3 +490,40 @@ class LateEvidenceTests(unittest.TestCase):
         collect_registered_sources(self.judge_registry, self.judge, retirements={}, recoveries={})
         self.step('2026-10-01T00:00:20Z')
         self.assertEqual(len(self.boundaries()), 1)
+
+
+class IncrementalObserveTests(unittest.TestCase):
+    """ObserveTests' rounds with this node's own sources in its local spool, judged incrementally (WI754)."""
+
+    def setUp(self):
+        ObserveTests.setUp(self)
+        from pulse_compute_cost.incremental_collect import open_index
+        self.index_db = open_index(self.judge, cache_mib=16, path=self.case.root / 'judge-index' / 'index.sqlite')
+        self.addCleanup(self.index_db.close)
+        self.publisher, self.rounds = True, []
+
+    def round(self, at):
+        from pulse_compute_cost.incremental_collect import collect_incremental, judging_registry, observe_into_spool
+        self.case.write()
+        collect_registered_sources(self.case.registry, self.case.ledger, retirements={}, recoveries={})
+        own = {**self.registry, **{k: v for k, v in self.judge_registry.items() if k != 'sources'},
+               'ledger_root': str(self.judge.root)}
+        local = self.case.root / 'local-spool'
+        observe_into_spool(own, spool=local, state=self.index.parent, read_at=at, retirements={})
+        judged = judging_registry(own, local, {})
+        self.assertEqual([s['kind'] for s in judged['sources']], [KIND])
+        timings = {}
+        result = collect_incremental(judged, self.judge, self.index_db, publisher=self.publisher, limit=10**6,
+                                     retirements={}, recoveries={}, timings=timings)
+        self.assertEqual(heads(self.judge), heads(self.case.ledger))
+        self.assertFalse(list(local.glob('*.json.gz')))  # Consumed with the ingest.
+        self.rounds.append(timings['incremental'])
+        return [], result
+
+    test_three_rounds_match_a_full_collection = ObserveTests.test_three_rounds_match_a_full_collection
+    test_holder_supplement_and_a_later_export_match_a_full_collection = \
+        ObserveTests.test_holder_supplement_and_a_later_export_match_a_full_collection
+
+    def test_holder_supplement_on_a_node_that_keeps_no_queue(self):
+        self.publisher = False
+        self.test_holder_supplement_and_a_later_export_match_a_full_collection()

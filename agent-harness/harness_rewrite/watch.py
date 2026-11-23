@@ -221,7 +221,9 @@ def observe(
                 detail={
                     "responsibility": contract["kind"],
                     "owner_attention_needed": response["status"]
-                    in {"rejected", "returned"},
+                    in {"rejected", "returned"}
+                    # Only its requester can end it, by withdrawing.
+                    or collaboration.child_transfer(state, contract["kind"]),
                 },
             )
     if state["status"] == "active" and state["active_candidate"]:

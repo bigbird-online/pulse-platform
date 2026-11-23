@@ -54,7 +54,29 @@
   判定读取主 transcript：最近一条主链人类输入及其 promptId 下、成功配对的
   `declare_session_wi` 确认（与 collector 的请求边界一致）；transcript 不可读或尚无请求时放行。
   声明为 `none`（闲聊、只读查询）的请求仍按未声明 WI 拒绝上述写操作，直到同一请求再声明一个 WI；
-  Pi 扩展同此。提醒行写明这一分界：动手改动才登记 WI，闲聊与只读声明 none。
+  Pi 扩展同此。提醒行只提示本请求尚未声明，不复述规则；规则只在声明工具自身一处：CC 为
+  `pulse-request-purpose` 的 MCP 服务说明（CC 每个会话都展示），Pi 与 Codex 为工具说明。Relay 的
+  `--append-system-prompt` 不再附这段规则。
+  CC 会话另经 `cc-session-settings.ts` 裁去 Relay 对话用不上的内容：`--exclude-dynamic-system-prompt-sections`
+  把记忆说明与环境段移到首条消息、去掉快速模式一行与 CC 的会话指引；`skillOverrides` 关掉终端或 CC 自身设置才用的
+  内置 skill；关掉账户级 Telegram 插件。`ensureClaudeProjectRegistered` 在工作区所在 git 仓库的项目项上批准 CLAUDE.md
+  的外部 `@` 引用（CC 按仓库根读这项批准，首次见到仓库时写成 false），工作区之外的 `@USER.md` 与身份文件才会载入。
+  Agent 配置 `ccPrompt`（只用于 legacy `cc` 运行时的 print 与 interactive；`cc-sdk` 不读）再开两项有代价的裁剪，缺省都维持 CC 原样：`systemPrompt: "replace"` 用
+  `--system-prompt` 以 Relay 的 `CC_BASE_PROMPT` 取代 CC 默认提示（去掉游戏规则、型号清单、WebSearch 模式、代词规则、
+  记忆写法说明与 git 快照，基础提示自行复述运行环境、审慎、隐私、上下文与记忆写法）；`gitStatus: false` 设
+  `includeGitInstructions: false`，去掉 git 状态快照与 Bash 工具的 Git 段（含署名提醒），Relay 补回 `CC_GIT_RULES`。
+  replace 只在 print 模式去掉 git 快照，interactive 模式仍带，需同开 `gitStatus: false`。改 `ccPrompt` 只对该 Agent
+  下一场新会话生效（`/new`、rollover 或尚无记录的会话）：CC 恢复会话时沿用开场时记下的系统提示与首条消息里的
+  git 快照，`--settings` 却每个进程即时生效。所以启用裁剪的新会话开场时把 `ccPrompt` 记到
+  `<Relay dataDir>/cc-prompt-sessions/<会话 ID>.json`，恢复时用记录值而非当前配置，Bash 的 Git 段与 `CC_GIT_RULES`
+  因此在同一会话边界一起变化。关掉 replace 同样要新开会话才回到默认提示。任何故障都按缺省启动、不阻断会话，
+  缺省总带 CC 原有的 Git 段：未配置或全为缺省的会话不写记录，参数与没有本开关时逐字相同；记录写不成（无数据目录、
+  目录被占、无写权限）就不应用裁剪并告警；恢复时没有记录视为以缺省开始的旧会话，静默按缺省；记录读不了、
+  解析失败或字段非法则告警并按缺省。
+  `@anchor symbol ccPromptForSession`
+  `@anchor symbol CC_SESSION_SETTINGS`
+  `@anchor symbol ccSystemPromptArgs`
+  `@anchor symbol gitRootOf`
   Codex：按 session 声明，线程 rollout 中尚无成功完成的 `declare_session_wi` 时每轮附提醒；
   无等价拦截点，只提醒
   `@anchor symbol withSessionWiReminder`
@@ -374,6 +396,16 @@ bot settings、LaunchAgent、临时凭证副本、argv、日志或证据。API p
 
 `@anchor test Relay/tests/pool.test.ts :: "reloads the declared token on a same-session CC process rebuild and keeps it out of argv"`
 `@anchor test Relay/tests/pool.test.ts :: "refuses to launch through a stale settings token copy"`
+
+### 工位的 Claude 认证选择
+
+工位可在受管 `relay.env` 旁的私有 `relay-auth` 文件写一行 `claude_auth=api`。
+Console key 另存同目录的 `anthropic-api.key`（权限 0600），Claude 通过 `apiKeyHelper`
+读取。切回订阅时写 `claude_auth=subscription`，缺少选择文件时也使用订阅。
+下次获取空闲的原生 CC 会话时采用当前选择并恢复同一会话。已经运行的回合继续使用
+本回合的凭据。定时任务沿各自的认证配置。
+
+`@anchor test Relay/tests/conversation-acquisition.test.ts :: "switches authentication once after the running turn while retaining the same session"`
 
 ## 3. 进程池生命周期
 

@@ -413,11 +413,10 @@ IN_FLIGHT_ACTIVE_DAYS = 1
 USAGE_TOP_AGENTS = 10
 USAGE_TOP_SESSIONS = 20
 SESSION_ID_PREFIX_CHARS = 8
-ACK_ARGV = (
-    "/usr/bin/python3",
-    "/Users/owner/Coevolution/Bigbird/PULSE/vultr-pulse-space/scripts/ack-probe.py",
-    "--json",
-)
+# ack-probe 已退役（PULSE#603），仓内不再有可执行的探针；生产以 retire_legacy_probes 跳过 ack 采集。
+# 非生产路径（测试、历史回放）要采 ack，须由调用方注入完整命令（ack_argv）；
+# 默认为空：不执行任何命令，s2.ack_overdue 判 unknown（source 记 not_configured）。
+ACK_ARGV: tuple[str, ...] = ()
 # ack-probe 要遍历全部 handoff yaml,实测 7.0s(2026-07-27),远超 runner 默认的 4s。
 # 超时的后果不是少一个数,而是 s2.ack_overdue 整条能力降级成 unknown、
 # 进而把 overall.runtime_health 也拖成 unknown——覆盖度看着有、实则一直没兑现。
@@ -823,6 +822,8 @@ class LivePaths:
     cc_quota: Optional[Path] = None
     # Grok account weekly quota fact from the cost publisher (grok_quota).
     grok_quota: Optional[Path] = None
+    # agy account quota groups from the cost publisher (agy_quota).
+    agy_quota: Optional[Path] = None
     # Native core WorkItem facts (harness.stats_facts/v1). When set, WI metrics,
     # human requests and the authority lamp come only from these facts.
     wi_facts: Optional[Path] = None

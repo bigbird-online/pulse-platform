@@ -581,3 +581,32 @@ def test_adoption_extends_current_coverage_heads_and_adds_new_entities(tmp_path,
     heads, conflicts = _coverage_heads(store)
     assert heads == {root.entity_ref: child.fact_ref, fresh.entity_ref: fresh.fact_ref} and not conflicts
     assert receipt['coverage_versions_retained_in_originals'] == 0
+
+
+def test_installed_core_admits_every_receipt_kind_computecost_writes():
+    from harness_rewrite.observations import KINDS
+    from pulse_compute_cost.receipts import FIELDS
+    assert set(FIELDS) <= KINDS
+
+
+def test_native_inputs_pushed_by_an_observing_node_enter_the_shared_stream(tmp_path):
+    from pulse_compute_cost.native_inputs import launch_inputs
+    from pulse_compute_cost.receipts import reference
+    from pulse_compute_cost.request_inputs import SESSION_DECLARATION, snapshot_inputs
+    source, key = reference('fixture', 'observing node source'), reference('native_session', ['cc', 'fixture'])
+    launch = {'context': {'parent_scope_ref': reference('fixture', 'parent'), 'child_scope_ref': reference('fixture', 'child'),
+                          'call_ref': reference('fixture', 'call'), 'parent_runtime': 'cc', 'child_runtime': 'codex',
+                          'basis': 'native_tool_result'},
+              'node': 'ownermac', 'entrypoint': 'cli', 'started_at': '2026-11-18T14:00:00Z',
+              'ended_at': '2026-11-18T14:00:01Z', 'evidence': [reference('fixture', 'tool result')]}
+    rows = launch_inputs([launch], source_ref=source, observed='2026-11-18T14:05:00Z') + snapshot_inputs(
+        SESSION_DECLARATION, {key: [{'schema': 'cc_session_wi/v1', 'wi': WI, 'origin': 'agent_declaration',
+                                     'native_scope_ref': key, 'declared_at': '2026-11-18T14:00:00Z',
+                                     'native_evidence_ref': reference('fixture', 'declaration')}]},
+        source_ref=source, read_at='2026-11-18T14:05:00Z')
+    rig = Rig(tmp_path)
+    saved = projected(rig, tmp_path / 'publisher').ingest_receipts(rows)
+    assert saved['inserted'] == 2
+    stored = [fact for batch in ObservationStore(rig.backend(rig.b)).read() for fact in batch['facts']]
+    assert sorted(f['fact_ref'] for f in stored) == sorted(r.fact_ref for r in rows)
+    assert {f['kind'] for f in stored} == {'native_input'}

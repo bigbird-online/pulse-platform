@@ -135,6 +135,43 @@ class QueryTests(unittest.TestCase):
         self.assertIsNone(wi['project_page'])
         self.assertEqual(set(wi['cost_by_period']), {'today', 'week', 'month'})
 
+    def with_agy(self, observed, rows):
+        """A still-valid snapshot (generated 5 minutes ago) carrying an agy reading."""
+        snapshot = app_snapshot(self.now - timedelta(minutes=5))
+        snapshot['metrics'].append(metric('relay.agy.quota', rows, 'buckets', observed_at=observed.isoformat()))
+        self.app.write_text(json.dumps(snapshot))
+
+    def agy_rows(self, *resets):
+        return [{'group': group, 'window': window, 'remaining_fraction': 0.5, 'resets_at': int(at.timestamp())}
+                for group, window, at in resets]
+
+    def test_agy_quota_drops_buckets_reset_since_the_snapshot(self):
+        reset = self.now - timedelta(minutes=1)
+        later = self.now + timedelta(days=6)
+        self.with_agy(self.now - timedelta(minutes=10), self.agy_rows(
+            ('Gemini Models', 'weekly', later), ('Gemini Models', '5h', reset),
+            ('Claude and GPT models', 'weekly', later)))
+        document = self.run_query('quotas')
+        self.assertFalse(document['sources']['app_snapshot']['stale'])
+        quota = document['result']['agy']['quota']
+        self.assertEqual(quota['status'], 'available')
+        self.assertEqual([(r['group'], r['window']) for r in quota['value']],
+                         [('Gemini Models', 'weekly'), ('Claude and GPT models', 'weekly')])
+        # Every bucket reset: unknown, not an empty available list.
+        self.with_agy(self.now - timedelta(minutes=10), self.agy_rows(('Gemini Models', '5h', reset)))
+        quota = self.run_query('quotas')['result']['agy']['quota']
+        self.assertEqual((quota['status'], quota['value'], quota['reason']),
+                         ('unknown', None, 'quota_window_elapsed'))
+
+    def test_agy_quota_reading_past_its_hour_is_unknown(self):
+        self.with_agy(self.now - timedelta(minutes=61), self.agy_rows(
+            ('Gemini Models', 'weekly', self.now + timedelta(days=6))))
+        document = self.run_query('quotas')
+        self.assertFalse(document['sources']['app_snapshot']['stale'])
+        quota = document['result']['agy']['quota']
+        self.assertEqual((quota['status'], quota['value'], quota['reason'], quota['observed_at']),
+                         ('unknown', None, 'quota_reading_stale', None))
+
     def test_wi_with_cost_rows_reports_each_period(self):
         view = next(v for v in self.cost['views'] if v['period'] == 'month')
         target = next(g['key']['wi'] for g in view['groups'] if g['key']['wi'].startswith('wi_'))
@@ -346,6 +383,34 @@ class ScopeAndDayTests(unittest.TestCase):
             self.assertIs(same_day.cost(), published)
 
 
+class CollectionBacklogTests(unittest.TestCase):
+    """A publication whose pushed observations were not all judged says so to every reader."""
+    MARKER = {'status': 'partial', 'reason': 'observation_backlog',
+              'peers': [{'id': 'ownermac', 'deferred_bundles': 527}]}
+
+    def test_the_marker_is_validated_and_reaches_the_query_source(self):
+        from unittest import mock
+        from pulse_compute_cost.stats_dashboard import DEFAULT_FACTS, build_dashboard
+        from pulse_stats.cost_dashboard import _validate
+        now = datetime.fromisoformat('2026-10-06T08:00:00+00:00')
+        document = build_dashboard(None, subscriptions=json.loads(DEFAULT_FACTS.read_text()),
+                                   source_revision='c' * 40, now=now, collection_backlog=self.MARKER)
+        _validate(document)
+        for bad in ({**self.MARKER, 'peers': []}, {**self.MARKER, 'reason': 'other'},
+                    {**self.MARKER, 'peers': [{'id': 'ownermac', 'deferred_bundles': 0}]},
+                    {**self.MARKER, 'peers': [{'id': '/x', 'deferred_bundles': 1}]}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                _validate(build_dashboard(None, subscriptions=json.loads(DEFAULT_FACTS.read_text()),
+                                          source_revision='c' * 40, now=now, collection_backlog=bad))
+        published = {'status': 'available', 'generated_at': now.isoformat(),
+                     'expires_at': (now + timedelta(minutes=30)).isoformat(), 'views': [],
+                     'collection_backlog': self.MARKER}
+        with mock.patch.object(query, 'load_cost_dashboard', return_value=published):
+            src = query.Sources(app_snapshot=Path('/nonexistent'), cost_publication=Path('/x'), now=now)
+            self.assertIs(src.cost(), published)
+            self.assertEqual(src.used['cost_publication']['collection_backlog'], self.MARKER)
+
+
 class WorkItemPageValidationTests(unittest.TestCase):
     """Published WI display may name its own kernel page; nothing else passes."""
 
@@ -436,6 +501,12 @@ class PullRequestOnlyRowTests(unittest.TestCase):
     def test_wi_query_counts_its_prs(self):
         class Src(stub(self.view())):
             def app(self):
+                return None
+
+            def facts(self):
+                return None
+
+            def compactions(self):
                 return None
         args = type('A', (), {'work_item_id': 'wi_pr'})()
         month = query.q_wi(Src(), args)['cost_by_period']['month']

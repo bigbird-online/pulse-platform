@@ -1,10 +1,10 @@
 # SPEC：PULSE 运行时优先级管理
 
-> version: `1.5.5`
+> version: `1.5.6`
 > status: `implemented`
 > authority: PULSE 跨 Relay、agent-harness、Stats 与 Codex 用户配置的运行时迁移契约
 > owner: Pulse
-> modified: `2026-11-10`
+> modified: `2026-11-19`
 > implementation: `ComputeCost/bin/pulse-runtime-priority.py`
 
 ## 1. 单一管理契约
@@ -57,6 +57,13 @@
 
 管理器完整持有中央 named profiles：`frontier=Opus/Astra high`、`media=Sonnet/Terra medium`、
 `economy=Haiku/Luna low`、`automation=Sonnet/Sol high`（自动任务缺省：Codex 优先，CC 备用）；四档只写 latest alias，plan/apply/verify 不接受目录值自行漂移。
+
+第 1 节的 Fable 禁用只约束共享 v1 profile 的 `claude.model`。Relay 中央档位
+`platform_default.cc` 可用 `claude-fable-latest`，采用 Claude Code 的原生推理档位。
+管理器在共享 profile 的可选字段 `platform_default_cc_alias` 记录这个选择，`null` 表示跟随
+`claude.model`。旧 profile 缺少该字段时，首次 apply 接纳中央目录的 Fable 别名并记录，
+verify 在记录前报告中央目录漂移。Fable 档位只渲染 `model_alias`，verify 会报告额外字段、
+推理档位和模型漂移。
 
 `harness_dispatch` jobs 是硬排除面：Relay 只启动 `harness scan/dispatch`，真正 LLM
 由对应 harness policy 决定。管理器不得向这 19 类 job 注入普通 batch runtime 字段。
@@ -141,6 +148,8 @@ current/target runtime-profile digest、route diff、唯一 effective changed ro
 precondition 与 canonical `plan1_<sha256>`；该命令不写任何受管文件。
 
 - `plan` 只报受管计数与会变化的路径，不输出含 token/secret 的配置 diff。
+- `plan/apply --platform-default-cc claude-fable-latest` 选择中央 Fable 别名；
+  `--platform-default-cc shared` 恢复中央档位跟随共享 `claude.model`。
 - `--codex-model` 必须是可投影到 `codex-sol-latest` / `codex-terra-latest` /
   `codex-luna-latest` 的 family 型号；无法形成 latest alias 时 plan/apply fail closed，避免管理器
   把具体型号重新写进 direct cron 中央 profile。

@@ -39,6 +39,8 @@ export interface AgentConfig {
   ccModel?: string;
   /** Emergency per-agent CC process mode override. Default is provider-aware auto mode. */
   ccMode?: CCMode;
+  /** CC prompt trims that cost something (`cc-session-settings.ts`); absent keeps CC's default prompt. Legacy `cc` runtime only (not `cc-sdk`); a change reaches new sessions only. */
+  ccPrompt?: import('./cc-session-settings.js').CcPromptOptions;
   runtime?: ConversationRuntimeId; // conversation runtime; default 'codex' (codex-defaults.ts)
   conversationRuntimePreference?: ConversationRuntimeId[]; // TG conversation runtime fallback order
   /** Structured conversation route. New runtimes must use this namespace
@@ -219,8 +221,8 @@ export function agentRepoAccess(agent: Pick<AgentConfig, 'commitRepos' | 'allowe
 
 // --- Runtime Selection ---
 
-export type RuntimeId = 'cc' | 'cc-interactive' | 'codex';
-export type ConversationRuntimeId = 'cc' | 'codex' | 'cc-sdk' | 'pi';
+export type RuntimeId = 'cc' | 'cc-interactive' | 'codex' | 'agy';
+export type ConversationRuntimeId = 'cc' | 'codex' | 'cc-sdk' | 'pi' | 'agy';
 
 export type ConversationReasoningLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
@@ -294,6 +296,19 @@ export interface ConversationTurnContext {
   effect: ConversationTurnEffect;
   /** Internal control turns are observable to Relay consumers but not channels. */
   deliveryVisibility?: 'public' | 'control';
+  /** The Host's last edit of a turn's input (the context rollover hint),
+   *  applied by an adapter with `preparesInput` each time it writes the turn to
+   *  a runtime process, a replay into a replacement process included, with the
+   *  session and mode of the process that receives it. */
+  prepareInput?: (message: StreamJsonMessage, receiver: TurnInputReceiver) => StreamJsonMessage;
+}
+
+/** The runtime process a turn's input is written to: the native session it
+ *  was started with (exact in CC print mode before its init arrives) and its
+ *  CC mode. */
+export interface TurnInputReceiver {
+  sessionId: string;
+  mode?: 'print' | 'interactive';
 }
 
 /** Per-agent auth/endpoint selection for the cc-sdk runtime. Pure config; the
@@ -465,6 +480,8 @@ export type ProcessState = 'starting' | 'ready' | 'busy' | 'idle' | 'dead';
 // --- CC Process Instance ---
 
 export interface CCProcess {
+  /** Native workstation authentication used by this child. */
+  ccAuthMode?: import('./cc-subscription-auth.js').CcAuthMode;
   tenantId: string;
   process: ChildProcess;
   /** Per-spawn credential helper file; removed when the child exits or is killed. */
@@ -506,8 +523,12 @@ export interface SpawnConfig {
   allowedTools?: string[];
   /** CC `--model` for this spawn (pool builds argv after session args). */
   ccModel?: string;
+  /** The conversation's /think level, mapped by each runtime (see reasoning-control.ts). */
+  reasoningLevel?: ConversationReasoningLevel;
   /** CC process mode for this spawn. Overrides provider-aware auto mode when no global override is set. */
   ccMode?: CCMode;
+  /** Agent's `ccPrompt`. */
+  ccPrompt?: import('./cc-session-settings.js').CcPromptOptions;
   /** Auth/endpoint mode for the `cc-sdk` runtime spawn (subscription/apikey).
    *  Ignored by the legacy `cc` / `codex` runtimes. */
   ccSdkProviderMode?: CcSdkProviderMode;
@@ -605,6 +626,8 @@ export interface PoolOptions {
   isPendingInteractive?: (tenantId: string) => boolean;
   /** ComputeCost session WI MCP registered for every CC session when its host resources are available. */
   sessionWiMcp?: import('./cc-session-wi-mcp.js').CcSessionWiMcp;
+  /** Directory of each CC session's starting `ccPrompt` (cc-prompt-record.ts); default `<Relay dataDir>/cc-prompt-sessions`. */
+  ccPromptRecordDir?: string;
 }
 
 export type TokenTier = 'primary' | 'fallback';
@@ -634,6 +657,10 @@ export interface Pool {
   /** Calls `turn.arrival.accepted()` once the turn is queued, preparing its
    *  dispatch or in flight (see ConversationRuntimeAdapter.admitsTurns). */
   readonly admitsTurns?: boolean;
+  /** Applies `turn.prepareInput` as it writes a new turn to CC. */
+  readonly preparesInput?: boolean;
+  /** Checks an internal delivery's target session as it writes the turn (internal-turn-fence.ts). */
+  readonly fencesInternalTurns?: boolean;
   /** Write raw keystrokes to an interactive CC's PTY stdin (e.g. AskUserQuestion
    *  answers). Optional so lightweight mocks stay valid; createPool always provides it. */
   injectInput?(tenantId: string, text: string): Promise<void>;
@@ -799,7 +826,7 @@ export interface ActiveWorkItemRuntimeBinding {
 
 /** One native session's whole identity unit, saved and restored together by `/wi switch`. */
 export type SessionIdentityUnit = Pick<PersistedSession, 'sessionId'|'runtime'|'codexThreadId'|'codexThreadUsage'
-  |'activeWorkItemRuntimeBinding'|'pendingWorkItemEntry'|'terminalWorkItemRuntimeBinding'>;
+  |'agyConversation'|'agyWorkItemBinding'|'reasoningLevel'|'activeWorkItemRuntimeBinding'|'pendingWorkItemEntry'|'terminalWorkItemRuntimeBinding'>;
 export interface WorkItemSession {unit:SessionIdentityUnit;at:string}
 
 export interface PersistedSession {
@@ -819,6 +846,16 @@ export interface PersistedSession {
   codexThreadId?: string;
   /** Codex thread-cumulative usage after its last Relay turn (receipt baseline). */
   codexThreadUsage?: {threadId: string; usage: Record<string, number>};
+  /** agy conversation resumed with `--conversation`, bound to the Relay session that started it;
+   *  `usage` is agy's conversation-cumulative total after the last Relay turn. */
+  agyConversation?: {sessionId: string; conversationId: string; usage?: Record<string, number>};
+  /** The WI a /wi command handed this agy conversation: agy has no tools to declare one, so
+   *  Relay attributes the conversation's turns to it with this binding. `conversationId` is the
+   *  native conversation the core recognized; absent only for a rollover successor before its
+   *  first conversation, which then adopts the first one agy starts. */
+  agyWorkItemBinding?: {sessionId: string; conversationId?: string; usageBinding: RuntimeUsageBinding};
+  /** /think level of this conversation; each runtime maps it (reasoning-control.ts). Cleared with the session. */
+  reasoningLevel?: ConversationReasoningLevel;
   wrapRequestedAt?: number;
   recoveryRequiredAt?: number;
   recoveryReason?: SessionRecoveryReason;
@@ -1043,6 +1080,7 @@ export interface ScheduledJob {
     documentPath?: string;            // file path template (telegram_document | feishu_document); relative = inside agent.workspace
     captionPath?: string;             // workspace-relative UTF-8 text file template, sent as a text message after the document; any failure fails the delivery
     caption?: string;                 // caption template (telegram_document; sent as a separate Feishu text for feishu_document)
+    sendOutput?: boolean;             // telegram_document: after the document (and captionPath text), send the run's final reply as text
     skipIfOutputIncludes?: string[];  // whole-line output markers that skip delivery (announce | telegram_document | feishu_document)
     /**
      * Opt-in background progress notice for collaboration-inbox jobs. When true
@@ -1119,6 +1157,7 @@ export interface JobResult {
   deliveryStatus?: DeliveryStatus;
   deliveryReceipt?: DeliveryReceipt;
   output: string;                     // CC stdout (text mode)
+  finalReply?: string;                // the run's last reply alone, when the runtime separates it
   durationMs: number;
   runtime?: RuntimeId;
   attemptedRuntimes?: RuntimeId[];

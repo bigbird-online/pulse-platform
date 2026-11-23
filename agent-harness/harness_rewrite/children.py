@@ -103,6 +103,10 @@ def follow(state: Json, parent: Json | None) -> Json:
         **state,
         "holder": holder if state["status"] == "active" else state["holder"],
         "generation": parent["generation"],
+        # The generation is the parent's, so is the record of whose own handover
+        # (rollover, continue_here) made each one: an offer on the child stays
+        # answerable exactly as long as one on the parent would.
+        "successions": parent.get("successions", {}),
         "grants": grants,
         "parent_active": active,
     }
@@ -226,7 +230,13 @@ def review(
         if bare:
             raise Rejected("domain_conflict", "Records without artifacts: " + ", ".join(bare))
         if collaboration.pending(state):
-            raise Rejected("domain_conflict", "Required collaboration has not been settled")
+            stuck = sorted(
+                key for key, item in state.get("collaborations", {}).items()
+                if item["required"] and not item["withdrawn"]
+                and collaboration.child_transfer(state, item["kind"]))
+            raise Rejected("domain_conflict", "Required collaboration has not been settled" + (
+                "; a child's full responsibility transfer can only be withdrawn: "
+                "withdraw_collaboration " + ", ".join(stuck) if stuck else ""))
         if delivery.pending(state, None):
             raise Rejected("domain_conflict", "Required delivery has not been observed")
         events.append(event(

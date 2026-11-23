@@ -154,6 +154,17 @@ final class CostDashboardTests: XCTestCase {
         XCTAssertEqual(partial.peerReason(node: "tcloud"), "远端生产账本暂不可读写（GitHub）")
         XCTAssertNil(partial.peerReason(node: "mac"))
         XCTAssertNil(running.peerReason(node: "tcloud"), "only a completed cycle describes its sources")
+        // A pushed peer whose bundles wait was read only partly: the reason names how many.
+        let backlog = CostRefreshStatus(state: "completed", startedAt: doc.generatedAt, finishedAt: doc.generatedAt,
+            reason: nil, peers: [.init(id: "ownermac", status: "partial", reason: "observation_backlog", deferredBundles: 527)])
+        XCTAssertEqual(backlog.peerReason(node: "ownermac"), "观察包积压，分轮读取中，待读 527 包")
+        let staleBacklog = CostRefreshStatus(state: "completed", startedAt: doc.generatedAt, finishedAt: doc.generatedAt,
+            reason: nil, peers: [.init(id: "ownermac", status: "unreachable_or_invalid", reason: "peer_push_stale",
+                                       deferredBundles: 2)])
+        XCTAssertTrue(try XCTUnwrap(staleBacklog.peerReason(node: "ownermac")).hasSuffix("，待读 2 包"))
+        let marker = CollectionBacklog(status: "partial", reason: "observation_backlog",
+                                       peers: [.init(id: "ownermac", deferredBundles: 527)])
+        XCTAssertEqual(marker.tileText, "未收齐：ownermac 待读 527 包")
         // Paused by decision: named in every cycle state, never a read failure.
         let paused: [CostRefreshStatus.Peer] = [.init(id: "tcloud", status: "paused", reason: "paused_by_decision"),
                                                 .init(id: "oracle-node-1", status: "read", reason: nil)]
@@ -705,17 +716,51 @@ extension CostDashboardTests {
     func testWiColumnDistinguishesCronNoneUnknownAndCanonicalWi() throws {
         let doc = try XCTUnwrap(replays()["activity-today"]?.document)
         let base = try XCTUnwrap(doc.activityView(period: .today, at: doc.generatedAt)?.groups.first)
-        let labels = ["cron", "none", "unassigned", "wi_20260901_001"]
+        let labels = ["cron", "none", "unassigned", "undeclared", "wi_20260901_001"]
         let rows = labels.map { label -> CostQueryGroup in
             var key = base.key; key["wi"] = label
             return CostQueryGroup(key: key, cost: base.cost, usage: base.usage)
         }
-        XCTAssertEqual(rows.prefix(3).map { CostTableColumn.wi.text($0) }, ["cron", "无", "未关联"])
-        for (filter, expected) in [("cron", "cron"), ("无", "none"), ("未关联", "unassigned")] {
+        XCTAssertEqual(rows.prefix(4).map { CostTableColumn.wi.text($0) }, ["cron", "无", "未关联", "未声明 WI"])
+        for (filter, expected) in [("cron", "cron"), ("无", "none"), ("未关联", "unassigned"), ("未声明 WI", "undeclared")] {
             var selection = CostTableSelection(); selection.filters[.wi] = filter
             XCTAssertEqual(selection.rows(rows).map { $0.key["wi"]! }, [expected])
         }
-        XCTAssertEqual(CostTableSelection().rows(rows).count, 4)
+        XCTAssertEqual(CostTableSelection().rows(rows).count, 5)
+    }
+
+    /// The meter publisher's own keys read as plainly as the older ones; needs no replay.
+    func testMeterKeysReadInChinese() {
+        let cost = QueryMachineCost(machineCashUsd: "1", partialMachineCashUsd: nil,
+                                    cashBasis: "openrouter_standard_token_cash", reasons: [], unpriced: [])
+        let undeclared = CostQueryGroup(key: ["agent": "hestia", "wi": "undeclared", "entrypoint": "unknown",
+                                              "node": "ownermac", "runtime": "codex", "model": "unknown"], cost: cost)
+        XCTAssertEqual(CostTableColumn.wi.text(undeclared), "未声明 WI")
+        XCTAssertEqual(CostTableColumn.model.text(undeclared), "模型未知")
+        XCTAssertEqual(CostTableColumn.entrypoint.text(undeclared), "交互入口未知")
+        // A human request without a WI is outside any WI: no PR column.
+        XCTAssertTrue(undeclared.isNonWI)
+        XCTAssertEqual(undeclared.outputText, "—")
+        XCTAssertEqual(CostQueryGroup(key: ["wi": "undeclared"], cost: cost).title, "未声明 WI")
+        // No tenant dimension published: the tenant column is hidden, not "租户未知" on every row.
+        XCTAssertFalse(CostTableColumn.showsTenant([undeclared]))
+        XCTAssertFalse(CostTableColumn.available(in: [undeclared]).contains(.tenant))
+        var chosen = CostTableSelection(); chosen.filters = [.tenant: "owner", .agent: "hestia"]; chosen.sortColumn = .tenant
+        let limited = chosen.limited(to: CostTableColumn.available(in: [undeclared]))
+        XCTAssertEqual(limited.filters, [.agent: "hestia"])        // tenant filter dropped, others kept
+        XCTAssertEqual(limited.sortColumn, .amount)                  // tenant sort falls back to amount
+        XCTAssertEqual(chosen.limited(to: CostTableColumn.allCases), chosen)
+        XCTAssertTrue(CostTableColumn.showsTenant([CostQueryGroup(key: ["tenant": "owner", "agent": "pulse"], cost: cost)]))
+        // Native session entrypoints read as they are, never as "unknown".
+        XCTAssertEqual(["cli", "sdk", "codex_exec", "codex_app", "pi_cli", "relay", "codex:codex_vscode", "automation"]
+            .map { CostQueryGroup(key: ["entrypoint": $0], cost: cost).title },
+                       ["命令行", "SDK", "Codex 命令行", "Codex App", "Pi 命令行", "Relay", "Codex（codex_vscode）", "无"])
+        XCTAssertEqual(CostQueryGroup(key: ["wi": "unassigned"], cost: cost).title, "WI 未关联")
+        XCTAssertEqual(CostTableColumn.wi.text(CostQueryGroup(key: ["wi": "unassigned"], cost: cost)), "未关联")
+        XCTAssertEqual(CostAttribution(sources: [
+            "undeclared": CostAttributionSource(eventCount: 3, pricedMachineCashUsd: "1"),
+            "unattributed": CostAttributionSource(eventCount: 1, pricedMachineCashUsd: "0")]).summary,
+                       "未声明 WI 3 条 · 未关联 1 条")
     }
 
     func testPublishedWorkItemNamesReachTheRowsThatNameThem() throws {
@@ -792,7 +837,7 @@ extension CostDashboardTests {
         XCTAssertEqual(CostTableColumn.entrypoint.text(rows[0]), "无")
         XCTAssertEqual(CostTableColumn.wi.text(rows[0]), "cron")
         XCTAssertEqual(Array(rows[1...4]).map { CostTableColumn.entrypoint.text($0) },
-                       ["飞书", "Telegram", "Codex App", "CLI"])
+                       ["飞书", "Telegram", "Codex App", "命令行"])
         XCTAssertNotEqual(CostTableColumn.entrypoint.text(rows[5]), "无")
         var selection = CostTableSelection(); selection.filters[.entrypoint] = "无"
         let filtered = selection.rows(rows)
@@ -1468,20 +1513,26 @@ extension CostDashboardTests {
         for height in [CGFloat(28), 34, 46] {
             grid.table.rowHeight = height
             grid.table.reloadData(); grid.layoutSubtreeIfNeeded()
-            for index in CostTableColumn.allCases.indices {
+            // Only columns the table shows: an unavailable dimension (e.g. tenant) stays hidden and has no cell.
+            let shown = grid.table.tableColumns.enumerated().compactMap { offset, tableColumn -> (Int, CostTableColumn)? in
+                guard !tableColumn.isHidden, let column = CostTableColumn(rawValue: tableColumn.identifier.rawValue) else { return nil }
+                return (offset, column)
+            }
+            XCTAssertFalse(shown.isEmpty)
+            for (index, column) in shown {
                 grid.table.scrollColumnToVisible(index)
                 grid.layoutSubtreeIfNeeded()
                 let cell = try XCTUnwrap(grid.table.view(atColumn: index, row: 0, makeIfNecessary: true))
                 cell.layoutSubtreeIfNeeded()
                 let label: NSTextField
-                if CostTableColumn.allCases[index] == .agent { label = try XCTUnwrap((cell as? CostAgentCell)?.label) }
+                if column == .agent { label = try XCTUnwrap((cell as? CostAgentCell)?.label) }
                 else { label = try XCTUnwrap((cell as? CostTextCell)?.label) }
                 XCTAssertFalse(label.stringValue.isEmpty)
                 XCTAssertEqual(label.frame.midY, cell.bounds.midY, accuracy: 0.5, "column \(index)")
                 XCTAssertEqual(label.frame.height, 18, accuracy: 0.5)
                 XCTAssertGreaterThan(label.frame.width, 0)
                 XCTAssertTrue(label.isSelectable)
-                if CostTableColumn.allCases[index] != .agent { XCTAssertEqual(label.alignment, [.outcome,.amount].contains(CostTableColumn.allCases[index]) ? .right : .left) }
+                if column != .agent { XCTAssertEqual(label.alignment, [.outcome,.amount].contains(column) ? .right : .left) }
             }
         }
         XCTAssertFalse(grid.table.gridStyleMask.contains(.solidVerticalGridLineMask))
@@ -2323,6 +2374,64 @@ extension CostDashboardTests {
         return value
     }
 
+    /// Closed weeks: a total with adjustments shows the sum and names the entries; old publications are unchanged.
+    func testAdjustedTotalShowsSumAndTheAdjustmentNote() throws {
+        let plain = dashboardView(cost(full: "5", priced: "5", count: 3))
+        XCTAssertEqual(plain.adjustedTotalAmount, Decimal(5))
+        XCTAssertNil(plain.adjustmentNote)
+        var adjusted = plain
+        adjusted.adjustments = CostAdjustments(entryCount: 2, unpricedEntryCount: 0, knownTotalTokens: -4,
+                                               pricedMachineCashUsd: "-1.25")
+        adjusted.total = CostAdjustedTotal(knownTotalTokens: nil, pricedMachineCashUsd: "3.75")
+        XCTAssertEqual(adjusted.adjustedTotalAmount, Decimal(string: "3.75"))
+        XCTAssertEqual(adjusted.adjustmentNote, "含调整 −$1.25")
+        XCTAssertEqual(CostText.signedDecimal("-0.5"), Decimal(string: "-0.5"))
+        XCTAssertNil(CostText.signedDecimal("--1"))
+        let doc = try document { object in
+            var views = object["views"] as! [[String: Any]]
+            views[0]["adjustments"] = ["entry_count": 1, "unpriced_entry_count": 0, "known_total_tokens": 2,
+                                       "priced_machine_cash_usd": "0.3", "tokens": [:], "by_origin": []]
+            views[0]["total"] = ["known_total_tokens": NSNull(), "tokens": [:], "priced_machine_cash_usd": "0.3"]
+            views[0]["adjustment_only_groups"] = []
+            object["views"] = views
+        }
+        XCTAssertEqual(doc.views[0].adjustments?.entryCount, 1)
+        XCTAssertEqual(doc.views[0].total?.pricedMachineCashUsd, "0.3")
+        XCTAssertNil(try document().views[0].adjustments, "older publications carry no adjustments")
+    }
+
+    /// Unpriced own usage keeps the priced entries; a total that cannot be read keeps the own amount.
+    func testAdjustedTotalSurvivesUnpricedOwnUsageAndAnUnreadableTotal() {
+        var unpriced = dashboardView(cost(priced: nil, count: 0, unpriced: 3))
+        XCTAssertNil(unpriced.totalCostAmount)
+        unpriced.adjustments = CostAdjustments(entryCount: 2, unpricedEntryCount: 1, knownTotalTokens: 4,
+                                               pricedMachineCashUsd: "0.30")
+        unpriced.total = CostAdjustedTotal(knownTotalTokens: nil, pricedMachineCashUsd: "0.30")
+        XCTAssertEqual(unpriced.adjustedTotalAmount, Decimal(string: "0.30"))
+        XCTAssertEqual(unpriced.adjustmentNote, "含调整 +$0.30（自身用量未计价，1 条调整未计价）")
+
+        var unreadable = dashboardView(cost(full: "5", priced: "5", count: 3))
+        unreadable.adjustments = CostAdjustments(entryCount: 1, unpricedEntryCount: 0, knownTotalTokens: 0,
+                                                 pricedMachineCashUsd: "1")
+        unreadable.total = CostAdjustedTotal(knownTotalTokens: nil, pricedMachineCashUsd: "six")
+        XCTAssertEqual(unreadable.adjustedTotalAmount, Decimal(5))
+        XCTAssertEqual(unreadable.adjustmentNote, "调整未计入：合计无效")
+
+        // An own cost that contradicts itself still shows no amount at all.
+        var incoherent = dashboardView(cost(partial: "4", priced: "3", count: 2, unpriced: 1))
+        incoherent.adjustments = unpriced.adjustments
+        incoherent.total = unpriced.total
+        XCTAssertNil(incoherent.adjustedTotalAmount)
+    }
+
+    func testCollectionBacklogMarksTheWholeTableIncomplete() {
+        let marker = CollectionBacklog(status: "partial", reason: "observation_backlog",
+                                       peers: [.init(id: "ownermac", deferredBundles: 1475)])
+        XCTAssertEqual(CollectionBacklog.tableHeadline, "数据未收齐，金额与归属不完整")
+        XCTAssertTrue(marker.tableDetail.hasPrefix("ownermac 还有 1475 包观察数据待读。"))
+        XCTAssertTrue(marker.tableDetail.contains("不要把这些数字当作完整结果"))
+    }
+
     func testDashboardTotalUsesCompleteAmountThenEveryPricedRow() {
         XCTAssertEqual(dashboardView(cost(full: "5", priced: "5", count: 3)).totalCostAmount, Decimal(5))
         XCTAssertEqual(dashboardView(cost(partial: "4", priced: "4", count: 2, unpriced: 1)).totalCostAmount, Decimal(4))
@@ -2821,6 +2930,53 @@ extension CostDashboardTests {
         corrupted[corrupted.count - 6] ^= 1
         XCTAssertThrowsError(try CostDashboardCarrier.gunzip(corrupted, limit: 8)) { error in
             XCTAssertEqual(error as? CostDashboardCarrier.TransportError, .stream)
+        }
+    }
+}
+
+
+extension CostDashboardTests {
+    /// The agy row expands to every group's remaining share and reset; without a reading it states the reason.
+    @MainActor func testAgyQuotaPanelShowsGroupsOrReason() async throws {
+        let now = SnapshotDecoder.parseISO8601("2026-11-20T10:48:24Z")!
+        func metrics(available: Bool) -> SnapshotMetrics {
+            let rows: [[String: MetricScalar]] = [
+                ["group": .string("Gemini Models"), "window": .string("weekly"), "remaining_fraction": .number(0.99),
+                 "resets_at": .number(now.addingTimeInterval(6 * 86400).timeIntervalSince1970)],
+                ["group": .string("Gemini 4 Argon"), "window": .string("weekly"), "remaining_fraction": .number(1),
+                 "resets_at": .number(now.addingTimeInterval(6 * 86400).timeIntervalSince1970)],
+            ]
+            return SnapshotMetrics([Metric(id: MetricID.agyQuota, capabilityID: "s1.request_trace_capture",
+                status: available ? .available : .unknown, value: available ? .rows(rows) : .null, unit: "buckets",
+                window: "current", quality: available ? .validated : .insufficient,
+                scope: "agy account quota groups; not per-agent cost", observedAt: now.addingTimeInterval(-600),
+                reason: available ? nil : "agy_command_failed")])
+        }
+        for (name, unavailable) in [("available", false), ("command-failed", true)] {
+            let relay = RelayViewModel(metrics: metrics(available: !unavailable), hasSnapshot: true, at: now)
+            let context = DashboardStatusContext(authority: GlobalAuthorityViewModel(projection: nil), relay: relay,
+                harness: HarnessViewModel(metrics: SnapshotMetrics([]), hasSnapshot: true), health: .ok, incidents: [],
+                observedAt: now)
+            let view = CostDashboardView(document: nil, now: now, initialAgyQuotaExpanded: true,
+                                         tablePreferences: nil, statusContext: context)
+            let host = NSHostingView(rootView: ScrollView { view.padding(14) }.frame(width: 420, height: 700))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 700), styleMask: [.titled],
+                                  backing: .buffered, defer: false)
+            window.contentView = host; window.orderFront(nil)
+            defer { window.orderOut(nil) }
+            try await Task.sleep(nanoseconds: 150_000_000); host.layoutSubtreeIfNeeded()
+            func ids(_ v: NSView) -> [String] { [v.identifier?.rawValue].compactMap { $0 } + v.subviews.flatMap(ids) }
+            let found = Set(ids(host))
+            XCTAssertTrue(found.contains("dashboard-agy-quota"), name)
+            XCTAssertTrue(found.contains("agy-quota-observed-detail"), name)
+            XCTAssertEqual(found.contains("agy-quota-groups"), !unavailable, name)
+            XCTAssertEqual(found.contains("agy-quota-unavailable"), unavailable, name)
+            if let folder = Bundle.main.object(forInfoDictionaryKey: "PulseTestRenderDirectory") as? String,
+               !folder.isEmpty, let image = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                host.cacheDisplay(in: host.bounds, to: image)
+                try image.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: folder)
+                    .appendingPathComponent("agy-quota-\(name)-420.png"))
+            }
         }
     }
 }

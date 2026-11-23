@@ -30,7 +30,7 @@
 
 ## 2. 三道 spec 闸 + 本文的第四道（判据对照）
 
-- [x] 触发面：Stats 闸 `^(Stats/|vultr-pulse-space/specs/stats-)`
+- [x] 触发面：Stats 闸 `^Stats/`
   （diff-filter ACM）；Relay 闸 `^Relay/(src/|specs/relay-|tests/)`
   （ACMR，比 Stats 多 R）；两者 `--force` 全量。harness 闸在 Coevolution 主仓
   pre-commit（跨仓，manual）
@@ -52,8 +52,8 @@
   （wi_20260810_401）
   `@anchor manual 断言核对 :: grep -n 'SPECS" -eq 0' Scripts/hooks/*.sh——relay/global/spec-drift-guard 三者均命中`
 - [x] 本文与另两份全局 spec 由第四道闸把守：触发面 `specs/pulse-global-*.md` +
-  `Scripts/`，globs 覆盖 Relay TS / Stats py / Scripts sh / vultr-pulse-space
-  scripts 与 systemd unit；判据同 Relay 型（fail-open + drift>基线拒绝 +
+  `Scripts/`，globs 覆盖 Relay TS / Stats py / Scripts sh / `Scripts/monitoring`
+  与 `Relay/deploy` 的脚本和 systemd unit；判据同 Relay 型（fail-open + drift>基线拒绝 +
   spec 数>0 断言）
   `@anchor const OUT_DIR :: "global-spec-drift"`
 

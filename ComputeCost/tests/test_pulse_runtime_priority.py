@@ -271,6 +271,70 @@ def test_missing_profile_uses_deepseek_cc_default_and_fable_desired_profile_fail
     assert not profile_path.exists()
 
 
+def test_runtime_priority_apply_preserves_the_relay_fable_alias(
+    managed_tree: dict[str, Path | dict[str, str]],
+) -> None:
+    pulse = Path(managed_tree["pulse"])
+    catalog_path = pulse / "Relay/config/compute-profiles.json"
+    legacy = run_manager(managed_tree, "apply", "--claude-model", "sonnet")
+    assert legacy.returncode == 0, legacy.stderr
+    catalog = json.loads(catalog_path.read_text())
+    cc_profile = {"model_alias": "claude-fable-latest"}
+    catalog["profiles"]["platform_default"]["cc"] = cc_profile
+    catalog_path.write_text(json.dumps(catalog, indent=2) + "\n")
+    pending_migration = run_manager(managed_tree, "verify")
+    assert pending_migration.returncode == 1, pending_migration.stderr
+    assert str(catalog_path) in pending_migration.stderr
+
+    apply = run_manager(managed_tree, "apply", "--claude-model", "sonnet")
+    assert apply.returncode == 0, apply.stderr
+    runtime_priority = json.loads((pulse / "data/runtime-priority.json").read_text())
+    assert runtime_priority["claude"]["model"] == "sonnet"
+    assert runtime_priority["platform_default_cc_alias"] == "claude-fable-latest"
+    applied = json.loads(catalog_path.read_text())
+    assert applied["profiles"]["platform_default"]["cc"] == cc_profile
+    verify = run_manager(managed_tree, "verify")
+    assert verify.returncode == 0, verify.stderr
+
+
+def test_runtime_priority_detects_fable_drift_and_can_select_the_shared_model(
+    managed_tree: dict[str, Path | dict[str, str]],
+) -> None:
+    pulse = Path(managed_tree["pulse"])
+    catalog_path = pulse / "Relay/config/compute-profiles.json"
+    profile_path = pulse / "data/runtime-priority.json"
+    activate = run_manager(
+        managed_tree, "apply", "--platform-default-cc", "claude-fable-latest", "--claude-model", "sonnet"
+    )
+    assert activate.returncode == 0, activate.stderr
+    catalog = json.loads(catalog_path.read_text())
+    default = catalog["profiles"]["platform_default"]
+    assert default["cc"] == {"model_alias": "claude-fable-latest"}
+    for drifted in (
+        {"model_alias": "claude-fable-latest", "reasoning_effort": "high"},
+        {"model_alias": "claude-fable-latest", "unknown": True},
+        {"model": "sonnet"},
+    ):
+        default["cc"] = drifted
+        catalog_path.write_text(json.dumps(catalog, indent=2) + "\n")
+        verify = run_manager(managed_tree, "verify")
+        assert verify.returncode == 1, verify.stderr
+        assert str(catalog_path) in verify.stderr
+
+    restore = run_manager(managed_tree, "apply")
+    assert restore.returncode == 0, restore.stderr
+    assert json.loads(catalog_path.read_text())["profiles"]["platform_default"]["cc"] == {
+        "model_alias": "claude-fable-latest"
+    }
+
+    switch = run_manager(managed_tree, "apply", "--platform-default-cc", "shared")
+    assert switch.returncode == 0, switch.stderr
+    assert json.loads(profile_path.read_text())["platform_default_cc_alias"] is None
+    assert json.loads(catalog_path.read_text())["profiles"]["platform_default"]["cc"] == {"model": "sonnet"}
+    verify = run_manager(managed_tree, "verify")
+    assert verify.returncode == 0, verify.stderr
+
+
 def test_plan_is_read_only_and_apply_converges(managed_tree: dict[str, Path | dict[str, str]]) -> None:
     pulse = managed_tree["pulse"]
     profile_path = pulse / "data/runtime-priority.json"  # type: ignore[operator]

@@ -89,6 +89,40 @@ class PushedPeerTests(Fixture):
                                                    'path': str(marker)})
         self.assertEqual(marker.read_bytes(), b'')
 
+    def test_a_push_whose_bundles_wait_is_a_partly_read_peer(self):
+        from pulse_stats.cost_dashboard import load_refresh_status
+        self.write_config(peers=[self.PEER])
+        refresh.receive_shared_collection(self.config, 'ownermac', receipt())
+        with patch.object(refresh, 'last_collection_backlog', return_value={'ownermac': 3}):
+            _, peers = self.run_refresh()
+        expected = {'id': 'ownermac', 'status': 'partial', 'reason': 'observation_backlog', 'deferred_bundles': 3}
+        self.assertEqual(peers, [expected])
+        status = json.loads((self.state / refresh.REFRESH_STATUS).read_bytes())
+        self.assertEqual((status['state'], status['peers']), ('completed', [expected]))
+        # Readers keep the peer and its count; a cleared backlog is read again.
+        self.assertEqual(load_refresh_status(self.state / refresh.REFRESH_STATUS,
+                                             now=datetime.now(timezone.utc))['peers'], [expected])
+        refresh.receive_shared_collection(self.config, 'ownermac', receipt())
+        self.assertEqual(self.run_refresh()[1], [{'id': 'ownermac', 'status': 'read'}])
+
+    def test_waiting_bundles_stay_reported_beside_a_stale_push(self):
+        from pulse_stats.cost_dashboard import load_refresh_status
+        self.write_config(peers=[self.PEER])
+        refresh.receive_shared_collection(self.config, 'ownermac', receipt())
+        with patch.object(refresh, 'last_collection_backlog', return_value={'ownermac': 3}):
+            self.assertEqual(self.run_refresh()[1], [{'id': 'ownermac', 'status': 'partial',
+                                                      'reason': 'observation_backlog', 'deferred_bundles': 3}])
+        # The next cycle has no newer push, yet two bundles still wait: both facts stay.
+        with patch.object(refresh, 'last_collection_backlog', return_value={'ownermac': 2}):
+            _, peers = self.run_refresh()
+        expected = {'id': 'ownermac', 'status': 'unreachable_or_invalid', 'reason': 'peer_push_stale',
+                    'deferred_bundles': 2}
+        self.assertEqual(peers, [expected])
+        status = json.loads((self.state / refresh.REFRESH_STATUS).read_bytes())
+        self.assertEqual(status['peers'], [expected])
+        self.assertEqual(load_refresh_status(self.state / refresh.REFRESH_STATUS,
+                                             now=datetime.now(timezone.utc))['peers'], [expected])
+
     def test_missing_stale_or_damaged_push_is_an_unread_peer(self):
         args, peers = self.run_refresh()
         self.assertEqual(peers[0]['reason'], 'peer_push_missing')
@@ -142,6 +176,80 @@ class PushedPeerTests(Fixture):
         self.assertEqual(args[args.index('--validity-minutes') + 1], '75')
         with self.assertRaises(ValueError):
             self.run_refresh(publication_validity_minutes=60)
+
+    def test_publisher_passes_the_incremental_views_engine(self):
+        args, _ = self.run_refresh()
+        self.assertNotIn('--engine', args)  # Absent: the full calculation, as before.
+        args, _ = self.run_refresh(incremental={'views': 'off'})
+        self.assertNotIn('--engine', args)
+        args, _ = self.run_refresh(incremental={'views': 'shadow'})
+        self.assertEqual(args[args.index('--engine') + 1], 'shadow')
+        args, _ = self.run_refresh(incremental={'ingest': 'off', 'views': 'on', 'collection': 'off'})
+        self.assertEqual(args[args.index('--engine') + 1], 'incremental')
+        self.assertNotIn('--close-weeks', args)
+
+    def test_the_week_close_names_each_peer_and_when_its_data_was_collected(self):
+        self.write_config(peers=[self.PEER])
+        refresh.receive_shared_collection(self.config, 'ownermac', receipt())
+        args, _ = self.run_refresh(incremental={'views': 'on', 'close': 'on'})
+        self.assertIn('--close-weeks', args)
+        states = {p['id']: p for p in json.loads(Path(args[args.index('--peer-state') + 1]).read_bytes())}
+        self.assertEqual(states['tcloud']['status'], 'paused')  # Paused by default; never a gap.
+        state = states['ownermac']
+        self.assertEqual(state['status'], 'read')
+        self.assertIsNotNone(state['collected_from'])
+        args, _ = self.run_refresh(incremental={'views': 'off', 'close': 'on'})
+        self.assertNotIn('--close-weeks', args)  # Closing reads the resolved store.
+
+    def test_the_week_close_reads_a_shared_collection_confirmed_before_the_publication(self):
+        from concurrent.futures import Future
+
+        class Inline:
+            """Runs each job at submit: the peer's collection is done when the publication begins."""
+            def __init__(self, max_workers=None):
+                pass
+
+            def submit(self, job, *args, **kwargs):
+                future = Future()
+                try:
+                    future.set_result(job(*args, **kwargs))
+                except BaseException as exc:
+                    future.set_exception(exc)
+                return future
+
+            def shutdown(self, wait=True):
+                pass
+
+        peer = {'id': 'studio', 'transport': 'shared_ledger', 'host': 'studio', 'python': 'python3', 'script': 's.py'}
+        seen = []
+
+        def publish(args, *, row_contexts_ready):
+            seen.append(json.loads(Path(args[args.index('--peer-state') + 1]).read_bytes()))
+            Path(args[args.index('--output') + 1]).write_text('{}')
+            return 0
+        for answer, expected in ((receipt(), {'status': 'read'}),
+                                 (OSError('down'), {'status': 'unreachable_or_invalid'})):
+            self.write_config(peers=[peer], incremental={'views': 'on', 'close': 'on'})
+            with patch.object(refresh, 'ssh', side_effect=[answer]), \
+                 patch.object(refresh, 'fetch_openrouter_models', return_value=CATALOG), \
+                 patch.object(refresh, 'ThreadPoolExecutor', Inline), \
+                 patch.object(refresh, 'publish', side_effect=publish):
+                refresh.refresh(self.config)
+            state = {p['id']: p for p in seen.pop()}['studio']
+            # The close judges the same result this cycle reports, not a fixed "pending".
+            reported = json.loads((self.state / 'last-refresh.json').read_bytes())['peers']
+            self.assertEqual({k: v for k, v in state.items() if k != 'collected_from'},
+                             next(p for p in reported if p['id'] == 'studio'))
+            self.assertEqual(state['status'], expected['status'])
+            self.assertIsNotNone(state['collected_from'])
+
+    def test_publisher_passes_the_incremental_collection_engine(self):
+        args, _ = self.run_refresh(incremental={'collection': 'off'})
+        self.assertNotIn('--collection-engine', args)  # Off: the arguments of the full collection, unchanged.
+        args, _ = self.run_refresh(incremental={'collection': 'shadow'})
+        self.assertEqual(args[args.index('--collection-engine') + 1], 'shadow')
+        args, _ = self.run_refresh(incremental={'collection': 'on'})
+        self.assertEqual(args[args.index('--collection-engine') + 1], 'incremental')
 
     def test_provider_summary_receiver_is_closed_and_keeps_the_newest(self):
         now = datetime.now(timezone.utc)
@@ -206,6 +314,69 @@ class PublicationPullTests(Fixture):
         self.assertEqual(list(self.state.glob('cost-*')), [])
 
 
+    def test_the_whole_bundle_is_checked_before_either_publication_is_written(self):
+        now = datetime.now(timezone.utc) - timedelta(minutes=10)
+        old_current, old_closed = dashboard(now - timedelta(minutes=30)), dashboard(now - timedelta(minutes=31))
+        refresh.private_write(self.state / 'cost-dashboard-v1.json', refresh.canonical(old_current) + b'\n')
+        refresh.private_write(self.state / 'cost-last-week-v1.json', refresh.canonical(old_closed) + b'\n')
+        before = {n: (self.state / n).read_bytes() for n in ('cost-dashboard-v1.json', 'cost-last-week-v1.json')}
+        self.publish_remote(dashboard(now))
+        closed = dashboard(now - timedelta(minutes=1))
+        for bad in ({**closed, 'sha256': '0' * 64}, {**closed, 'schema_version': 'other'},
+                    {**closed, 'generated_at': 'yesterday'},
+                    {**closed, 'generated_at': old_closed['generated_at']}):  # Same time, other digest.
+            with self.subTest(bad={k: v for k, v in bad.items() if bad.get(k) != closed.get(k)}):
+                self.publish_remote(bad, 'cost-last-week-v1.json')
+                with self.assertRaises(ValueError):
+                    self.pull()
+                # A valid dashboard is not installed beside the old last week.
+                self.assertEqual({n: (self.state / n).read_bytes() for n in before}, before)
+        self.publish_remote(closed, 'cost-last-week-v1.json')
+        self.assertEqual(self.pull(), {'dashboard': 'installed', 'last_week': 'installed', 'refresh_status': 'absent'})
+
+    def test_a_release_entry_runs_only_while_the_publisher_selects_its_release(self):
+        script = '/home/pulse/.local/share/pulse/stats/releases/{}/Scripts/pulse-stats-cost-refresh.py'
+        a, b = 'a' * 40, 'b' * 40
+        config = {'publisher': 'oracle-node-1', 'peers': [{**self.PUBLISHER, 'script': script.format(a)}]}
+        for answer, outcome in (({'selected': a, 'entry': True}, None),
+                                ({'selected': b, 'entry': True}, 'publisher_entry_stale'),
+                                ({'selected': None, 'entry': False}, 'publisher_entry_stale'),
+                                ({'selected': a, 'entry': False}, 'publisher_entry_missing')):
+            ran = []
+
+            def oracle(peer, command, data=None):
+                if refresh.PUBLISHER_ENTRY_PROBE in command:
+                    self.assertEqual(command, ['/python', '-I', '-B', '-c', refresh.PUBLISHER_ENTRY_PROBE,
+                                               '/home/pulse/.local/share/pulse/stats'])
+                    return json.dumps(answer).encode()
+                ran.append(command)
+                return refresh.canonical({'schema': refresh.PUBLICATION_BUNDLE_SCHEMA, 'dashboard': None,
+                                          'last_week': None, 'refresh_status': None})
+            with self.subTest(answer=answer), patch.object(refresh, 'ssh', side_effect=oracle):
+                if outcome is None:
+                    self.assertEqual(refresh.pull_publication(config)['dashboard'], 'absent')
+                    self.assertEqual(ran, [['/python', script.format(a), 'fetch-publication']])
+                else:
+                    with self.assertRaises(refresh.PublisherEntryStale) as raised:
+                        refresh.pull_publication(config)
+                    self.assertEqual((refresh.failure_reason(raised.exception), ran), (outcome, []))
+
+    def test_the_probe_reads_the_selection_on_the_publisher(self):
+        import subprocess
+        root = self.root / 'stats'
+        for revision in ('a' * 40, 'b' * 40):
+            (root / 'releases' / revision / 'Scripts').mkdir(parents=True)
+            (root / 'releases' / revision / '.stats-source-revision').write_text(revision)
+        (root / 'releases' / ('b' * 40) / 'Scripts/pulse-stats-cost-refresh.py').write_text('')
+        (root / 'current').symlink_to(root / 'releases' / ('b' * 40))
+        probe = lambda: json.loads(subprocess.run([sys.executable, '-I', '-B', '-c', refresh.PUBLISHER_ENTRY_PROBE,
+                                                   str(root)], check=True, capture_output=True).stdout)
+        self.assertEqual(probe(), {'selected': 'b' * 40, 'entry': True})
+        (root / 'current').unlink()
+        (root / 'current').symlink_to(root / 'releases' / ('a' * 40))
+        self.assertEqual(probe(), {'selected': 'a' * 40, 'entry': False})
+
+
 class CollectLocalTests(Fixture):
     PUBLISHER = PublicationPullTests.PUBLISHER
 
@@ -237,20 +408,18 @@ class CollectLocalTests(Fixture):
             refresh.collect_local(self.config)
         return commands, json.loads((self.state / refresh.COLLECT_LOCAL_STATUS).read_bytes())
 
-    def test_cycle_pushes_its_position_then_pulls_the_publication(self):
+    def test_cycle_pushes_its_position_and_leaves_the_pull_to_its_own_job(self):
         commands, status = self.run_local()
-        self.assertEqual(commands, [['receive-shared-collection', '--peer', 'ownermac'], ['fetch-publication']])
+        self.assertEqual(commands, [['receive-shared-collection', '--peer', 'ownermac']])
         self.assertEqual((status['collection']['state'], status['collection']['watermark']), ('completed', 941))
-        self.assertEqual(status['publication'], {'dashboard': 'absent', 'last_week': 'absent',
-                                                 'refresh_status': 'absent'})
+        self.assertNotIn('publication', status)
         self.assertEqual(status['openrouter'], 'source_not_configured')
 
-    def test_failed_collection_still_pulls_and_reports(self):
+    def test_failed_collection_reports(self):
         with self.assertRaisesRegex(RuntimeError, 'local collection failed'):
             self.run_local(collect_error=MemoryError())
         status = json.loads((self.state / refresh.COLLECT_LOCAL_STATUS).read_bytes())
         self.assertEqual(status['collection']['state'], 'failed')
-        self.assertEqual(set(status['publication']), {'dashboard', 'last_week', 'refresh_status'})
 
     def test_local_collection_shares_the_collect_shared_guard(self):
         held = refresh._collect_shared_lock()
@@ -259,21 +428,18 @@ class CollectLocalTests(Fixture):
             self.run_local(collect_error=AssertionError('collected without the guard'))
         status = json.loads((self.state / refresh.COLLECT_LOCAL_STATUS).read_bytes())
         self.assertEqual((status['collection']['state'], status['collection']['reason']), ('failed', 'peer_busy'))
-        self.assertEqual(set(status['publication']), {'dashboard', 'last_week', 'refresh_status'})
 
-    def test_schedule_collects_each_interval_and_pulls_between(self):
+    def test_schedule_collects_each_interval(self):
         now = datetime(2026, 11, 13, 10, 0, tzinfo=timezone.utc)
         at = lambda minutes: (now - timedelta(minutes=minutes)).isoformat()
         due = refresh.collect_local_due
-        self.assertEqual(due({}, now), (True, True))
+        self.assertTrue(due({}, now))
         done = {'state': 'completed', 'finished_at': at(3)}
-        self.assertEqual(due({'collection': done, 'pulled_at': at(3)}, now), (False, False))
-        self.assertEqual(due({'collection': done, 'pulled_at': at(6)}, now), (False, True))
-        self.assertEqual(due({'collection': {**done, 'finished_at': at(16)}, 'pulled_at': at(1)}, now), (True, True))
+        self.assertFalse(due({'collection': done}, now))
+        self.assertTrue(due({'collection': {**done, 'finished_at': at(16)}}, now))
         failed = {'state': 'failed', 'finished_at': at(11)}
-        self.assertEqual(due({'collection': failed, 'pulled_at': at(1)}, now), (True, True))
-        self.assertEqual(due({'collection': {**failed, 'finished_at': at(9)}, 'pulled_at': at(1)}, now),
-                         (False, False))
+        self.assertTrue(due({'collection': failed}, now))
+        self.assertFalse(due({'collection': {**failed, 'finished_at': at(9)}}, now))
 
     def test_scheduled_tick_that_is_not_due_reads_nothing(self):
         self.run_local()

@@ -44,14 +44,14 @@ function codexModel(slug: string, efforts = ['medium', 'xhigh'], visibility = 'l
 }
 
 describe('central cron compute profiles', () => {
-  it('resolves platform and frontier profiles to the visible official Astra model', () => {
+  it('resolves the default Fable alias and the platform and frontier Codex profiles', () => {
     useCodexCatalog([
       codexModel('gpt-5.6-sol'),
       codexModel('gpt-6-astra', ['high', 'xhigh']),
     ]);
 
     expect(resolveComputeProfile()).toEqual({
-      cc: { model: 'claude-fable-5' },
+      cc: { model: 'fable', modelAlias: 'claude-fable-latest', reasoningEffort: undefined },
       codex: {
         model: 'gpt-5.6-sol',
         modelAlias: 'codex-sol-latest',

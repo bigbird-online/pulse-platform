@@ -5,6 +5,7 @@ import type { CommandRuntime } from './commands.js';
 import type { PersistedSession, StateManager } from './types.js';
 import { conversationLaunch } from './conversation-launch.js';
 import { assertAdoptedConversationRuntime } from './runtime-usage-binding.js';
+import { CC_OAUTH_ENV_FILE, ccConsoleSettings, readCcAuthMode, readCcSubscriptionToken } from './cc-subscription-auth.js';
 
 type Runtime = Pick<CommandRuntime, 'get' | 'spawn' | 'kill'>;
 type Process = Awaited<ReturnType<Runtime['spawn']>>;
@@ -76,6 +77,13 @@ export function replaceConversation<T>(runtime: Runtime, poolKey: string, operat
   return inConversationSlot(runtime, poolKey, true, operation);
 }
 
+function ccAuthRefresh(live: Process | undefined) {
+  const oauthFile = process.env[CC_OAUTH_ENV_FILE];
+  if (!live?.ccAuthMode || !oauthFile || (live.state !== 'idle' && live.state !== 'ready')) return undefined;
+  const mode = readCcAuthMode(oauthFile);
+  return mode === live.ccAuthMode ? undefined : { mode, oauthFile };
+}
+
 /** Acquire one admitted conversation through the shared address queue. */
 export async function acquireConversation(input: Acquisition): Promise<Process> {
   if(input.stateManager?.getSession(input.poolKey)?.pendingNativeRollover){
@@ -86,8 +94,8 @@ export async function acquireConversation(input: Acquisition): Promise<Process> 
       throw new ConversationAcquisitionError(
       result.error?.code??'native_rollover_pending');
   }
-  return inConversationSlot(input.runtime, input.poolKey, input.intent === 'restart',
-    () => acquireExclusive(input), input.intent !== 'restart');
+  const replacing = input.intent === 'restart' || !!ccAuthRefresh(input.runtime.get(input.poolKey));
+  return inConversationSlot(input.runtime, input.poolKey, replacing, () => acquireExclusive(input), !replacing);
 }
 
 async function acquireExclusive(input: Acquisition): Promise<Process> {
@@ -138,7 +146,23 @@ async function acquireExclusive(input: Acquisition): Promise<Process> {
   }
 
   const live = runtime.get(poolKey);
-  if (live && live.state !== 'dead') return adopt(live);
+  if (live && live.state !== 'dead') {
+    const refresh = ccAuthRefresh(live);
+    if (refresh) {
+      const expected = projection();
+      const launch = conversationLaunch({ ...input, session: session() });
+      if (launch.runtime !== 'cc' || !launch.resume || launch.sessionId !== live.sessionId) {
+        throw new ConversationAcquisitionError('cc_auth_session_changed');
+      }
+      // A bad edit must not discard the live process or switch the account.
+      if (refresh.mode === 'api') ccConsoleSettings(refresh.oauthFile, {});
+      else readCcSubscriptionToken(refresh.oauthFile);
+      await runtime.kill(poolKey);
+      requireProjection(expected);
+      return spawn(launch, expected);
+    }
+    return adopt(live);
+  }
   const persisted = session();
   return spawn(conversationLaunch({ ...input, session: persisted }), conversationConsumerProjection(persisted));
 }

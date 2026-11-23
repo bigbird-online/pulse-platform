@@ -18,7 +18,7 @@ from .receipts import (Receipt, ReceiptError, SOURCE_RETIREMENT_PRODUCER, SOURCE
 
 SCHEMA = "computecost_retired_sources/v1"
 DEFAULT_PATH = Path(__file__).resolve().parents[1] / "config" / "retired-sources.json"
-KINDS = frozenset({"relay_host", "pi", "cc", "codex", "harness_bundle", "harness_root", "harness_core", "receipts"})
+KINDS = frozenset({"relay_host", "pi", "cc", "codex", "agy", "harness_bundle", "harness_root", "harness_core", "receipts"})
 FIELDS = {"id", "kind", "retired_on", "authorization"}
 OPTIONAL = {"note"}  # Human explanation only; not part of the declaration identity.
 

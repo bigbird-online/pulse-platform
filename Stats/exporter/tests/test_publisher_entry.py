@@ -101,6 +101,7 @@ class PublisherEntryTests(unittest.TestCase):
             'Scripts/pulse-stats-cost-refresh.py':
                 'from pathlib import Path\nPath('+repr(str(marker))+').write_text("loaded")\n',
             'Stats/publisher.py':Path(p.__file__).read_text(),
+            'Scripts/pulse-meter.py':'# fixture\n',
             'ComputeCost/fixture.py':'# fixture\n',
             'config/scl-surfaces.yaml':'{}\n',
             'Stats/executable-fixture':'#!/bin/sh\nexit 0\n',

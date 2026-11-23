@@ -9,6 +9,7 @@ import {dirname,join} from 'node:path';
 import {guardAccountStatePath} from './test-account-path-guard.js';
 import {humanInputsDir} from './scl-human-decision.js';
 import {switchInProgress} from './native-wi-switch.js';
+import {conversationNativeIds,coreNativeId,type NativeIdSource} from './session-identity.js';
 import type {StateManager} from './types.js';
 import type {CommandRuntime} from './commands.js';
 
@@ -62,11 +63,9 @@ export async function adoptAgentSwitchRequests(input:{dir:string;stateManager:St
     const live=input.runtime.get(tenant);
     if(live&&['busy','starting'].includes(String(live.state)))continue;
     if(session.pendingNativeRollover||session.pendingWorkItemEntry)continue;
-    const nativeId=live&&live.state!=='dead'
-      ? ('codexThreadId' in live?live.codexThreadId:undefined)??live.sessionId
-      : undefined;
+    const nativeId=live&&live.state!=='dead'?coreNativeId(live as NativeIdSource):undefined;
     const current=nativeId!==undefined ? nativeId===request.sourceNativeId
-      : session.sessionId===request.sourceNativeId||session.codexThreadId===request.sourceNativeId;
+      : conversationNativeIds(session).includes(request.sourceNativeId);
     if(!current){retire();continue;}
     try{
       const outcome=await input.start(request) as {retained?:true}|undefined;

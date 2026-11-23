@@ -84,7 +84,7 @@ Host 输入脚注只提取末尾稳定的引用标记，说明文字不是协议
 
 ### 声明优先的归属补充
 
-WI 归属以声明为准：请求或会话的 WI 声明、Host 分配和已审非 WI 分类都是主张。某笔用量没有主张，或只有 `unassigned` 结论时，查询才采用两类补充；Agent 自己声明的 `none`（请求用途或会话 WI 声明）只表示未声明 WI，持有补充或阶段成员关系指名 WI 时以该 WI 为准，已审分类和自动任务标签不在此列。补充在行级 `attribution.sources` 中与声明分开计数（`declared`、`holder_supplement`、`scheduled_job`、`classified`、`unattributed`）。
+WI 归属以声明为准：请求或会话的 WI 声明、Host 分配和已审非 WI 分类都是主张。某笔用量没有主张，或只有 `unassigned` 结论时，查询才采用两类补充；Agent 自己声明的 `none`（请求用途或会话 WI 声明）只表示未声明 WI，持有补充或阶段成员关系指名 WI 时以该 WI 为准，已审分类和自动任务标签不在此列。补充在行级 `attribution.sources` 中与声明分开计数（`declared`、`holder_supplement`、`scheduled_job`、`classified`、`undeclared`、`unattributed`）。`undeclared` 指人类请求本身没有任何 WI 声明、Agent 已知的用量，显示“未声明 WI”，金额照计，不算归属异常；`unattributed` 指有主张却判不出 WI（冲突、来源缺失）的用量。
 
 - 持有补充（`holder_supplement.v1`）：会话自己向内核写过哪些 WI。CC 与 Pi 按请求判断，请求从主会话一条人类输入起，到下一条人类输入止；子代理输入、压缩摘要、任务完成通知和中断标记不开启新请求。请求期间该会话只写过一个 WI 记该 WI，写过多个记 `ambiguous`，未写不补充。Codex 按整会话判断：会话只写过一个 WI，全部用量记该 WI。
 - 自动任务（`scheduled_job.v1`）：Relay 调度运行的会话。任务配置了 `wi` 时记该 WI，否则记“自动任务：<任务名>”。该会话中调度开始后、没有已证渠道的用量，入口记 `automation`（显示“无”）。

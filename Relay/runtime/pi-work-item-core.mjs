@@ -125,7 +125,10 @@ function parts(result) {
   }
   const items = Array.isArray(result.result?.items)
     ? ['result.items(' + result.result.items.length + ' items, ' + size(result.result.items) + ')'] : [];
-  return [...items, ...found.sort((a, b) => b[1] - a[1]).slice(0, 4 - items.length)
+  // A resume names the handover checkpoint first: a successor reads it before anything else.
+  if (result.result?.latest_checkpoint) items.unshift('result.latest_checkpoint(' + size(result.result.latest_checkpoint) + ')');
+  return [...items, ...found.filter(([at]) => at !== 'result.latest_checkpoint')
+    .sort((a, b) => b[1] - a[1]).slice(0, 4 - items.length)
     .map(([at, length]) => at + (length >= 1000 ? '(' + Math.round(length / 1000) + 'k)' : '(' + length + ')'))];
 }
 
@@ -165,17 +168,33 @@ function decisions(result) {
   return out;
 }
 
+// The latest checkpoint's record and as much of its summary as `room` allows,
+// so a successor starts from the handover at once; null when not even the
+// record and an opening fit.
+function checkpointLine(checkpoint, room) {
+  if (!checkpoint || typeof checkpoint.summary !== 'string') return null;
+  const prefix = 'latest checkpoint ' + checkpoint.record_id + ': ';
+  const size = Math.min(220, room - prefix.length);
+  return size >= 16 ? prefix + clip(checkpoint.summary.replace(/\s+/g, ' '), size) : null;
+}
+
 export function resultText(result, note='', execute=false) {
-  // Highest priority first; a line is added whole or not at all, and the
-  // read-back line is reserved so it always fits.
+  // Priority: the status line, next_action, the error, the latest checkpoint
+  // (cut to the room left), then the rest. A line is added whole or not at
+  // all; the read-back line, next_action and a resume's checkpoint path are
+  // reserved so they always fit.
   const head = 'status: ' + result.status + (result.request_id ? ' request_id: ' + result.request_id : '')
     + (result.work_item?.id ? ' wi: ' + result.work_item.id + '@' + result.work_item.local_revision : '');
   // The head already names request_id in full; the read-back line refers to it.
   const readBack = 'read more: ' + (execute && result.request_id
     ? 'inspect view=request, the request_id above and path (this original response)'
     : 'repeat this read with path ("" for all) and page');
+  // A resume's parts line naming the checkpoint's full text is reserved too.
+  const more = parts(result);
+  const fullPath = more[0]?.startsWith('result.latest_checkpoint(') ? 'parts: '.length + more[0].length + 1 : 0;
+  const base = BRIEF_LIMIT - readBack.length - 1 - fullPath;
   const lines = [head];
-  const add = (line, room = BRIEF_LIMIT - readBack.length - 1) => {
+  const add = (line, room = base) => {
     if (lines.join('\n').length + 1 + line.length <= room) lines.push(line);
   };
   // next_action is kept whole; the error reason takes the room left beside it
@@ -187,19 +206,21 @@ export function resultText(result, note='', execute=false) {
     ? ', or inspect view=guide intent=' + guided.intent : ', or inspect view=guide') : null;
   if (result.error) {
     const prefix = 'error: ' + result.error.code + ': ';
-    const room = BRIEF_LIMIT - readBack.length - head.length - prefix.length - 2 - (next ? next.length + 1 : 0)
+    const room = base - head.length - prefix.length - 1 - (next ? next.length + 1 : 0)
       - (guide ? guide.length + 1 : 0);
     add(prefix + clip(String(result.error.reason ?? ''), Math.max(40, Math.min(180, room))));
   }
-  if (guide) add(guide);
+  const reserved = base - (next ? next.length + 1 : 0);
+  if (guide) add(guide, reserved);
   if (result.status === 'human_decision_required')
-    add('Ask the human only about undecided choices; this is not authorization to implement.');
-  for (const line of decisions(result)) add(line);
+    add('Ask the human only about undecided choices; this is not authorization to implement.', reserved);
+  const checkpoint = checkpointLine(result.result?.latest_checkpoint, reserved - lines.join('\n').length - 1);
+  if (checkpoint) add(checkpoint, reserved);
+  for (const line of decisions(result)) add(line, reserved);
   if (next) add(next);
   const own = result.result?.original_request_result;
   if (own) add('result: ' + essential(own, 140));
   if (note) add(note.trim());
-  const more = parts(result);
   for (let count = more.length; count > 0; count--) {
     const line = 'parts: ' + more.slice(0, count).join(', ');
     if (lines.join('\n').length + 1 + line.length + 1 + readBack.length <= BRIEF_LIMIT) { lines.push(line); break; }
@@ -326,7 +347,7 @@ export function installPiWorkItemCore(pi, host, run = invoke, runOperation = inv
     name:'declare_session_wi', label:'Declare request WI',
     description:'登记当前原生请求的归属。要改文件、提 PR 或动生产时声明所属 WI；闲聊、只读查询、解释说明声明 none，不要为此新建 WI。每个新的人类请求或独立任务各自声明；复用会话不继承前一请求的归属。当前请求的子任务保留原始请求归属。'+
       '一个会话只为一个 WI 谱系（一个 WI 及其子 WI）写代码、提 PR：声明过谱系外 WI 的会话，其提交登记会被拒；谱系外 WI 的写工作请人类 /new 后在新会话声明。'+
-      '本请求已声明 none 后不再改声明，写操作留到下一条请求。子 WI 的工作交首行 [WI: 子WI] 的子代理、在人类消息触发的回合里提交，成本才归子 WI；谱系内的提交可登记在谱系任一 WI 上。',
+      '本请求已声明 none 后不再改声明，写操作留到下一条请求。首行为 [WI: 子WI] 的子代理为该子 WI 工作，其提交与成本归该子 WI；一个请求可派多个这样的子代理，并行推进多个子 WI；谱系内的提交可登记在谱系任一 WI 上。',
     promptSnippet:'At the start of each new human request or independent task, call declare_session_wi once: the WI it belongs to, or none for chat and read-only work.',
     parameters:{type:'object', properties:{wi:{type:'string',pattern:'^(?:wi_[0-9]{8}_[0-9]{3}|none)$'}},
       required:['wi'], additionalProperties:false},

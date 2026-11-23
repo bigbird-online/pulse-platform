@@ -73,7 +73,8 @@ function runtimePreferenceFor(agent: AgentConfig): ConversationRuntimeId[] {
     (runtime): runtime is ConversationRuntimeId => runtime === 'cc'
       || runtime === 'codex'
       || runtime === 'cc-sdk'
-      || runtime === 'pi',
+      || runtime === 'pi'
+      || runtime === 'agy',
   );
   return unique(valid.length ? valid : ['cc']);
 }

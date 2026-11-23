@@ -7,6 +7,9 @@ Sources, never written here:
   App's own refresh needs.
 - Cost publication: ``~/.local/state/pulse/stats/cost-dashboard-v1.json``, read
   through the same verifier the exporter uses (``load_cost_dashboard``).
+- WorkItem facts ``wi-facts-v1.json`` (each WI's session rollovers) and Relay's
+  CC compaction record ``context-compactions-v1.json``, both published by the
+  refresh cycle into the same state directory.
 
 Every answer carries ``pulse_stats_query/v1``, the source timestamps and
 staleness. Sums over published rows are additions of published amounts, never
@@ -22,13 +25,15 @@ from pathlib import Path
 import re
 import stat
 
+from . import agy_quota, context_compactions
 from .cost_dashboard import (SCHEMA as COST_SCHEMA, _validate as validate_cost, expand_transport_cost_dashboard,
                              load_cost_dashboard, period_window)
 
 SCHEMA = 'pulse_stats_query/v1'
 SNAPSHOT_SCHEMA = 'pulse.monitoring.snapshot.v2'
 MAX_SNAPSHOT_BYTES = 1024 * 1024
-QUERIES = ('overview', 'cost', 'wi', 'quotas', 'health', 'board', 'automation', 'metric', 'snapshot', 'agent_day')
+QUERIES = ('overview', 'cost', 'wi', 'quotas', 'health', 'board', 'automation', 'metric', 'snapshot', 'agent_day',
+           'compactions')
 PERIODS = ('today', 'week', 'month')
 # The previous complete Monday..Sunday: a cost period of its own publication.
 CLOSED_PERIODS = ('last_week',)
@@ -150,13 +155,39 @@ class Sources:
 
     def __init__(self, *, app_snapshot: Path, cost_publication: Path | None, now: datetime,
                  app_kind: str = 'app_cache', home: Path | None = None, coevolution_root: Path | None = None,
-                 wi_facts: Path | None = None, kernel: Path | None = None, pr_bodies: Path | None = None):
+                 wi_facts: Path | None = None, kernel: Path | None = None, pr_bodies: Path | None = None,
+                 compactions: Path | None = None):
         self.app_path, self.cost_path, self.now, self.app_kind = app_snapshot, cost_publication, now, app_kind
         # agent_day reads the synced checkouts and Stats' WI facts, not the App or cost publication.
         self.home, self.coevolution_root, self.wi_facts, self.kernel = home, coevolution_root, wi_facts, kernel
-        self.pr_bodies = pr_bodies
-        self._app = self._cost = None
+        self.pr_bodies, self.compactions_path = pr_bodies, compactions
+        self._app = self._cost = self._facts = self._compactions = None
         self.used = {}
+
+    def facts(self):
+        """The core's WorkItem facts; older than the publisher's bound is stale, not absent."""
+        if self._facts is None:
+            from . import wi_facts
+            value, reason = wi_facts.load(self.wi_facts, self.now, max_age=None)
+            entry = {'kind': 'stats_wi_facts', 'status': 'ok' if value else 'unavailable', 'reason': reason}
+            generated = _date((value or {}).get('generated_at'))
+            entry.update(_age(generated and generated.isoformat(),
+                              generated and (generated + wi_facts.MAX_AGE).isoformat(), self.now))
+            self._facts = (value, entry)
+        self.used['wi_facts'] = self._facts[1]
+        return self._facts[0]
+
+    def compactions(self):
+        """Relay's CC compaction record as the refresh cycle last read it; older than the publisher's bound is stale."""
+        if self._compactions is None:
+            value, reason = context_compactions.load(self.compactions_path, self.now)
+            entry = {'kind': 'relay_context_compactions', 'status': 'ok' if value else 'unavailable',
+                     'reason': reason}
+            reading = context_compactions.observed(value, self.now) if value else {}
+            entry.update(_age(reading.get('observed_at'), reading.get('expires_at'), self.now))
+            self._compactions = (value, entry)
+        self.used['context_compactions'] = self._compactions[1]
+        return self._compactions[0]
 
     def app(self):
         if self._app is None:
@@ -184,6 +215,9 @@ class Sources:
             elif value:
                 entry.update(_age(value.get('generated_at'), value.get('expires_at'), self.now))
                 entry['source_revision'] = value.get('source_revision')
+                if value.get('collection_backlog') is not None:
+                    # Some pushed observations were not judged yet: these amounts are incomplete.
+                    entry['collection_backlog'] = value['collection_backlog']
                 marks = {v.get('watermark') for v in value.get('views', [])}
                 entry['watermark'] = marks.pop() if len(marks) == 1 else None
                 if value.get('status') == 'available' and cost_day(value['generated_at']) != cost_day(self.now):
@@ -235,9 +269,25 @@ def _row(group, titles):
         parent = (titles.get(key['wi']) or {}).get('parent')
         if parent:
             row['wi_parent'] = parent  # A child WI's own row; its parent's total is in work_item_families.
+    _adjusted(row, group)
     detail = group.get('detail') or {}
     if detail:
         row['first_usage_at'], row['last_usage_at'] = detail.get('first_usage_at'), detail.get('last_usage_at')
+    return row
+
+
+def _adjusted(row, owner):
+    """Own usage, entries against closed weeks, and their sum; only when published."""
+    if 'total' not in owner:
+        return row
+    adjustments, total = owner['adjustments'], owner['total']
+    row['adjustment'] = {'entry_count': adjustments['entry_count'],
+                         'unpriced_entry_count': adjustments['unpriced_entry_count'],
+                         'amount_usd': adjustments['priced_machine_cash_usd'],
+                         'known_total_tokens': adjustments['known_total_tokens'],
+                         'tokens': adjustments['tokens'], 'by_origin': adjustments['by_origin']}
+    row['total'] = {'amount_usd': total['priced_machine_cash_usd'],
+                    'known_total_tokens': total['known_total_tokens'], 'tokens': total['tokens']}
     return row
 
 
@@ -248,7 +298,70 @@ def _add(total, value):
     return value if total is None else total + value
 
 
-def aggregate(rows, dimension, outcome_only=(), pull_request_only=()):
+def _money(value):
+    return None if value is None else Decimal(value)
+
+
+class _Adjusted:
+    """One group's entries against closed weeks and its total, in the shape of a row's.
+
+    Own known quantities and all entries are summed apart and then combined,
+    as a view's total is: a row without events has nothing unknown, so a group
+    of such rows alone owns zero; a class no row with events knows stays null.
+    """
+
+    def __init__(self):
+        self.rows, self.used, self.origins = 0, 0, {}
+        self.adjustment = {'entry_count': 0, 'unpriced_entry_count': 0, 'amount_usd': Decimal(0),
+                           'known_total_tokens': 0, 'tokens': {}}
+        self.own_amount, self.own_known, self.own_tokens = Decimal(0), None, {}
+
+    @staticmethod
+    def _entries(target, source, amount):
+        for name in ('entry_count', 'unpriced_entry_count', 'known_total_tokens'):
+            target[name] = target.get(name, 0) + source[name]
+        target[amount] = target.get(amount, Decimal(0)) + Decimal(source[amount])
+        tokens = target.setdefault('tokens', {})
+        for name, value in source['tokens'].items():
+            tokens[name] = tokens.get(name, 0) + value
+
+    def add(self, row):
+        if 'total' in row:
+            self.rows += 1
+            self._entries(self.adjustment, row['adjustment'], 'amount_usd')
+            for part in row['adjustment']['by_origin']:
+                self._entries(self.origins.setdefault((part['week_start'], part['reason']), {}),
+                              part, 'priced_machine_cash_usd')
+        self.own_amount += _money(row['amount_usd']) or 0  # As in a view's total: unpriced own usage adds nothing.
+        if not row.get('event_count'):
+            return
+        self.used += 1
+        self.own_known = _add(self.own_known, row['known_total_tokens'])
+        for name, value in (row.get('tokens') or {}).items():
+            self.own_tokens[name] = _add(self.own_tokens.get(name), (value or {}).get('known'))
+
+    def publish(self, group):
+        """Own usage stays in the group's amount_usd; nothing is added without entries."""
+        if not self.rows:
+            return
+        by_origin = [{'week_start': week, 'reason': reason, **part,
+                      'priced_machine_cash_usd': str(part['priced_machine_cash_usd'])}
+                     for (week, reason), part in sorted(self.origins.items())]
+        entries = self.adjustment
+        group['adjustment'] = {**entries, 'amount_usd': str(entries['amount_usd']), 'by_origin': by_origin}
+
+        def plus(own, change):
+            if own is None and not self.used:
+                own = 0
+            return None if own is None else own + change
+
+        group['total'] = {'amount_usd': str(self.own_amount + entries['amount_usd']),
+                          'known_total_tokens': plus(self.own_known, entries['known_total_tokens']),
+                          'tokens': {name: plus(self.own_tokens.get(name), change)
+                                     for name, change in entries['tokens'].items()}}
+
+
+def aggregate(rows, dimension, outcome_only=(), pull_request_only=(), adjustment_only=()):
     """Group published rows by one key; a total is complete only if every row is.
 
     Unknown amounts and token counts stay null (a group with no known value has
@@ -262,7 +375,10 @@ def aggregate(rows, dimension, outcome_only=(), pull_request_only=()):
                                         'event_count': 0, 'known_total_tokens': None, 'rows': 0,
                                         'outcome_only_rows': 0, 'pull_request_only_rows': 0,
                                         'outcome_refs': set(),
-                                        'cost_reasons': set()})
+                                        'cost_reasons': set(), '_adjusted': _Adjusted()})
+
+    def adjust(g, row):
+        g['_adjusted'].add(row)
 
     for row in rows:
         g = group(row)
@@ -278,6 +394,12 @@ def aggregate(rows, dimension, outcome_only=(), pull_request_only=()):
             g['wi_title'] = row['wi_title']
         if 'wi_parent' in row and dimension == 'wi':
             g['wi_parent'] = row['wi_parent']
+        adjust(g, row)
+    for row in adjustment_only:
+        g = group(row)
+        adjust(g, row)
+        if 'wi_title' in row and dimension == 'wi':
+            g['wi_title'] = row['wi_title']
     for row in pull_request_only:
         g = group(row)
         g['pull_request_only_rows'] += 1
@@ -294,6 +416,7 @@ def aggregate(rows, dimension, outcome_only=(), pull_request_only=()):
         if g['rows'] == 0:
             g['amount_complete'] = None  # no cost rows: nothing to be complete about
         g['amount_usd'] = None if g['amount_usd'] is None else str(g['amount_usd'])
+        g.pop('_adjusted').publish(g)
         g['outcome_ref_count'] = len(g['outcome_refs'])
         g['outcome_refs'] = sorted(g['outcome_refs'])
         g['cost_reasons'] = sorted(g['cost_reasons'])
@@ -327,12 +450,20 @@ def _summary(view):
     return {'amount_usd': value, 'amount_complete': complete, 'cost': s.get('cost'), 'usage': s.get('usage'),
             'from_date': view['query'].get('from_date'), 'to_date': view['query'].get('to_date'),
             'timezone': view['query'].get('timezone'), 'watermark': view.get('watermark'),
-            'active_agents': view.get('active_agents')}
+            'active_agents': view.get('active_agents'), **_closing(view)}
 
 
-def scoped_summary(view, rows, only):
+def _closing(view):
+    """The view's adjustment total and closed week, when the publisher closes weeks."""
+    result = _adjusted({}, view)
+    if 'closed_week' in view:
+        result['closed_week'] = view['closed_week']
+    return result
+
+
+def scoped_summary(view, rows, only, adjustment_only=()):
     """The filtered rows' totals with the same null-not-zero rules as group totals."""
-    total = (aggregate(rows, '_scope', only) or [None])[0]
+    total = (aggregate(rows, '_scope', only, (), adjustment_only) or [None])[0]
     query = view['query']
     if total is None:
         return {'amount_usd': None, 'amount_complete': None, 'event_count': 0, 'known_total_tokens': None,
@@ -388,11 +519,14 @@ def q_cost(src, a):
     only = [_row(g, titles) for g in view.get('outcome_only_groups', [])]
     # WIs with merged PRs but no usage or Outcome this period: no cost, never dropped.
     pr_only = [_row(g, titles) for g in view.get('pull_request_only_groups', [])]
+    # Entries against closed weeks on keys without own usage in this window.
+    adj_only = [_row(g, titles) for g in view.get('adjustment_only_groups') or []]
     for name, value in (('agent', a.agent), ('wi', a.work_item_id), ('runtime', a.runtime)):
         if value is not None:
             rows = [r for r in rows if r['key'].get(name) == value]
             only = [r for r in only if r['key'].get(name) == value]
             pr_only = [r for r in pr_only if r['key'].get(name) == value]
+            adj_only = [r for r in adj_only if r['key'].get(name) == value]
     filters = {'agent': a.agent, 'wi': a.work_item_id, 'runtime': a.runtime}
     result = {'period': a.period, 'dimension': view.get('dimension'), 'filters': filters}
     outputs = view.get('pull_request_outputs')
@@ -406,7 +540,7 @@ def q_cost(src, a):
         result['pull_requests'] = scoped_pull_requests(outputs, wis)
         # Every answer field is the filtered scope; the platform totals are named as such.
         result['scope'] = 'filtered'
-        result['summary'] = scoped_summary(view, rows, only)
+        result['summary'] = scoped_summary(view, rows, only, adj_only)
         result['outcomes'] = scoped_outcomes(view.get('outcomes'), rows + only)
         result['platform'] = {'scope': 'global', 'summary': _summary(view),
                               'outcomes': view.get('outcomes'), 'stages': view.get('stages'),
@@ -420,13 +554,20 @@ def q_cost(src, a):
                              'values and the summary never adds a family twice.')
     if a.group:
         result['group'] = a.group
-        result['groups'] = aggregate(rows, a.group, only, pr_only)
+        result['groups'] = aggregate(rows, a.group, only, pr_only, adj_only)
         result['note'] = ('Group totals add published row amounts; complete only if every row is complete. '
                           'Unknown amounts and tokens are null, never zero.')
     else:
         result['rows'] = rows
         result['outcome_only_rows'] = only
         result['pull_request_only_rows'] = pr_only
+    if 'total' in view:
+        result['adjustment_only_rows'] = adj_only
+        result['adjustment_note'] = ('amount_usd is own usage in this window; adjustment is the entries booked in '
+                                     'it against closed weeks; total (own plus adjustment) is the figure to show.')
+    if 'closed_week' in view:
+        # Null while the week is not yet closed; publications that do not close weeks have no such key.
+        result['closed_week'] = view['closed_week']
     return result
 
 
@@ -449,12 +590,16 @@ def q_wi(src, a):
         only_rows = [_row(g, titles) for g in only]
         pr_rows = [_row(g, titles) for g in view.get('pull_request_only_groups', [])
                    if (g.get('key') or {}).get('wi') == a.work_item_id]
-        total = aggregate(rows, 'wi', only_rows, pr_rows)
+        # Entries against closed weeks on this WI's keys without own usage in the period.
+        adj_rows = [_row(g, titles) for g in view.get('adjustment_only_groups') or []
+                    if (g.get('key') or {}).get('wi') == a.work_item_id]
+        total = aggregate(rows, 'wi', only_rows, pr_rows, adj_rows)
         items = [o for o in (view.get('outcomes') or {}).get('items', []) if o.get('wi') == a.work_item_id]
         periods[period] = {'total': total[0] if total else None,
                            'family_total': next((f for f in scoped_families(view) if f.get('wi') == a.work_item_id), None),
                            'rows': rows,
                            'outcome_only_rows': only_rows, 'pull_request_only_rows': pr_rows,
+                           **({'adjustment_only_rows': adj_rows} if 'total' in view else {}),
                            'pull_requests': scoped_pull_requests(view.get('pull_request_outputs'),
                                                                  {a.work_item_id}),
                            'outcomes': items,
@@ -463,11 +608,72 @@ def q_wi(src, a):
     board = [r for r in ((metrics.get('work.board') or {}).get('value') or [])
              if isinstance(r, dict) and a.work_item_id in (r.get('work_item_id'), r.get('id'))]
     alerts = [x for x in (snap or {}).get('alerts', []) if x.get('work_item_id') == a.work_item_id]
+    compactions, facts = src.compactions(), src.facts()
     return {'work_item_id': a.work_item_id, 'work_item': item,
             'project_page': (item or {}).get('project_page'),
             'parent': (item or {}).get('parent'),
             'children': sorted(i for i, t in titles.items() if t.get('parent') == a.work_item_id),
-            'cost_by_period': periods, 'board': board, 'alerts': alerts}
+            'cost_by_period': periods, 'board': board, 'alerts': alerts,
+            'rollovers': wi_rollovers(facts, a.work_item_id),
+            'context_compactions': (context_compactions.summary(
+                compactions, src.now, wi=a.work_item_id, wi_created_at=_wi_created(facts, a.work_item_id))
+                if compactions else None)}
+
+
+def _wi_created(facts, wi):
+    """When the core created the WI, from its export; None when unknown."""
+    return next((i.get('created_at') for i in (facts or {}).get('items', []) if i.get('id') == wi), None)
+
+
+def wi_rollovers(facts, wi):
+    """Completed session rollovers of one WI from the core export; unknown is never zero."""
+    def unknown(reason):
+        return {'count': None, 'by_agent': None, 'items': [], 'reason': reason}
+    if facts is None:
+        return unknown('wi_facts_unavailable')
+    item = next((i for i in facts.get('items', []) if i.get('id') == wi), None)
+    if item is None:
+        return unknown('work_item_not_in_core_export')
+    rows = item.get('rollovers')
+    if not isinstance(rows, list) or not all(isinstance(r, dict) for r in rows):
+        return unknown('core_export_without_rollovers')
+    return {'count': len(rows), 'by_agent': sum(r.get('requested_by') == 'agent' for r in rows),
+            'items': rows, 'reason': None}
+
+
+def q_compactions(src, a):
+    """CC context compactions per native session, of one WI or one session ID, with the record's coverage."""
+    document = src.compactions()
+    if document is None:
+        raise ValueError('context_compactions_unavailable')
+    ref = context_compactions.session_ref(a.session_id) if getattr(a, 'session_id', None) else None
+    created = _wi_created(src.facts(), a.work_item_id) if a.work_item_id and ref is None else None
+    result = context_compactions.summary(document, src.now, wi=a.work_item_id, ref=ref, wi_created_at=created)
+    # No matching row is not zero, and a limited coverage leaves a WI total partial.
+    return {**result, 'completeness': {'sections': {'context_compactions': {'status': result['status'],
+                                                                            'reason': result['reason']}}}}
+
+
+def _agy_quota_now(metric, now):
+    """The agy reading as of the query time, not of the snapshot.
+
+    A snapshot outlives a 5-hour bucket and the reading's own hour: buckets
+    that have reset are dropped, and a reading past ``MAX_AGE_SECONDS`` or
+    with no current bucket is unknown, as the snapshot itself would show it.
+    """
+    if not metric or metric.get('status') != 'available' or not isinstance(metric.get('value'), list):
+        return metric
+    try:
+        observed = agy_quota.observed_at(metric)
+    except agy_quota.QuotaError:
+        observed = None
+    if observed is None or (now - observed).total_seconds() >= agy_quota.MAX_AGE_SECONDS:
+        return {**metric, 'value': None, 'status': 'unknown', 'reason': 'quota_reading_stale', 'observed_at': None}
+    rows = [row for row in metric['value'] if isinstance(row, dict) and type(row.get('resets_at')) is int
+            and row['resets_at'] > now.timestamp()]
+    if not rows:
+        return {**metric, 'value': None, 'status': 'unknown', 'reason': 'quota_window_elapsed'}
+    return {**metric, 'value': rows}
 
 
 def q_quotas(src, a):
@@ -475,8 +681,10 @@ def q_quotas(src, a):
     metrics = metric_map(snap)
     result = {name: {mid.rsplit('.', 1)[-1]: _metric(metrics.get(mid)) for mid in ids}
               for name, ids in QUOTA_METRICS.items()}
+    # agy: one row per current bucket (group, window, remaining_fraction, resets_at).
+    result['agy'] = {'quota': _agy_quota_now(_metric(metrics.get('relay.agy.quota')), src.now)}
     if snap is None:
-        result = {name: None for name in QUOTA_METRICS}
+        result = {name: None for name in (*QUOTA_METRICS, 'agy')}
     result['subscriptions'] = (cost or {}).get('subscriptions')
     result['openrouter'] = (cost or {}).get('openrouter')
     return result
@@ -585,11 +793,12 @@ def q_overview(src, a):
 
 HANDLERS = {'overview': q_overview, 'cost': q_cost, 'wi': q_wi, 'quotas': q_quotas, 'health': q_health,
             'board': q_board, 'automation': q_automation, 'metric': q_metric, 'snapshot': q_snapshot,
-            'agent_day': q_agent_day}
+            'agent_day': q_agent_day, 'compactions': q_compactions}
 
 
 def answer(args, sources: Sources):
     keys = ('agent', 'date', 'end_date', 'ws') if args.query == 'agent_day' else (
+        'work_item_id', 'session_id') if args.query == 'compactions' else (
         'period', 'group', 'agent', 'work_item_id', 'runtime', 'metric_id')
     arguments = {k: getattr(args, k, None) for k in keys if getattr(args, k, None) is not None}
     errors = []

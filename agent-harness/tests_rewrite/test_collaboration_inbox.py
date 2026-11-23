@@ -402,9 +402,9 @@ def test_rejected_main_only_contract_reaches_the_requester_as_main_only(cross):
     assert all(i["contract_id"] != c for i in read(cross)["items"])
 
 
-def results(rig, now="2026-10-07T01:00:00Z", actor="producer"):
+def results(rig, now="2026-10-07T01:00:00Z", actor="producer", surface="local"):
     storage = SimpleNamespace(connection=rig.kernel._connection)
-    return collaboration_inbox.inbox(storage, "team", actor, "local", now)["pull_requests"]
+    return collaboration_inbox.inbox(storage, "team", actor, surface, now)["pull_requests"]
 
 
 def test_pull_request_results_reach_the_holder_of_the_registering_wi(tmp_path):
@@ -415,7 +415,9 @@ def test_pull_request_results_reach_the_holder_of_the_registering_wi(tmp_path):
     original(prs.review(rig, candidate, 50))
     [row] = results(rig)
     assert row["target"]["holder"] == "recipient_here" and len(row["target"]["holder_key"]) == 64
-    row.pop("target")
+    # The registering session made the head; here it also holds the WI.
+    assert row.pop("author_key") == row.pop("target")["holder_key"]
+    assert row.pop("author_ended") is False
     assert row == {
         "role": "submitter", "work_item_id": rig.wi, "candidate_id": candidate,
         "repository": prs.REPO, "number": 7, "status": "changes_requested",
@@ -463,8 +465,82 @@ def test_a_child_s_pull_request_result_follows_its_parent_s_holder(tmp_path):
     original(rig.approve("continue_here", {"reason": "continue here"}, actor=here))
     [row] = results(rig)
     assert row["target"]["holder"] == "recipient_here" and row["target"]["holder_key"] != before
+    # Another session continuing the parent does not end the registering one:
+    # the result still names only it.
+    assert (row["author_key"], row["author_ended"]) == (before, False)
     # While the parent is in transfer nobody holds the child: nothing is deliverable.
     rig.contexts["here"] = replace(here, generation=kids.view(rig, parent)["generation"])
     original(rig.send("rollover", {"target": OTHER.principal(), "summary": "Resume"}, handle="here"))
     [row] = results(rig)
     assert row["target"]["holder"] != "recipient_here" and "holder_key" not in row["target"]
+    # The continuing session rolled over, not the registering one.
+    assert (row["author_key"], row["author_ended"]) == (before, False)
+
+
+def test_a_pull_request_result_names_the_registering_session_until_it_rolls_over(tmp_path):
+    from tests_rewrite import test_pull_requests as prs
+    from tests_rewrite.test_workflow import OTHER
+
+    rig, candidate = prs.rig_with_pr(tmp_path)
+    original(prs.review(rig, candidate, 50))
+    [row] = results(rig)
+    author = row["author_key"]
+    # Another node of the same Agent sees no key and no end: it must not deliver.
+    [elsewhere] = results(rig, surface="remote")
+    assert ("author_key" not in elsewhere, elsewhere["author_ended"]) == (True, False)
+    assert elsewhere["target"]["holder"] == "recipient_elsewhere"
+    # The registering session hands the WI over (rollover): the journal shows it ended.
+    transfer = original(rig.send("rollover", {"target": OTHER.principal(), "summary": "Resume"},
+                                 handle="owner"))["transfer_id"]
+    assert results(rig) == []  # In transfer the WI is not open: nothing is listed.
+    original(rig.send("accept_transfer", {"transfer_id": transfer}, handle="helper"))
+    [row] = results(rig)
+    assert (row["author_ended"], "author_key" in row) == (True, False)
+    assert author not in row.values()
+
+
+def test_a_scheduler_run_s_pull_request_result_goes_to_no_session(tmp_path):
+    # A scheduler run is a fresh native session that never enters a conversation,
+    # and its result is not the holder's to answer: the row is marked unattended,
+    # not ended, and carries no key, so no gate delivers it.
+    from dataclasses import replace
+
+    from tests_rewrite import test_pull_requests as prs
+
+    rig = prs.light(tmp_path)
+    rig.contexts["reviewer"] = prs.REVIEWER
+    run = replace(prs.AUTHOR, session="private-scheduled-run", entry="scheduler")
+    candidate = original(prs.submit(rig, prs.HEAD, run))["candidate_id"]
+    original(prs.review(rig, candidate, 50))
+    [row] = results(rig)
+    assert (row["author_unattended"], row["author_ended"], "author_key" in row) == (True, False, False)
+    assert row["target"]["holder"] == "recipient_here"
+
+
+def test_the_inbox_keeps_only_the_handoff_facts_of_each_journal():
+    entry = {"at": "2026-10-07T00:00:00Z", "request_id": "r", "semantics": {"principal": {"session": "s"}},
+             "result": {}, "events": [{"kind": "CheckpointRecorded", "payload": {"large": "x" * 4096}}]}
+    assert collaboration_inbox.handoffs([entry] * 50) == {"transfers": [], "switches": [], "entered": set()}
+
+
+def test_a_round_registered_before_entries_were_recorded_reaches_the_holder(tmp_path, monkeypatch):
+    # A round from an older ledger has no `author_entry`: it may be a scheduler
+    # run nothing can reach, so the holder hears of it rather than nobody.
+    from tests_rewrite import test_pull_requests as prs
+
+    rig, candidate = prs.rig_with_pr(tmp_path)
+    original(prs.review(rig, candidate, 50))
+    [row] = results(rig)
+    assert row["author_ended"] is False and "author_key" in row
+    records = collaboration_inbox.pull_requests.records
+
+    def older(state):
+        found = records(state)
+        for pr in found.values():
+            for item in pr["rounds"]:
+                assert item.pop("author_entry", "absent") is None  # Recorded now: a conversation.
+        return found
+
+    monkeypatch.setattr(collaboration_inbox.pull_requests, "records", older)
+    [row] = results(rig)
+    assert (row["author_ended"], "author_key" in row) == (True, False)

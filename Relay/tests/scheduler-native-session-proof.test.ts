@@ -5,13 +5,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const data = realpathSync(mkdtempSync(join(tmpdir(), 'relay-scheduler-proof-')));
-vi.mock('../src/managed-paths.js', () => ({ managedRelayPath: () => data }));
+vi.mock('../src/managed-paths.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../src/managed-paths.js')>()), managedRelayPath: () => data }));
 vi.mock('../src/native-work-item-command.js', () => ({
   nodeWorkItemCore: () => ({ python: '/usr/bin/python3', entrypoint: '/x/harness.pyz', extension: '/x/runtime/pi.mjs' }),
 }));
 const { forgetNativeSession, observeScheduledSession } = await import('../src/native-core-runtime.js');
 const { createCcBatchRuntimeAdapter, createCcInteractiveBatchRuntimeAdapter, createCodexBatchRuntimeAdapter } = await import('../src/runtime.js');
 const { collaborationRef } = await import('../src/collaboration-capture.js');
+const { createAgyBatchRuntimeAdapter } = await import('../src/agy-batch-runtime.js');
+const { spawn: nodeSpawn } = await import('node:child_process');
 
 const proofs = join(data, 'native-session-proofs');
 const run = { jobId: 'hestia-dispatch', owner: 'hestia', runId: 'run-1' };
@@ -114,6 +117,38 @@ process.exit(0);
       rmSync(dir, { recursive: true, force: true });
     }
   }, 30_000);
+
+  it('records the agy conversation from its init event and removes the proof at exit', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'relay-scheduler-agy-'));
+    const conversation = '93c96681-2e5a-43ce-ac42-67bc8f07b6d2';
+    const agy = fake(dir, 'agy-fake.cjs', `
+const out = (event) => process.stdout.write(JSON.stringify(event) + '\\n');
+// A restricted run is stopped unless agy logs that it enabled the terminal sandbox.
+const argv = process.argv.slice(2);
+if (argv.includes('--sandbox')) fs.writeFileSync(argv[argv.indexOf('--log-file') + 1], 'Print mode: enabling terminal sandbox for this session\\n');
+out({ event: 'init', conversation_id: '${conversation}', init: { model: 'gemini-4-neon-high' } });
+const seen = proofFor(process.pid, waitMs);
+out({ event: 'result', result: { conversation_id: '${conversation}', status: 'SUCCESS', response: JSON.stringify(seen),
+  usage: { input_tokens: 1, output_tokens: 1, thinking_tokens: 0, cache_read_tokens: 0, total_tokens: 2 } } });
+process.exit(0);
+`);
+    try {
+      // A plain child process: the proof names the process Relay started, which is agy itself.
+      const spawn = (command: string, args: string[], options: object) => nodeSpawn(command, args, options as never);
+      const result = await withEnv({ RELAY_TEST_PROOFS: proofs }, () =>
+        createAgyBatchRuntimeAdapter({ agyBin: agy, spawn: spawn as never }).run({ workspace: dir, prompt: 'p',
+          timeoutMs: 20_000, nativeSession: run, ownerIsolation: 'host' }));
+      const seen = JSON.parse(result.stdout) as { pid: number; proof: Record<string, unknown> };
+      expect(result.exitCode).toBe(0);
+      expect(seen.proof).toMatchObject({
+        schema: 'pulse.native-session-source/v1', runtime: 'agy', relay_pid: process.pid, session_id: conversation,
+        allocation_id: 'run-1', tenant: 'scheduler:hestia-dispatch', entry: 'scheduler', owner: 'hestia',
+      });
+      expect(existsSync(join(proofs, `${seen.pid}.json`))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 
   it('records the CC launch session ID and removes the proof at exit', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'relay-scheduler-cc-'));

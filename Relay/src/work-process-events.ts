@@ -81,6 +81,20 @@ export function publicWorkEvents(runtime: string, value: unknown): WorkProcessEv
       input: toolInput(record.args), output: text(record.result ?? record.partialResult),
       state: record.type === 'tool_execution_end' ? record.isError === true ? 'failed' : 'completed' : 'running' })];
   }
+  if (runtime === 'agy') {
+    // stream-json `step_update` of type tool; parameters use agy's own key names (Path, CommandLine…).
+    const step = object(record.step_update);
+    if (record.event !== 'step_update' || step.step_type !== 'tool' || typeof step.step_index !== 'number') return [];
+    const info = object(step.tool_info);
+    const input = Object.entries(object(info.parameters))
+      .filter(([, value]) => ['string', 'number'].includes(typeof value))
+      .map(([key, value]) => `${key}: ${value}`).join('\n');
+    const conversation = typeof step.conversation_id === 'string' ? step.conversation_id : 'conversation';
+    return [normalized({ id: `agy:${conversation}:${step.step_index}`, kind: 'operation',
+      title: typeof step.tool_name === 'string' ? step.tool_name : '工具调用', input,
+      output: text(info.output ?? info.error),
+      state: step.state !== 'DONE' ? 'running' : info.error ? 'failed' : 'completed' })];
+  }
   if (runtime === 'codex') {
     if (!['item.started', 'item.updated', 'item.completed'].includes(record.type)) return [];
     const item = object(record.item);

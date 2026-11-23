@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createConversationRuntimeManager, type ConversationProcess, type ConversationRuntimeAdapter } from '../src/conversation-runtime.js';
 import { createMaintenanceBarrier } from '../src/maintenance-barrier.js';
+import { fencedInternalTurn, watchInternalTurn } from '../src/internal-turn-fence.js';
 import { busyAtShutdown, persistQueuedTurns, replayPendingTurns, stampShutdownInterrupts } from '../src/shutdown-interrupts.js';
 import type { PersistedSession } from '../src/types.js';
 
@@ -47,6 +48,32 @@ describe('maintenance barrier', () => {
     await sent;
     expect(pi.send).toHaveBeenCalledOnce();
     expect(barrier.status()).toEqual({ held: false, queued: [] });
+  });
+
+  it('drops a delivery that waited at the barrier while its conversation switched, and sends it unfenced otherwise', async () => {
+    const barrier = createMaintenanceBarrier();
+    const cc = adapter('cc');
+    const manager = createConversationRuntimeManager({ barrier });
+    manager.register(cc);
+    await manager.spawn({ tenantId: 'owner:aki', runtime: 'cc', workspace: '/tmp/w', sessionId: 's' });
+    const outcomes: string[] = [];
+    const deliver = async (ref: string, during: () => void) => {
+      watchInternalTurn(ref, outcome => outcomes.push(outcome));
+      const held = barrier.hold(60_000);
+      if (!held.ok) throw new Error('hold refused');
+      const sent = manager.send('owner:aki', fencedInternalTurn({ type: 'human', content: 'pr result' }, ['s'], ref));
+      await new Promise(resolve => setTimeout(resolve, 10));
+      during();
+      barrier.release(held.token);
+      await sent;
+    };
+    await deliver('ref-same', () => {});
+    expect(cc.send).toHaveBeenCalledOnce();
+    expect((cc.send as ReturnType<typeof vi.fn>).mock.calls[0]![1]).toEqual({ type: 'human', content: 'pr result' });
+    // A /wi switch replaces the session while the delivery waits at the barrier.
+    await deliver('ref-switched', () => { (cc.get('owner:aki') as ConversationProcess).sessionId = 's2'; });
+    expect(cc.send).toHaveBeenCalledOnce();
+    expect(outcomes).toEqual(['consumed', 'refused']);
   });
 
   it('gives each hold its own token; another deployment cannot renew or release it', () => {

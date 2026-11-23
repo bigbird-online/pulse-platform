@@ -548,6 +548,11 @@ def test_relay_wi_reminder_after_the_reference_keeps_the_route(case,layout):
     user['message']['content']=(f'{text}\n\n{SESSION_WI_REMINDER}' if layout=='string'
         else [{'type':'text','text':text},{'type':'text','text':SESSION_WI_REMINDER}])
     rows,_=run(case);assert [r.payload['context']['entrypoint'] for r in rows]==['telegram']
+    # Sessions recorded with an earlier wording keep their route.
+    from pulse_compute_cost.pi_context import SESSION_WI_REMINDERS
+    for earlier in SESSION_WI_REMINDERS[1:]:
+        user['message']['content']=f'{text}\n\n{earlier}'
+        assert [r.payload['context']['entrypoint'] for r in run(case)[0]]==['telegram']
     # Any other trailing text still hides the reference.
     user['message']['content']=f'{text}\n\n[Relay] something else'
     assert run(case)[0]==[]

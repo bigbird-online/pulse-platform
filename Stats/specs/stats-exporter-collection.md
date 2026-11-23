@@ -84,7 +84,7 @@ IncidentStateStore.single_writer()   ← 排他锁，全程持有
 
 | 字段 | 路径 | 供给 |
 |---|---|---|
-| `registry` | `vultr-pulse-space/systemd/probe-heartbeats.json` | 心跳注册表（哪些源该活、各自 max_age） |
+| `registry` | `Scripts/monitoring/probe-heartbeats.json` | 心跳注册表（哪些源该活、各自 max_age） |
 | `heartbeats` | `/home/pulse/.relay/heartbeats.json` | 心跳实测值 |
 | `ledger` | `/home/pulse/.cache/pulse-ledger-lint-probe/incident-state.json` | 账本体检发现 |
 | `alerts_dir` | `/Users/owner/Coevolution/.harness/events` | escalation 与 autonomous 事件流 |
@@ -353,7 +353,7 @@ coverage 与 runtime_health 是两个独立字段，producer 不得把 coverage 
 
 ### 5.2 ack 探针（`_collect_ack`）
 
-- 调用 `ACK_ARGV` 固定命令，超时 `ACK_TIMEOUT_SECONDS = 20` 秒。
+- 生产已退役 ack 采集（`retire_legacy_probes`）；非生产路径须由调用方注入 `ack_argv`，默认空命令时不执行、判 `unknown`（`not_configured`）；注入后超时 `ACK_TIMEOUT_SECONDS = 20` 秒。
   该值远高于 runner 默认 4 秒，因为 ack-probe 要遍历全部 handoff（2026-07-27 实测 7.0s）；
   超时的后果不是少一个数，而是 `s2.ack_overdue` 整条降 `unknown` 进而拖垮
   `overall.runtime_health`。
@@ -777,6 +777,72 @@ auto-memory `main-only-true-source-has-two-carriers-collector-read-one`）：
 <!-- anchor: test Bigbird/Stats/exporter/tests/test_grok_quota.py :: test_pooled_or_missing_personal_allowance_is_not_applicable -->
 <!-- anchor: test Bigbird/Stats/exporter/tests/test_grok_quota.py :: test_definitive_failure_replaces_the_reading_with_its_reason -->
 <!-- anchor: test Bigbird/Stats/exporter/tests/test_grok_quota.py :: test_transient_failure_keeps_the_previous_reading -->
+
+### 6.5.2 CC 上下文压缩次数（`context_compactions`）
+
+- Relay 把每个 CC print 模式原生会话的 `compact_boundary` 次数写入 `<RELAY_DATA_DIR>/context/context-compactions-v1.json`
+  （`pulse.stats.context_compactions/v1`：`updated_at`、`recording_started_at`、`dropped_through` 与至多 2000 行 `session_ref`、
+  `runtime`、`wi`、`compactions`、`by_wi`、`context_ratio`、`first_compaction_at`、`last_compaction_at`；会话只以摘要出现，不含原生 ID）。
+  `wi` 是会话当前所挂 WI；`by_wi` 是 `[{wi, compactions}]`，按每次压缩发生时所挂 WI 拆分（当时未挂 WI 记 `wi: null`），
+  各项 WI 不重复、次数至少 1、合计等于 `compactions`。`dropped_through` 必须出现（从未移出为 `null`），缺失即拒。
+  交互模式的会话不在其中。Relay 恢复提醒用另一份不受此窗口裁剪的状态文件，Stats 不读它。
+- 成本发布任务每个周期调用一次 `refresh_context_compactions()`：按 `refresh.json` 的 `context_compactions.path`
+  读取、校验（`pulse_stats/context_compactions.py`），加上读取时刻 `observed_at`，私有写入
+  `~/.local/state/pulse/stats/context-compactions-v1.json`，有 destination 时以 `receive-context-compactions` 转发；
+  接收端拒绝没有 `observed_at` 的发布物，也拒绝（`updated_at`，`observed_at`）更旧的发布物；读取失败保留原发布物。
+  周期结果记入 `last-refresh.json`（或 `collect-local-v1.json`）的 `context_compactions`。无该配置项时为 `source_not_configured`；
+  原生发布写入器 `prepare_stats()` 为账户补上默认项（Relay 数据目录下的该文件，已有显式项则保留）。
+- 查询端 `pulse-stats compactions` 与 `wi` 读该发布物。计数是 `observed_at` 时的值；`observed_at` 加 75 分钟（`wi_facts.MAX_AGE`）
+  为有效期，过期来源标 `stale`。答案带 `observed_at` 与 `coverage`：`last_compaction_from`（`dropped_through`，没有时取
+  `recording_started_at`）、`last_compaction_to`（`observed_at`）、`recording_started_at`、`dropped_through`、`expires_at`、`stale`、
+  过期时未覆盖的 `uncovered_from`／`uncovered_to`（`observed_at` 至查询时刻）、`sessions_recorded`、`at_capacity`、`cc_mode: print`，
+  并注明只含压缩过的会话。按 WI 查询只取 `by_wi` 中有该 WI 的会话，每行另给 `wi_compactions`（该 WI 名下次数），
+  `total_compactions` 只累加该 WI 名下次数；会话之后改挂别的 WI 不把此前的压缩带过去。答案的 `status`：单个会话有行且未过期为 `complete`；按 WI 汇总另要求 WI 创建时刻不早于
+  `recording_started_at` 且晚于 `dropped_through`，全部列出时要求 `dropped_through` 为空，否则为 `partial` 并给 `reason`；
+  没有匹配行时 `total_compactions` 为 `null`、`status` 为 `unknown`（`not_in_published_record`），不当作 0。
+
+`@anchor test Stats/exporter/tests/test_context_compactions.py :: CompactionRefreshTests.test_refresh_publishes_relay_record_locally_and_to_the_destination_and_keeps_the_newest`
+`@anchor test Stats/exporter/tests/test_context_compactions.py :: CompactionQueryTests.test_compactions_by_session_and_by_wi`
+`@anchor test Stats/exporter/tests/test_context_compactions.py :: CompactionQueryTests.test_a_wi_counts_only_the_compactions_under_it_not_a_later_relabel`
+`@anchor test Stats/exporter/tests/test_context_compactions.py :: CompactionDocumentTests.test_validation_and_coverage_agree_on_a_missing_dropped_through`
+`@anchor test Stats/exporter/tests/test_context_compactions.py :: CompactionQueryTests.test_wi_reports_its_rollovers_and_compacted_sessions`
+`@anchor test Stats/exporter/tests/test_context_compactions.py :: CompactionQueryTests.test_a_session_or_wi_outside_the_record_is_unknown_never_zero`
+`@anchor test Stats/exporter/tests/test_context_compactions.py :: CompactionQueryTests.test_the_answer_states_the_records_coverage`
+`@anchor test Stats/exporter/tests/test_context_compactions.py :: CompactionQueryTests.test_a_stale_publication_is_partial_and_names_its_gap`
+`@anchor test Stats/exporter/tests/test_context_compactions.py :: CompactionQueryTests.test_a_wi_total_is_complete_only_when_the_coverage_spans_the_wi`
+`@anchor test Stats/exporter/tests/test_context_compactions.py :: CompactionQueryTests.test_a_publication_without_its_observation_time_is_partial`
+
+### 6.5.3 agy 额度（`agy_quota`）
+
+- 成本发布任务每个周期调用一次 `refresh_agy_quota()`：按 `refresh.json` 的 `agy_quota.command`
+  与 `agy_quota.home` 以账户 HOME 执行 `agy -p /quota --output-format json`（在临时目录、独立进程组中运行，
+  外层超时 `TIMEOUT_SECONDS = 45`，超时杀整组），校验后私有写入
+  `~/.local/state/pulse/stats/agy-quota-v1.json`（`pulse.stats.agy_quota/v1`），有 destination 时以
+  `receive-agy-quota` 转发，拒绝 `observed_at` 更旧的发布物；周期结果记入 `last-refresh.json` 的 `agy_quota`。
+  无 `agy_quota` 项时不执行，状态为 `source_not_configured`；`prepare_stats()` 只在 ownermac 补默认项
+  （`~/.local/bin/agy`，账户 HOME），已有显式项则保留。
+- `projection()` 只读 `command.data.groups[]`：组名、`buckets[].window`（只认 `weekly` 与 `5h`）、
+  `remaining_fraction`（0–1 的有限数）与带时区的 `reset_time`（须在读取时刻之后、8 天之内）。
+  每组须有 `weekly`；`5h` 可缺（Gemini 4 Argon 只有周额度）。`status` 不是 `SUCCESS` 记 `agy_command_failed`；
+  其余字段缺失或形态不符记 `quota_schema_changed`。
+- 任何读取失败（`READ_FAILURES`：`agy_command_unavailable`、`agy_command_timeout`、`agy_command_failed`、
+  `quota_output_too_large`、`quota_schema_changed`）都以带原因与读取时间的 `unavailable` 事实**替换**旧读数，
+  不保留旧数当新数。`available` 读数自读取起 `MAX_AGE_SECONDS = 3600` 秒内有效，超过记 `quota_reading_stale`。
+- exporter 读发布物产出一个 `relay.agy.quota`（`unit=buckets`），值为各个尚未重置的桶：
+  `group`、`window`、`remaining_fraction`、`resets_at`（纪元秒）；全部已重置记 `quota_window_elapsed`。
+  unknown 时带原因码，失败事实保留其读取时间。未配置文件路径时不产出。`query quotas` 的 `agy.quota` 返回同一指标。
+- 这是账号级额度，不是单个 Agent 的成本，**不得计入任何成本合计**。
+- 手动单次读取：`pulse-stats-cost-refresh.py agy-quota --config <含 agy_quota 的配置>`，只打印状态词。
+
+<!-- anchor: symbol refresh_agy_quota -->
+<!-- anchor: symbol receive_agy_quota -->
+<!-- anchor: symbol _append_agy_quota_metrics -->
+<!-- anchor: symbol current_buckets -->
+<!-- anchor: test Bigbird/Stats/exporter/tests/test_agy_quota.py :: test_recorded_output_projects_three_groups -->
+<!-- anchor: test Bigbird/Stats/exporter/tests/test_agy_quota.py :: test_argon_group_has_only_a_weekly_window -->
+<!-- anchor: test Bigbird/Stats/exporter/tests/test_agy_quota.py :: test_missing_or_changed_fields_are_unavailable_not_simulated -->
+<!-- anchor: test Bigbird/Stats/exporter/tests/test_agy_quota.py :: test_any_failure_replaces_the_old_reading_with_reason_and_time -->
+<!-- anchor: test Bigbird/Stats/exporter/tests/test_agy_quota.py :: test_unavailable_states_are_unknown_with_reason -->
 
 ### 6.6 CC 429 判定（`detect_cc_rate_limited`）
 

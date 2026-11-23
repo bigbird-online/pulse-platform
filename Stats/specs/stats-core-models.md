@@ -652,7 +652,7 @@ exporter 把整行打包进 `Alert.reason`，形如
 
 ### 5.5 `MenuBarViewModel`：两条线各管各的
 
-菜单栏只有这些东西：CODEX、CC、GROK 三个配额百分比，WI 要你出手计数，以及一个可选状态标记。
+菜单栏只有这些东西：CODEX、CC、AGY 三个配额已用百分比（AGY 取最紧一桶），WI 要你出手计数，以及一个可选状态标记。
 
 - `actCount` 直接读 `alertTiers.act`（App 不自己数）。
 - `statusLamp` / `statusText` 全部来自 `SnapshotStatusSummary`，

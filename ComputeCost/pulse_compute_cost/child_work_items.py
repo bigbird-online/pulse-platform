@@ -5,8 +5,11 @@ dispatches a subagent to a child WI by writing ``[WI: <child>]`` as the first
 line of the subagent's first prompt. The collector reads that line from the
 native transcript, never from the subagent's own statements, and accepts it
 only when the core's ``stats-facts`` export names the declared WI as the
-child's ``parent`` and the child was open when the usage happened. Otherwise
-the subagent keeps the declared WI.
+child's ``parent`` and the child was open when the usage happened. The declared WI may also be
+another child of that parent: one request may advance several children in
+parallel, each through its own marked subagent, and a declaration of a sibling
+does not take a marked subagent's usage. Otherwise the subagent keeps the
+declared WI.
 
 An export from a core without the ``parent`` field, a missing or unreadable
 export and a malformed item all yield no children: every subagent inherits.
@@ -94,3 +97,14 @@ def child_of(children: Mapping[str, Mapping[str, Any]], marker: str | None, decl
     if child["closed_at"] is not None:
         return at < child["closed_at"]
     return child["open"]
+
+
+def lineage_child(children: Mapping[str, Mapping[str, Any]], marker: str | None,
+                  declared: str | None, at: datetime) -> bool:
+    """Whether a turn declared ``declared`` moves to ``marker``: the marker is an
+    open child of the declared WI, or of the parent the declared sibling shares."""
+    if child_of(children, marker, declared, at):
+        return True
+    child, sibling = children.get(marker) if marker else None, children.get(declared) if declared else None
+    return (child is not None and sibling is not None and declared != marker
+            and sibling["parent"] == child["parent"] and child_of(children, marker, child["parent"], at))

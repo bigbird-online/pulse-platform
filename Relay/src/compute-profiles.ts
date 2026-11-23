@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { resolvePulseRoot } from './config-paths.js';
 import { managedRelayPath } from './managed-paths.js';
+import { resolveClaudeRuntimeModel } from './model-context.js';
 
 export const DEFAULT_COMPUTE_PROFILE = 'platform_default';
 /**
@@ -83,12 +84,11 @@ function reasoningEffort(value: unknown, field: string, optional = false): strin
 }
 
 function resolveClaudeLatestAlias(alias: string, field: string): string {
-  const match = /^claude-(sonnet|opus|haiku)-latest$/.exec(alias);
-  if (!match) {
+  const model = resolveClaudeRuntimeModel(alias);
+  if (model === alias) {
     throw new Error(`compute profile field ${field} has unsupported Claude alias: ${alias}`);
   }
-  // Claude Code owns these short aliases and resolves them to its current model.
-  return match[1];
+  return model;
 }
 
 function compareNumericVersions(left: number[], right: number[]): number {

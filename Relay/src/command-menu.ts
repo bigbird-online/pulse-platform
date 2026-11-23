@@ -12,7 +12,7 @@ const RELAY_COMMANDS: MenuCommand[] = [
   { command: 'runtime', description: '查看/切换 runtime' },
   { command: 'model',   description: '查看/切换模型 (sonnet/opus/haiku)' },
   { command: 'models',  description: '查看当前 runtime 原生可用模型' },
-  { command: 'think',   description: '查看/切换 Pi reasoning level' },
+  { command: 'think',   description: '查看/切换推理档位（各运行时）' },
   { command: 'compact', description: '压缩当前对话 context' },
   { command: 'context', description: '查看当前 context 状态' },
   { command: 'yolo',    description: '查看/切换 Codex YOLO 模式' },

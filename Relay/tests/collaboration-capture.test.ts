@@ -41,6 +41,31 @@ describe('collaboration Host capture',()=>{
     expect(usage[0].usage).toEqual({});expect(usage[1].usage.input_tokens).toBe(0);
     expect(usage.every(r=>r.model===null)).toBe(true);
   });
+  it('records an agy turn as agy_result.v1 in agy field names, scoped to the agy conversation',()=>{
+    // The scope must equal ComputeCost reference('native_session', ['agy', <conversation>]) (wi666 N04).
+    const conversation='8f0067ec-b62d-4ecf-bd95-04cae57649ac';
+    const scope='ccf1_d400e2ec8042fc16a6269bc5498ebd383bd3993f81388450b3391bab2149a12e';
+    const f=fixture(); const a=f.capture.begin('agy',f.config,'one');
+    const turn={input_tokens:10044,cache_read_input_tokens:0,output_tokens:38};
+    f.capture.response(a,{type:'result',runtime:'agy',model:'gemini-4-neon-high',agy_conversation_id:conversation,
+      usage:{...turn,thinking_tokens:36},native_model_usage:{schema:'pulse_native_model_usage/v1',runtime:'agy',
+        models:[{model:'gemini-4-neon-high',provider:null,usage:turn}]}});
+    const usage=f.rows().filter(r=>r.kind==='usage');
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({runtime:'agy',model:'gemini-4-neon-high',provider:null,mapping:'agy_result.v1',
+      granularity:'turn_aggregate',covers:[],final:true,native_scope_ref:scope,attempt_ref:a.ref,
+      started_at:'2026-09-13T01:00:00Z',wi:'wi_20260913_101',
+      usage:{input_tokens:10044,cache_read_tokens:0,output_tokens:38}});
+    // Unknown usage stays unknown; without an agy conversation the Relay session is not a native scope.
+    const b=f.capture.begin('agy',f.config,'two');
+    f.capture.response(b,{type:'result',is_error:true,runtime:'agy'});
+    const failed=f.rows().filter(r=>r.kind==='usage'&&r.attempt_ref===b.ref);
+    expect(failed).toHaveLength(1);
+    expect(failed[0].mapping).toBe('agy_result.v1');
+    expect(failed[0].usage).toEqual({});
+    expect(failed[0]).not.toHaveProperty('native_scope_ref');
+    expect(JSON.stringify(f.rows())).not.toContain('private-session');
+  });
   it('names a Codex fallback result by its exec model, never a guessed default',()=>{
     const f=fixture(); const a=f.capture.begin('codex',f.config,'one');
     f.capture.response(a,{type:'result',requested_model:'gpt-launched',usage:{input_tokens:5,cached_input_tokens:1,output_tokens:2}});

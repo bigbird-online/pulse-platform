@@ -319,14 +319,17 @@
 
 现状是**一个** `MenuBarExtra`，`.menuBarExtraStyle(.window)`，
 渲染 `PulseMenuBarLabel`。形态：`MenuBarArtwork` 画四个等宽槽，依次为
-`CODEX`、`CC`、`GROK`、`WI`（小字标签在上、读数在下），其后是可选状态标记。
+`CODEX`、`CC`、`AGY`、`WI`（小字标签在上、读数在下），其后是可选状态标记。
 
-- GROK 槽读 `MenuBarViewModel.menuGrokText`，与面板「GROK 周额度」行同出
-  `RelayViewModel.grokUsedPercent`，同一读数，例如 `GROK 87%`。
-  读不到（登录失效、账号不符或中途切换、接口变化、读数过期、无发布物）或不适用
-  （企业共享额度、无个人额度）时一律显示 `—`，**不以 0% 或旧数顶替**；
-  无障碍标签读「GROK 额度待更新，不以旧数或零替代」。
-  `@anchor test Bigbird/Stats/PulseStatsTests/PanelViewModelTests.swift :: testGrokQuotaMenuBarAndPanelShareOneReading`
+- AGY 槽读 `MenuBarViewModel.menuAgyText`：取 `RelayViewModel.agyLowestRemainingPercent`
+  （所有当前桶中最低的剩余比例），换成已用比例显示，与左侧 CODEX、CC 同为「已用」口径，
+  例如最低剩 7% 显示 `AGY 93%`；`agyLamp` 与面板「agy 额度」行同灯。读数过期、读取失败、
+  无发布物或全部桶已重置时显示 `—`，**不以 0% 或旧数顶替**；
+  无障碍标签读「agy 额度待更新，不以旧数或零替代」。
+  `@anchor test Bigbird/Stats/PulseStatsTests/PanelViewModelTests.swift :: testAgyMenuBarSlotReadsLowestRemainingBucket`
+  `@anchor test Bigbird/Stats/PulseStatsTests/PanelViewModelTests.swift :: testAgyMenuBarSlotUnknownShowsDashNeverZero`
+- GROK 不进菜单栏，只留面板「GROK 周额度」行。
+  `@anchor test Bigbird/Stats/PulseStatsTests/PanelViewModelTests.swift :: testGrokQuotaStaysInPanelButLeavesMenuBar`
   `@anchor test Bigbird/Stats/PulseStatsTests/PanelViewModelTests.swift :: testGrokQuotaUnavailableShowsDashAndReasonNeverZero`
 - 面板「GROK 周额度」行：有读数时「已用 N%」，不适用时「不适用」，其余「待更新」；
   展开后显示重置时间、额度读取时间（失败事实显示那次读取的时间）、套餐名与原因白话，
@@ -334,7 +337,14 @@
   `@anchor test Bigbird/Stats/PulseStatsTests/PanelViewModelTests.swift :: testGrokPooledAllowanceIsNotApplicableNotAFabricatedQuota`
   `@anchor test Bigbird/Stats/PulseStatsTests/CostDashboardTests.swift :: testGrokQuotaPanelShowsResetReadTimeOrReason`
 - App 侧新鲜度与 Codex / CC 同规则：读取时刻不晚于现在 60 秒、`resets_at` 在未来、
-  读取时刻不早于 `period_start`；否则视为过期，显示 `—` 与「当前周期内尚无 GROK 额度读数」。
+  读取时刻不早于 `period_start`；否则视为过期，面板显示「待更新」与「当前周期内尚无 GROK 额度读数」。
+- 面板「agy 额度」行：有读数时显示所有当前桶中最低的剩余比例「最低剩 N%」，否则「待更新」；
+  展开后按组列出「<组名> · 周」与「<组名> · 5 小时」的剩余比例和重置时间（Argon 组只有周），
+  再列额度读取时间；无读数时显示原因白话。`RelayViewModel.agyQuotaGroups` 只收重置时间在未来的桶，
+  读取时刻须在 1 小时内且不晚于现在 60 秒，否则不显示旧数。
+  `@anchor test Bigbird/Stats/PulseStatsTests/PanelViewModelTests.swift :: testAgyQuotaShowsThreeGroupsWithRemainingAndReset`
+  `@anchor test Bigbird/Stats/PulseStatsTests/PanelViewModelTests.swift :: testAgyQuotaFailureOrStaleReadingShowsReasonNotOldFigure`
+  `@anchor test Bigbird/Stats/PulseStatsTests/CostDashboardTests.swift :: testAgyQuotaPanelShowsGroupsOrReason`
 
 - 标题必须是**一条合成的 `Text`**（用 `+` 拼接），**不得**用 `VStack` 堆视图。
   代码注释记了五次尝试：形状视图被整个丢掉、emoji 圆点尺寸失控、
@@ -347,7 +357,7 @@
 - 宽度上限 `MenuBarWidth.budget` = 210pt（四槽三位数加状态标记的最坏情况约 203pt），
   由测试守着而不是靠眼看截图。
   `@anchor const budget :: 210`
-  `@anchor test Bigbird/Stats/PulseStatsTests/PanelViewModelTests.swift :: testMenuBarArtworkPlacesGrokAfterCCWithinBudget`
+  `@anchor test Bigbird/Stats/PulseStatsTests/PanelViewModelTests.swift :: testMenuBarArtworkPlacesAgyAfterCCWithinBudget`
 - 超预算时**必须让句子让位，不得让配额让位**：`shouldShortenStatus()` 为真就把状态句
   截到第一个分句（`shortStatusText`），配额两格原样保留。
   2026-07-31 之前的回落方向是反的——一超宽就把两个配额都丢掉，大鸟当场报
@@ -547,8 +557,8 @@
 
 以下每条都必须在 **ownermac 的 GUI 会话**里做，vultr 上做不了。
 
-- 菜单栏必须四个读数槽齐全（CODEX、CC、GROK 三个配额 + WI）。
-  `@anchor manual 菜单栏四槽齐全 :: 看屏幕右上角菜单栏。应同时读到「CODEX nn%」「CC nn%」「GROK nn%」与「WI n」四个槽；某个配额读不到时该槽显示「—」而不是 0%。缺槽或出现 0% 顶替都是违约`
+- 菜单栏必须四个读数槽齐全（CODEX、CC、AGY 三个配额 + WI）。
+  `@anchor manual 菜单栏四槽齐全 :: 看屏幕右上角菜单栏。应同时读到「CODEX nn%」「CC nn%」「AGY nn%」与「WI n」四个槽；某个配额读不到时该槽显示「—」而不是 0%。缺槽或出现 0% 顶替都是违约`
 - 菜单栏数字必须不被 22pt 栏高裁切。
   `@anchor manual 菜单栏字不被裁 :: 菜单栏高约 22pt。凑近看「51%」这类数字的上下缘，字形不得被切掉一截；与旁边系统项（时钟、电池）的基线比，应大致齐平`
 - 仪表盘 wi 四格必须都在。

@@ -1,5 +1,6 @@
 import { stripRelaySecrets } from './relay-secrets.js';
 import {codexCoreArguments,forgetNativeProofOnExit,nativeCoreRuntime,observeNativeSession} from './native-core-runtime.js';
+import { reasoningControl } from './reasoning-control.js';
 import { publicCommentaryEvent } from './public-assistant-progress.js';
 import { publicWorkEvents } from './work-process-events.js';
 import { captureCodexSourceBoundary, codexNativeModelUsage } from './codex-native-model-usage.js';
@@ -24,6 +25,7 @@ import {
 import { buildPulseCodexModelArgs, resolvePulseCodexBin, resolvePulseCodexModel } from './codex-defaults.js';
 import { resolveCodexAdditionalWritableRoots, sharedAccessPromptLines, standingAccessPromptLine } from './config-paths.js';
 import { standingAccessFor } from './standing-access.js';
+import { refuseMisroutedTurn, refusedTurnResult, settleInternalTurn } from './internal-turn-fence.js';
 import type {
   ConversationAttachment,
   ConversationProcess,
@@ -57,6 +59,8 @@ interface CodexProcess extends ConversationProcess {
   runtime: 'codex';
   workspace: string;
   ccModel?: string;
+  /** /think level, passed as `model_reasoning_effort` on the next `codex exec`. */
+  reasoningLevel?: import('./types.js').ConversationReasoningLevel;
   computeCostBinding?: RuntimeUsageBinding;
   currentChild?: ChildProcess;
   currentItem?: QueueItem;
@@ -336,6 +340,13 @@ export function createCodexConversationRuntime(
     if (shuttingDown || !proc || proc.state === 'dead' || proc.state === 'busy') return;
     const item = proc.queue.shift();
     if (!item) return;
+    // An internal delivery runs only in the conversation it was routed to.
+    if (refuseMisroutedTurn(item.message, proc, tenantId)) {
+      cleanupAttachments(item.attachments);
+      emitter.emit('response', tenantId, refusedTurnResult(item.turn?.hostAttemptRef, item.turn?.correlationId));
+      processNext(tenantId);
+      return;
+    }
     void runTurn(tenantId, proc, item);
   }
 
@@ -363,6 +374,8 @@ export function createCodexConversationRuntime(
     },
   ): void {
     const turn = proc.currentItem?.turn;
+    // An internal delivery that ends before codex started its turn is offered again.
+    if (proc.currentItem) settleInternalTurn(proc.currentItem.message, 'refused');
     proc.currentChild = undefined;
     proc.currentItem = undefined;
     proc.timedOut = false;
@@ -497,6 +510,7 @@ export function createCodexConversationRuntime(
       additionalWritableRoots,
       yoloMode: effectiveYoloMode(tenantId),
       model: requestedModel,
+      reasoningEffort: proc.reasoningLevel,
     });
     // Resolve provider env for Codex's OpenAI-compatible protocol
     let codexProvider: { baseUrl: string; apiKey: string } | undefined;
@@ -638,6 +652,7 @@ export function createCodexConversationRuntime(
       }
 
       if (event.type === 'turn.started') {
+        settleInternalTurn(item.message, 'consumed');
         emitter.emit('turn-accepted', tenantId);
         return;
       }
@@ -707,6 +722,7 @@ export function createCodexConversationRuntime(
   const adapter: ConversationRuntimeAdapter = {
     id: 'codex',
     admitsTurns: true,
+    fencesInternalTurns: true,
     async spawn(config: ConversationSpawnConfig): Promise<ConversationProcess> {
       const standing = await standingAccessFor(config.harnessAgentId);
       const existing = processes.get(config.tenantId);
@@ -727,6 +743,8 @@ export function createCodexConversationRuntime(
         usageBindingSha256: config.computeCostBinding?.binding_sha256,
         codexThreadId: config.codexThreadId,
         ccModel: config.ccModel,
+        reasoningLevel: config.reasoningLevel && (reasoningControl('codex').levels() as string[]).includes(config.reasoningLevel)
+          ? config.reasoningLevel : undefined,
         computeCostBinding: config.computeCostBinding,
         threadUsage: threadUsage(options.stateManager?.getSession(config.tenantId)?.codexThreadUsage),
         lastActivity: Date.now(),
@@ -780,6 +798,16 @@ export function createCodexConversationRuntime(
         item.interrupted = false;
         throw error;
       }
+    },
+    async setThinkingLevel(tenantId: string, level: import('./types.js').ConversationReasoningLevel): Promise<void> {
+      const proc = processes.get(tenantId);
+      if (!proc) throw new Error(`No active codex conversation process for tenant ${tenantId}`);
+      if (!(reasoningControl('codex').levels() as string[]).includes(level)) throw new Error(`codex has no reasoning effort ${level}`);
+      // Read by the next `codex exec`; a running turn keeps its own.
+      proc.reasoningLevel = level;
+    },
+    async listThinkingLevels(): Promise<import('./types.js').ConversationReasoningLevel[]> {
+      return reasoningControl('codex').levels();
     },
     async kill(tenantId: string): Promise<void> {
       const proc = processes.get(tenantId);

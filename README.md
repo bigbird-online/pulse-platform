@@ -8,9 +8,10 @@ PULSE is a self-hosted foundation for working with AI agents: you chat with an a
 
 ## Quick start: Relay only (Feishu + Codex + `gpt-6.1-sol`)
 
-You need a Linux server (Ubuntu 24.04 tested), Node.js 22, a ChatGPT Plus (or higher) account for Codex, and a Feishu self-built app. The [full guide](docs/quickstart-feishu-codex.md) walks through every step and the five acceptance checks.
+You need a Linux server (Ubuntu 24.04 or newer) with `bubblewrap` installed for the Codex sandbox, Node.js 22, a ChatGPT Plus (or higher) account for Codex, and a Feishu self-built app. The [full guide](docs/quickstart-feishu-codex.md) walks through every step and the five acceptance checks.
 
 ```bash
+sudo apt-get install -y bubblewrap   # Codex sandbox; Ubuntu 24.04 also needs the bwrap AppArmor profile (see the guide, step 1)
 git clone https://github.com/bigbird-online/pulse-platform.git ~/pulse
 cd ~/pulse/Relay
 npm ci && npm run build

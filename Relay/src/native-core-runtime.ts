@@ -3,7 +3,7 @@ import {execFileSync} from 'node:child_process';
 import {relayChildEnv} from './relay-secrets.js';
 import {readFileSync,readdirSync,mkdirSync,statSync,realpathSync,writeFileSync,renameSync,rmSync,existsSync} from 'node:fs';
 import {dirname,join} from 'node:path';
-import {randomUUID} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {managedRelayPath} from './managed-paths.js';
 import {nodeWorkItemCore} from './native-work-item-command.js';
@@ -96,13 +96,17 @@ function proofRoot():string {
   return join(managedRelayPath('dataDir')!,'native-session-proofs');
 }
 
-function proofPath(pid:number):string {
+function privateProofRoot():string {
   const root=proofRoot();
   mkdirSync(root,{recursive:true,mode:0o700});
   const info=statSync(root);
   if(realpathSync(root)!==root || info.uid!==process.getuid?.() || info.mode&0o077)
     throw new Error('Native source proof directory must be private');
-  return join(root,String(pid)+'.json');
+  return root;
+}
+
+function proofPath(pid:number):string {
+  return join(privateProofRoot(),String(pid)+'.json');
 }
 
 function writeProof(pid:number,sessionId:string,fields:Record<string,unknown>):{path:string;process:string} {
@@ -121,13 +125,35 @@ function writeProof(pid:number,sessionId:string,fields:Record<string,unknown>):{
 const conversationProofs=new Map<number,{path:string;sessionId:string;process:string}>();
 
 /** The original runtime's stdout names its thread; process birth prevents PID reuse. */
-export function observeNativeSession(pid:number,sessionId:string,tenant:string,runtime:'codex'|'cc'|'pi',allocationId=sessionId) {
+export function observeNativeSession(pid:number,sessionId:string,tenant:string,runtime:'codex'|'cc'|'pi'|'agy',allocationId=sessionId) {
   if(!nativeCoreRuntime(tenant)) return;
   // The entry is read from Relay's own pool key; the core never parses it.
   const address=parseConversationPoolKey(tenant);
   const entry=address?(address.channelScope==='feishu'?'feishu':'telegram'):'relay';
   const written=writeProof(pid,sessionId,{runtime,allocation_id:allocationId,tenant,entry});
   conversationProofs.set(pid,{...written,sessionId});
+}
+
+/**
+ * agy runs no process between turns, and a turn's proof is removed when it exits. So that the
+ * core can still recognize an idle conversation for a /wi command, a rollover or a switch back,
+ * Relay keeps one retained record per agy conversation in the same private proof directory
+ * (harness_rewrite/relay_session.py `relay_records`). It names no process: only the conversation,
+ * the Relay session that started it and the conversation entry. It is never removed by the
+ * startup sweep, which reads only process proofs.
+ */
+export function retainNativeConversation(conversationId:string,tenant:string,allocationId:string):string|undefined {
+  if(!nodeWorkItemCore()||!managedRelayPath('dataDir')) return undefined;
+  if(!/^[A-Za-z0-9-]{1,128}$/.test(conversationId)) throw new Error('Invalid native session source');
+  const address=parseConversationPoolKey(tenant);
+  const entry=address?(address.channelScope==='feishu'?'feishu':'telegram'):'relay';
+  const name='retained-'+createHash('sha256').update('agy\0'+conversationId).digest('hex').slice(0,32)+'.json';
+  const target=join(privateProofRoot(),name);
+  const temporary=target+'.'+randomUUID();
+  writeFileSync(temporary,JSON.stringify({schema:'pulse.native-session-retained/v1',runtime:'agy',
+    session_id:conversationId,allocation_id:allocationId,tenant,entry,relay_pid:process.pid})+'\n',{flag:'wx',mode:0o600});
+  renameSync(temporary,target);
+  return target;
 }
 
 /**
@@ -166,7 +192,7 @@ export interface ScheduledNativeSession {
  * owner; the core takes only the session ID from it and never matches its
  * tenant against a conversation profile. Returns the proof path, if written.
  */
-export function observeScheduledSession(pid:number,sessionId:string,runtime:'codex'|'cc',run:ScheduledNativeSession):string|undefined {
+export function observeScheduledSession(pid:number,sessionId:string,runtime:'codex'|'cc'|'agy',run:ScheduledNativeSession):string|undefined {
   if(!nodeWorkItemCore()) return undefined;
   if(!managedRelayPath('dataDir')) throw new Error('Native core requires the registered Relay data directory');
   return writeProof(pid,sessionId,{runtime,allocation_id:run.runId??sessionId,

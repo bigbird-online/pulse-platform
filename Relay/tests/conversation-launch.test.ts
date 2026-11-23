@@ -45,6 +45,56 @@ describe('conversation launch identity', () => {
     }
   }
 
+  it('gives an agy spawn the WI binding a /wi command gave the same Relay session, and no other', () => {
+    const usageBinding = buildRuntimeUsageBinding({ workItemId: 'wi_20261122_053', agentId: 'pulse', phase: 'conversation',
+      epoch: 1, runtime: 'agy', procurementSource: 'unknown', issuedAt: '2026-11-22T00:00:00Z' });
+    const bound = { ...session, runtime: 'agy' as const, agyWorkItemBinding: { sessionId: 'native-session', usageBinding } };
+    const agyAgent = { ...agent, runtime: 'agy' as const, linuxUser: undefined };
+    expect(conversationLaunch({ poolKey: session.poolKey, agent: agyAgent, session: bound, channel: 'telegram', intent: 'inbound' })
+      .computeCostBinding).toEqual(usageBinding);
+    const replaced = { ...bound, sessionId: 'after-new' };
+    expect(conversationLaunch({ poolKey: session.poolKey, agent: agyAgent, session: replaced, channel: 'telegram', intent: 'inbound' })
+      .computeCostBinding).toBeUndefined();
+    // Other runtimes never take it from the launch.
+    expect(conversationLaunch({ poolKey: session.poolKey, agent, session: { ...bound, runtime: 'cc' }, channel: 'telegram',
+      intent: 'inbound' }).computeCostBinding).toBeUndefined();
+  });
+
+  it('launches a session a /wi switch saved in its own runtime, and any other session as the channel prefers', () => {
+    const saved: PersistedSession = { ...session, runtime: 'agy', sessionId: 'agy-session',
+      workItemSessions: { wi_20990101_271: { at: 't', unit: { sessionId: 'agy-session', runtime: 'agy' } } } };
+    const piRoute = { runtime: 'pi' as const, model: { provider: 'p', model: 'm', reasoning: 'high' as const } };
+    for (const intent of ['inbound', 'recovery', 'restart'] as const) {
+      const launch = conversationLaunch({ poolKey: session.poolKey, agent: { ...agent, conversationRuntime: piRoute },
+        session: saved, channel: 'telegram', intent, runtimePreference: ['cc'] });
+      expect(launch).toMatchObject({ runtime: 'agy', conversationRuntimePreference: ['agy'], sessionId: 'agy-session' });
+      expect(launch.conversationRuntime).toBeUndefined();
+    }
+    const unsaved = conversationLaunch({ poolKey: session.poolKey, agent, session: { ...saved, sessionId: 'fresh' },
+      channel: 'telegram', intent: 'inbound', runtimePreference: ['cc'] });
+    expect(unsaved).toMatchObject({ runtime: 'cc', conversationRuntimePreference: ['cc'], sessionId: 'fresh' });
+  });
+
+  it('hands an agy model only to an agy launch', () => {
+    const agyAgent = { ...agent, runtime: 'agy' as const, ccModel: 'gemini-4-neon-high' };
+    const saved: PersistedSession = { ...session, runtime: 'cc', sessionId: 'cc-session',
+      workItemSessions: { wi_20990101_271: { at: 't', unit: { sessionId: 'cc-session', runtime: 'cc' } } } };
+    expect(conversationLaunch({ poolKey: session.poolKey, agent: agyAgent, session: saved, channel: 'telegram',
+      intent: 'inbound', runtimePreference: ['agy'] })).toMatchObject({ runtime: 'cc', ccModel: undefined });
+    expect(conversationLaunch({ poolKey: session.poolKey, agent: agyAgent, session: { ...saved, runtime: 'agy', workItemSessions: undefined },
+      channel: 'telegram', intent: 'inbound', runtimePreference: ['agy'] })).toMatchObject({ runtime: 'agy', ccModel: 'gemini-4-neon-high' });
+    expect(conversationLaunch({ poolKey: session.poolKey, agent: { ...agent, ccModel: 'claude-opus-4-1' }, session: saved,
+      channel: 'telegram', intent: 'inbound' }).ccModel).toBe('claude-opus-4-1');
+  });
+
+  it('carries the conversation /think level into the spawn', () => {
+    const launch = conversationLaunch({ poolKey: session.poolKey, agent, session: { ...session, runtime: 'codex', reasoningLevel: 'xhigh' },
+      channel: 'telegram', intent: 'inbound' });
+    expect(launch.reasoningLevel).toBe('xhigh');
+    expect(conversationLaunch({ poolKey: session.poolKey, agent, session: { ...session, runtime: 'codex' },
+      channel: 'telegram', intent: 'inbound' }).reasoningLevel).toBeUndefined();
+  });
+
   it('repairs a retained transcript even when the in-memory process disappeared', () => {
     expect(conversationLaunch({ poolKey: session.poolKey, agent: { ...agent, sessionId: undefined },
       session: { ...session, runtime: 'cc' }, channel: 'telegram', intent: 'inbound' }))

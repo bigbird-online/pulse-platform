@@ -2,14 +2,15 @@ import { nextTurnSeq, type MaintenanceBarrier } from './maintenance-barrier.js';
 import { ccToolUses, publicWorkEvents, toolTurnEffect } from './work-process-events.js';
 import { redactRuntimeDiagnostic } from './public-runtime-failure.js';
 import { humanMessageProof, createCollaborationCapture, type CapturedAttempt, type CollaborationCapture } from './collaboration-capture.js';
-import { isBoundConversationRuntime, runtimeAuthorityRef, usageRuntimeForConversation } from './runtime-usage-binding.js';
+import { isBoundConversationRuntime, runtimeAuthorityRef, usageRuntimeForConversation, type RuntimeUsageBinding } from './runtime-usage-binding.js';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { resolvePulseRuntimePriority } from './codex-defaults.js';
 import { RuntimeUsageSealError, type RuntimeUsageBaselineReadback, type RuntimeUsageSealReadback } from './runtime-usage-seal.js';
 import type { CcUsageMeasurement } from './cc-usage-measurement.js';
 import { isRuntimeNotificationTurnMessage, RUNTIME_NOTIFICATION_TURN_ORIGIN } from './runtime-background-work.js';
-import { ContextRolloverHints, carriesRolloverHint, withRolloverHint } from './context-rollover-hint.js';
+import { ContextRolloverHints, carriesRolloverHint, withRolloverHint, withoutRolloverHint } from './context-rollover-hint.js';
+import { internalTurnRefused, settleInternalTurn, withoutInternalTurnFence } from './internal-turn-fence.js';
 import type {
   AgentConfig,
   BusyProgressEvent,
@@ -29,6 +30,7 @@ import type {
   SpawnConfig,
   StreamJsonMessage,
   PoolExitMeta,
+  TurnInputReceiver,
 } from './types.js';
 
 // CC triggers auto-compact at 80%; mirror the same threshold for Relay-injected /compact.
@@ -82,6 +84,7 @@ export interface ConversationSpawnConfig extends SpawnConfig {
 }
 
 export interface ConversationProcess {
+  ccAuthMode?: CCProcess['ccAuthMode'];
   /** Existing native conversation only; not WI execution admission. */
   conversationOnly?: boolean;
   /** Native tool guard verified, independently of lifecycle readiness. */
@@ -114,6 +117,12 @@ export interface ConversationRuntimeAdapter {
    *  the turn sits where its shutdown hands it over. Otherwise the manager
    *  calls it once `send` has resolved. */
   readonly admitsTurns?: boolean;
+  /** True when the adapter applies `turn.prepareInput` itself, right before it
+   *  writes a new turn to the runtime. */
+  readonly preparesInput?: boolean;
+  /** True when the adapter checks an internal delivery's target conversation where it takes the
+   *  turn to start the model (internal-turn-fence.ts); for the others the manager checks once here. */
+  readonly fencesInternalTurns?: boolean;
   /** Deliver a user correction into an already-running native turn. */
   steer?(tenantId: string, message: StreamJsonMessage): Promise<void>;
   /** Inject raw keystrokes into an interactive CC PTY (AskUserQuestion answers). */
@@ -128,6 +137,10 @@ export interface ConversationRuntimeAdapter {
   setThinkingLevel?(tenantId: string, level: import('./types.js').ConversationReasoningLevel): Promise<void>;
   /** List reasoning levels supported by the current native model. */
   listThinkingLevels?(tenantId: string): Promise<import('./types.js').ConversationReasoningLevel[]>;
+  /** Attribute this live conversation's next turns to a WI (agy: no tools to declare one). */
+  bindRuntimeUsage?(tenantId: string, binding: RuntimeUsageBinding): void;
+  /** The WI binding the live conversation still carries; an adapter that takes bindings may withdraw one. */
+  runtimeUsageBinding?(tenantId: string): RuntimeUsageBinding | undefined;
   /** Run runtime-native context compaction. */
   compact?(tenantId: string, customInstructions?: string): Promise<Record<string, unknown>>;
   /** Read runtime-native state for user-visible diagnostics. */
@@ -182,6 +195,7 @@ export interface ConversationRuntimeManager extends Omit<ConversationRuntimeAdap
   listModels(tenantId: string): Promise<ConversationRuntimeModelOption[]>;
   setThinkingLevel(tenantId: string, level: import('./types.js').ConversationReasoningLevel): Promise<void>;
   listThinkingLevels(tenantId: string): Promise<import('./types.js').ConversationReasoningLevel[]>;
+  bindRuntimeUsage(tenantId: string, binding: RuntimeUsageBinding): void;
   compact(tenantId: string, customInstructions?: string): Promise<Record<string, unknown>>;
   getNativeState(tenantId: string): Promise<Record<string, unknown>>;
   getNativeSessionStats(tenantId: string): Promise<Record<string, unknown>>;
@@ -217,11 +231,16 @@ export function resolveConversationRuntimePreference(
   // the preference list so agents configured with `runtime: "cc-sdk"` route to
   // the SDK adapter instead of falling back to legacy cc.
   const preference = requested.filter(
-    (runtime): runtime is ConversationRuntimeId => runtime === 'cc' || runtime === 'codex' || runtime === 'cc-sdk' || runtime === 'pi',
+    (runtime): runtime is ConversationRuntimeId => runtime === 'cc' || runtime === 'codex' || runtime === 'cc-sdk'
+      || runtime === 'pi' || runtime === 'agy',
   );
   const deduped = [...new Set(preference.length ? preference : [resolveConversationRuntimeId(config)])];
   if (deduped.includes('pi') && (deduped.length !== 1 || deduped[0] !== 'pi')) {
     throw new Error('Pi runtime is opt-in only and cannot participate in automatic runtime fallback');
+  }
+  // agy 出口失败须明确报错，不得被自动切到别的运行时（即别的出口）掩盖。
+  if (deduped.includes('agy') && (deduped.length !== 1 || deduped[0] !== 'agy')) {
+    throw new Error('agy runtime is opt-in only and cannot participate in automatic runtime fallback');
   }
   return deduped;
 }
@@ -281,6 +300,8 @@ export function createPoolConversationAdapter(
     },
     send: pool.send,
     admitsTurns: pool.admitsTurns === true,
+    preparesInput: pool.preparesInput === true,
+    fencesInternalTurns: pool.fencesInternalTurns === true,
     injectInput: pool.injectInput,
     kill: pool.kill,
     killAll: pool.killAll,
@@ -375,9 +396,44 @@ export function createConversationRuntimeManager(options: { collaborationCapture
   // Dedup auto-compact injection per (tenantId, sessionId) so we only inject once
   // per conversation. /new resets the sessionId naturally; explicit kill clears below.
   const compactInjectedSessions = new Set<string>();
-  // Context facts per conversation; the next human message may carry a rollover hint.
+  // Context facts per (tenant, native session); a session's turns may carry a
+  // rollover hint. Compaction counts are kept per native session across
+  // restarts. Facts belong to the session of the process that produced them:
+  // a CC record names its session_id; otherwise the session the emitting
+  // process was started with, which the pool replaces with a fresh UUID on a
+  // provider fallback or a stale or broken transcript. Hints belong to the
+  // session of the process that receives the input (TurnInputReceiver).
   const rolloverHints = new ContextRolloverHints();
-  const hintKey = (tenantId: string) => `${tenantId}:${tenantConfig.get(tenantId)?.sessionId ?? 'unknown-session'}`;
+  // What CC's init named for the process started with `spawned`, if it differs.
+  const nativeSessions = new Map<string, {spawned: string; native: string}>();
+  const nativeOf = (tenantId: string, spawned: string | undefined): string | undefined => {
+    const seen = nativeSessions.get(tenantId);
+    return spawned && seen?.spawned === spawned ? seen.native : spawned;
+  };
+  const runningSession = (tenantId: string, adapter?: ConversationRuntimeAdapter): string | undefined => {
+    const runtime = adapter?.id ?? tenantRuntime.get(tenantId);
+    return (runtime ? adapters.get(runtime)?.get(tenantId)?.sessionId : undefined) || tenantConfig.get(tenantId)?.sessionId;
+  };
+  const hintWi = (tenantId: string): string | undefined => {
+    const config = tenantConfig.get(tenantId);
+    return config?.computeCostBinding?.work_item_id ?? config?.meteringWorkItemId;
+  };
+  /** The turn's input opened by the hint its receiving session calls for, and by no hint of another session. */
+  const hintedInput = (tenantId: string, input: StreamJsonMessage, session: string | undefined): StreamJsonMessage => {
+    const hint = rolloverHints.take(tenantId, session);
+    return hint ? withRolloverHint(input, hint) : withoutRolloverHint(input);
+  };
+  /** One turn's preparation: decided for each receiving session, kept as written when replayed into the same one. */
+  const hintPreparer = (tenantId: string) => {
+    let preparedFor: string | undefined;
+    return (input: StreamJsonMessage, receiver: TurnInputReceiver): StreamJsonMessage => {
+      const session = nativeOf(tenantId, receiver.sessionId);
+      if (preparedFor !== undefined && preparedFor === session) return input;
+      preparedFor = session;
+      // Interactive CC reports no compaction boundaries to Relay: no hint there.
+      return receiver.mode === 'interactive' ? withoutRolloverHint(input) : hintedInput(tenantId, input, session);
+    };
+  };
 
   function evaluateContextAutoCompact(adapter: ConversationRuntimeAdapter, tenantId: string, msg: StreamJsonMessage): void {
     if (adapter.id !== 'cc') return;
@@ -529,16 +585,30 @@ export function createConversationRuntimeManager(options: { collaborationCapture
       // Existing adapters queue turns in submission order. Killing the failed
       // adapter drops that queue, so replay the accepted head and its still-
       // pending tail with their original identities on the replacement.
-      for (const queuedTurn of queuedTurns ?? [turn]) {
+      const replacement = adapterFor(nextRuntime);
+      for (const queuedTurn of [...(queuedTurns ?? [turn])]) {
         if (queuedTurn.receipt) {
           capture?.finish(queuedTurn.receipt, 'failed');
           rememberAttempt(tenantId, queuedTurn.receipt);
+        }
+        // An internal delivery follows the fallback only into the conversation it was routed to;
+        // the replacement session is another one unless the routing names it.
+        if (internalTurnRefused(queuedTurn.message, replacement.get(tenantId))) {
+          settleInternalTurn(queuedTurn.message, 'refused');
+          const index = queuedTurns?.indexOf(queuedTurn) ?? -1;
+          if (index >= 0) queuedTurns!.splice(index, 1);
+          if (queuedTurns?.length === 0) activeTurns.delete(tenantId);
+          continue;
+        }
+        if (!replacement.fencesInternalTurns) {
+          settleInternalTurn(queuedTurn.message, 'consumed');
+          queuedTurn.message = withoutInternalTurnFence(queuedTurn.message);
         }
         queuedTurn.receipt = capture?.begin(nextRuntime, queuedTurn.receiptConfig ?? config, queuedTurn.context.correlationId,
           queuedTurn.receipt?.ref);
         queuedTurn.context.hostAttemptRef = queuedTurn.receipt?.ref;
         if (queuedTurn.receipt) { rememberAttempt(tenantId, queuedTurn.receipt); capture?.linkHuman(queuedTurn.receipt, humanMessageProof(queuedTurn.message)); }
-        await adapterFor(nextRuntime).send(tenantId, queuedTurn.message, queuedTurn.context);
+        await replacement.send(tenantId, queuedTurn.message, queuedTurn.context);
       }
       return true;
     } catch (fallbackError) {
@@ -635,7 +705,12 @@ export function createConversationRuntimeManager(options: { collaborationCapture
         : delivered;
       emitter.emit('response', tenantId, correlated);
       if (turn?.context.deliveryVisibility !== 'control') evaluateContextAutoCompact(adapter, tenantId, msg);
-      rolloverHints.observe(hintKey(tenantId), msg);
+      const spawned = runningSession(tenantId, adapter);
+      const recorded = adapter.id === 'cc' && typeof msg.session_id === 'string' && msg.session_id ? msg.session_id : undefined;
+      if (recorded && msg.type === 'system' && msg.subtype === 'init' && spawned) {
+        nativeSessions.set(tenantId, {spawned, native: recorded});
+      }
+      rolloverHints.observe(tenantId, msg, {sessionId: recorded ?? nativeOf(tenantId, spawned), wi: hintWi(tenantId)});
       if (msg.type === 'result' && queue) {
         if (msg.is_error === true) terminalResultErrors.add(tenantId);
         const settled = queue.shift();
@@ -660,7 +735,7 @@ export function createConversationRuntimeManager(options: { collaborationCapture
           queue.splice(index, 1);
           if (queue.length === 0) activeTurns.delete(tenantId);
         }
-      } else if (!meta?.hostAttemptRef && !(adapter.id === 'codex' && code === 0)) {
+      } else if (!meta?.hostAttemptRef && !((adapter.id === 'codex' || adapter.id === 'agy') && code === 0)) {
         for (const turn of activeTurns.get(tenantId) ?? []) {
           if (turn.receipt) capture?.finish(turn.receipt, 'failed');
         }
@@ -782,14 +857,31 @@ export function createConversationRuntimeManager(options: { collaborationCapture
     durableIdempotencyKey?: string,
     submit?: TurnSubmitOptions,
   ): Promise<void> {
-    const hint = carriesRolloverHint(message) ? rolloverHints.take(hintKey(tenantId)) : undefined;
-    if (hint) message = withRolloverHint(message, hint);
+    const hintable = carriesRolloverHint(message);
     const arrival: TurnArrival = { seq: submit?.seq ?? nextTurnSeq(), accepted: () => submit?.onAccepted?.(),
       owned: Boolean(submit?.onAccepted) || Boolean(durableIdempotencyKey), resume: submit?.resume };
     // Queue, never drop: a held barrier delays the turn until it is released.
     // A resumed record of a turn waiting at the barrier goes out from there.
     if (await options.barrier?.admit(tenantId, tenantRuntime.get(tenantId) ?? 'unknown', message, arrival) === 'held_here') return;
     const adapter = adapterForTenant(tenantId);
+    // An internal delivery that waited here (the barrier) for a conversation that has since
+    // switched goes no further. The adapter's own check where it starts the turn is the one that
+    // counts; an adapter without one has this check only.
+    if (internalTurnRefused(message, adapter.get(tenantId))) {
+      settleInternalTurn(message, 'refused');
+      arrival.accepted();
+      return;
+    }
+    if (!adapter.fencesInternalTurns) {
+      settleInternalTurn(message, 'consumed');
+      message = withoutInternalTurnFence(message);
+    }
+    // An adapter that queues turns asks for the hint as it writes the turn to
+    // a process, so a turn queued behind a compacting one counts that
+    // compaction and a turn the pool hands to a replacement process is decided
+    // for that process's session; for the others it is decided here.
+    const prepareInput = hintable && adapter.preparesInput ? hintPreparer(tenantId) : undefined;
+    if (hintable && !adapter.preparesInput) message = hintedInput(tenantId, message, nativeOf(tenantId, runningSession(tenantId)));
     const queue = activeTurns.get(tenantId) ?? [];
     if (queue.length > 0 && adapter.id === 'pi') {
       if (
@@ -818,7 +910,14 @@ export function createConversationRuntimeManager(options: { collaborationCapture
     const correlationId = durableIdempotencyKey
       ? `turn:entry:${durableIdempotencyKey}`
       : `turn:${randomUUID()}`;
-    const config = tenantConfig.get(tenantId);
+    let config = tenantConfig.get(tenantId);
+    // A binding the runtime withdrew (agy changed its native conversation) is not carried by
+    // this turn's Host receipt, nor by a respawn of this tenant.
+    if (config?.computeCostBinding && adapter.runtimeUsageBinding
+      && adapter.runtimeUsageBinding(tenantId)?.binding_sha256 !== config.computeCostBinding.binding_sha256) {
+      config = { ...config, computeCostBinding: undefined };
+      tenantConfig.set(tenantId, config);
+    }
     if (durableIdempotencyKey) {
       const disposition = capture?.dispatchDisposition?.(adapter.id, config, correlationId);
       // Metering is shadow evidence only.  Preserve recovery uncertainty, but
@@ -839,6 +938,7 @@ export function createConversationRuntimeManager(options: { collaborationCapture
         idempotencyKey: durableIdempotencyKey ?? correlationId,
         effect: 'no-effect',
         deliveryVisibility: message.delivery_visibility === 'control' ? 'control' : 'public',
+        ...(prepareInput ? {prepareInput} : {}),
       },
     };
     const nativeSession = adapter.get(tenantId)?.sessionId;
@@ -998,10 +1098,21 @@ export function createConversationRuntimeManager(options: { collaborationCapture
       const adapter = adapterForTenant(tenantId);
       if (!adapter.setThinkingLevel) throw new Error(`Conversation runtime ${adapter.id} does not support native thinking levels`);
       await adapter.setThinkingLevel(tenantId, level);
+      // A respawn of this tenant (fallback, crash restart) keeps the level.
+      const config = tenantConfig.get(tenantId);
+      if (config) tenantConfig.set(tenantId, { ...config, reasoningLevel: level });
     },
     async listThinkingLevels(tenantId) {
       const adapter = adapterForTenant(tenantId);
       return adapter.listThinkingLevels ? adapter.listThinkingLevels(tenantId) : [];
+    },
+    bindRuntimeUsage(tenantId, binding): void {
+      const adapter = adapterForTenant(tenantId);
+      if (!adapter.bindRuntimeUsage) throw new Error(`Conversation runtime ${adapter.id} does not take a WI usage binding`);
+      adapter.bindRuntimeUsage(tenantId, binding);
+      // Host receipts of the next turns, and a respawn of this tenant, carry it.
+      const config = tenantConfig.get(tenantId);
+      if (config) tenantConfig.set(tenantId, { ...config, computeCostBinding: binding });
     },
     async compact(tenantId, customInstructions) {
       const adapter = adapterForTenant(tenantId);
@@ -1041,7 +1152,8 @@ export function createConversationRuntimeManager(options: { collaborationCapture
       for (const key of compactInjectedSessions) {
         if (key.startsWith(`${tenantId}:`)) compactInjectedSessions.delete(key);
       }
-      rolloverHints.forget(`${tenantId}:`);
+      rolloverHints.forget(tenantId);
+      nativeSessions.delete(tenantId);
     },
     async killAll(): Promise<void> {
       await Promise.all(Array.from(adapters.values(), (adapter) => adapter.killAll()));
@@ -1054,6 +1166,7 @@ export function createConversationRuntimeManager(options: { collaborationCapture
       activeTurns.clear();
       terminalResultErrors.clear();
       compactInjectedSessions.clear();
+      nativeSessions.clear();
     },
     get(tenantId: string): ConversationProcess | undefined {
       const runtime = tenantRuntime.get(tenantId);

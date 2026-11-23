@@ -50,10 +50,12 @@ task-notification hops) are refused: stricter, never looser.
 The same proof places a session's own turn: the main turn that ran a
 `git commit` (`request_charged`) is charged to its request's WI.
 
-A request declaring the child's parent moves the turns to the child only
-through the export ComputeCost's registry names (`child_work_items`):
-`exported_child` reads that same export the same way, so the kernel can require
-the child there, under its parent, created no later than the first turn.
+A request declaring the child's parent, or another child of that parent (a
+request advancing several children in parallel), moves the turns to the child
+only through the export ComputeCost's registry names
+(`child_work_items.lineage_child`): `exported_child` reads that same export the
+same way, so the kernel can require the child there, under its parent, created
+no later than the first turn, and each declared sibling under the same parent.
 """
 
 from __future__ import annotations

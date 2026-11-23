@@ -217,6 +217,44 @@ class StatsDashboardTests(unittest.TestCase):
                       'collection and publication must reuse one verified ledger instance')
         self.assertIsNone(json.loads(output.read_text())['views'][0]['summary']['cost']['machine_cash_usd'])
 
+    def test_a_collection_backlog_marks_both_publications_and_still_publishes(self):
+        from contextlib import redirect_stdout
+        import io
+        from pulse_compute_cost import stats_dashboard
+        from pulse_compute_cost.receipts import reference
+        registry = Path(self.temp.name)/'backlog-sources.json'
+        doc = {'schema':'computecost_source_registry/v1', 'ledger_root':str(Path(self.temp.name)/'backlog-ledger'),
+               'sources':[{'id':'native-push-ownermac','kind':'native_push','peer':'ownermac',
+                           'path':str(Path(self.temp.name)/'spool'),'source_ids':['cc']}]}
+        registry.write_text(json.dumps(doc)); registry.chmod(0o600)
+        facts = Path(self.temp.name)/'backlog-facts.json'; facts.write_text(json.dumps(SUBSCRIPTIONS))
+        output, closed = Path(self.temp.name)/'backlog'/'cost.json', Path(self.temp.name)/'backlog'/'last-week.json'
+        summary = {'source_ref': reference('source', 'native-push-ownermac'), 'kind': 'native_push',
+                   'status': 'partial', 'reason': 'observation_backlog', 'fact_count': 39,
+                   'source_detail': {'bundles': 39, 'deferred_bundles': 527}}
+        stdout = io.StringIO()
+        with patch('pulse_compute_cost.receipt_sources.collect_registered_sources',
+                   return_value={'sources': [summary]}), redirect_stdout(stdout):
+            code = stats_dashboard.main(['--source-registry',str(registry),'--collect','--procurement-facts',
+                str(facts),'--source-revision',REV,'--output',str(output),'--last-week-output',str(closed)])
+        self.assertEqual(code, 0)
+        marker = {'status':'partial','reason':'observation_backlog','peers':[{'id':'ownermac','deferred_bundles':527}]}
+        for path in (output, closed):
+            published = json.loads(path.read_text())
+            self.assertEqual(published['collection_backlog'], marker)
+            self.assertEqual(published['sha256'], stats_dashboard.digest(
+                {k: v for k, v in published.items() if k != 'sha256'}))
+        self.assertEqual(json.loads(stdout.getvalue())['collection_backlog'], marker)
+        self.assertEqual(stats_dashboard.last_collection_backlog(), {'ownermac': 527})
+        # A complete collection carries no marker.
+        summary.update(status='complete', reason=None, source_detail={'bundles': 3})
+        with patch('pulse_compute_cost.receipt_sources.collect_registered_sources',
+                   return_value={'sources': [summary]}), redirect_stdout(io.StringIO()):
+            stats_dashboard.main(['--source-registry',str(registry),'--collect','--procurement-facts',
+                str(facts),'--source-revision',REV,'--output',str(output)])
+        self.assertNotIn('collection_backlog', json.loads(output.read_text()))
+        self.assertEqual(stats_dashboard.last_collection_backlog(), {})
+
     def test_amountless_result_never_replaces_published_amounts(self):
         from contextlib import redirect_stderr, redirect_stdout
         import io
@@ -243,6 +281,97 @@ class StatsDashboardTests(unittest.TestCase):
             {'schema':'stats_cost_publication_failure/v1','reason':'query_source_unavailable',
              'error_type':'PublicationWithheld'})
         self.assertNotIn(self.temp.name, errors.getvalue())
+
+    def test_a_failed_collection_reports_only_known_receipt_error_codes(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        import io
+        from pulse_compute_cost import stats_dashboard
+        from pulse_compute_cost.receipts import ReceiptError
+        output = Path(self.temp.name)/'failed-dashboard.json'
+        registry = Path(self.temp.name)/'failed-sources.json'
+        registry.write_text(json.dumps({'schema':'computecost_source_registry/v1',
+            'ledger_root':str(Path(self.temp.name)/'failed-ledger'),'sources':[]})); registry.chmod(0o600)
+        facts = Path(self.temp.name)/'failed-facts.json'; facts.write_text(json.dumps(SUBSCRIPTIONS))
+        args = ['--source-registry',str(registry),'--procurement-facts',str(facts),
+                '--source-revision',REV,'--output',str(output)]
+        base = {'schema':'stats_cost_publication_failure/v1','reason':'publication_failed'}
+
+        def reported(error):
+            errors = io.StringIO()
+            with patch.object(stats_dashboard, 'build_dashboard', side_effect=error), \
+                 redirect_stdout(io.StringIO()), redirect_stderr(errors):
+                self.assertEqual(stats_dashboard.main(args), 2)
+            self.assertNotIn(self.temp.name, errors.getvalue())
+            self.assertNotIn('secret', errors.getvalue())
+            return json.loads(errors.getvalue().splitlines()[0])
+        self.assertEqual(reported(ReceiptError('source IDs must be present and unique')),
+                         {**base, 'error_type':'ReceiptError', 'error_code':'source_ids_not_unique'})
+        # Text that carries received values or paths, fixed-looking or not, gives only the type.
+        for text in ('secret fields do not match the domain contract',
+                     f"unsafe source '{self.temp.name}/secret dir/x.json'",
+                     'source IDs must be present and unique secret'):
+            with self.subTest(text=text[:30]):
+                self.assertEqual(reported(ReceiptError(text)), {**base, 'error_type':'ReceiptError'})
+        self.assertEqual(reported(ValueError(f'{self.temp.name}/secret')), {**base, 'error_type':'ValueError'})
+
+    def test_a_failed_publication_names_its_cause_chain_without_free_text(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        import io
+        from subprocess import TimeoutExpired
+        from pulse_compute_cost import stats_dashboard
+        from pulse_compute_cost.receipts import ReceiptError
+        class Rejected(Exception):
+            def __init__(self, code, reason):
+                self.code = code
+                super().__init__(reason)
+        output = Path(self.temp.name)/'chain-dashboard.json'
+        registry = Path(self.temp.name)/'chain-sources.json'
+        registry.write_text(json.dumps({'schema':'computecost_source_registry/v1',
+            'ledger_root':str(Path(self.temp.name)/'chain-ledger'),'sources':[]})); registry.chmod(0o600)
+        facts = Path(self.temp.name)/'chain-facts.json'; facts.write_text(json.dumps(SUBSCRIPTIONS))
+        args = ['--source-registry',str(registry),'--procurement-facts',str(facts),
+                '--source-revision',REV,'--output',str(output)]
+
+        def chained(*links):
+            error = None
+            for link in reversed(links):
+                link.__cause__ = error
+                error = link
+            return error
+
+        def reported(error):
+            errors = io.StringIO()
+            with patch.object(stats_dashboard, 'build_dashboard', side_effect=error), \
+                 redirect_stdout(io.StringIO()), redirect_stderr(errors):
+                self.assertEqual(stats_dashboard.main(args), 2)
+            self.assertNotIn(self.temp.name, errors.getvalue())
+            self.assertNotIn('secret', errors.getvalue())
+            return json.loads(errors.getvalue().splitlines()[0])
+        timed_out = reported(chained(
+            ReceiptError('production observations unavailable; preserve source facts and retry'),
+            Rejected('ledger_unavailable', 'Production authority could not be observed'),
+            TimeoutExpired(['git', 'fetch', f'{self.temp.name}/secret'], 60)))
+        self.assertEqual(timed_out, {'schema':'stats_cost_publication_failure/v1',
+            'reason':'production_ledger_unavailable', 'error_type':'ReceiptError', 'error_chain':[
+                {'type':'ReceiptError',
+                 'message':'production observations unavailable; preserve source facts and retry'},
+                {'type':'Rejected', 'code':'ledger_unavailable',
+                 'message':'Production authority could not be observed'},
+                {'type':'TimeoutExpired'}]})
+        busy = reported(chained(
+            ReceiptError('production observation save unconfirmed; retry the same source facts'),
+            Rejected('ledger_busy', 'Unrelated publications exhausted this bounded attempt; retry the original request')))
+        self.assertEqual(busy['error_chain'][1]['code'], 'ledger_busy')
+        # A refused fact names which shared-boundary rule refused it.
+        refused = reported(chained(
+            ReceiptError('production observation save unconfirmed; retry the same source facts'),
+            Rejected('observation_invalid', 'Unsupported typed observation')))
+        self.assertEqual(refused['error_chain'][1], {'type':'Rejected', 'code':'observation_invalid',
+                                                     'message':'Unsupported typed observation'})
+        # Unknown text, an unsafe code and a self-referencing chain stay bounded and textless.
+        loop = Rejected('Secret Code', f'{self.temp.name}/secret'); loop.__cause__ = loop
+        unknown = reported(chained(ReceiptError(f'unsafe source {self.temp.name}/secret'), loop))
+        self.assertEqual(unknown['error_chain'], [{'type':'ReceiptError'}, {'type':'Rejected'}])
 
     def test_failure_reasons_are_machine_codes_never_messages(self):
         from subprocess import TimeoutExpired

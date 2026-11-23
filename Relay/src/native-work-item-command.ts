@@ -1,12 +1,14 @@
 import { relayChildEnv } from './relay-secrets.js';
 import {rolloverNativeSession,sessionControl} from './native-session-rollover.js';
-import {abandonWiSwitch,abandonedText,settleInterruptedSwitch,switchInProgress,switchRecordCurrent,switchWorkItem,type SwitchOutcome} from './native-wi-switch.js';
+import {abandonWiSwitch,abandonedText,settleInterruptedSwitch,switchInProgress,switchRecordCurrent,switchWorkItem,type PendingWiSwitch,type SwitchOutcome} from './native-wi-switch.js';
 import {execFile} from 'node:child_process';
 import type { AgentConfig, StateManager, StreamJsonMessage } from './types.js';
 import type { CommandRuntime } from './commands.js';
 import { annotatedHumanMessage, recordHumanInput, latestHumanInput, type HumanCommandSource } from './scl-human-decision.js';
 import { managedRelayPath } from './managed-paths.js';
 import { loadPiRuntimeManifest, reviewedWorkItemCore } from './pi-runtime-config.js';
+import { nativeCommandSource, type NativeSourceCandidate } from './session-identity.js';
+import { AGY_NO_CONVERSATION, agySwitchPrompt, agyTakeoverPrompt, bindAgyWorkItem } from './agy-work-item.js';
 
 /** The installed node selects one core for every runtime and channel. */
 export function nodeWorkItemCore(): {extension:string;python:string;entrypoint:string} | undefined {
@@ -156,6 +158,22 @@ export async function readSessionAccess(pid:number): Promise<SessionReadback> {
     workspaces: allocatedWorkspaces(result.workspaces) };
 }
 
+/**
+ * The same readback for an idle agy conversation, named by Relay's retained record
+ * (harness_rewrite/relay_channel.py `access_host`): agy runs no process between turns
+ * and fixes each turn's permissions when it launches.
+ */
+export async function readRetainedSessionAccess(nativeId: string, tenant: string): Promise<SessionReadback> {
+  if (!nodeWorkItemCore()) return { access: [], standing: [], workspaces: [] };
+  const result = await runAccessCore('relay-access', { native_id: nativeId, tenant }, 30_000);
+  if (result.schema !== 'harness.session_access/v1' || !Array.isArray(result.grants))
+    throw new Error(result.error?.code ?? 'session_access_unavailable');
+  const standing = (Array.isArray(result.standing) ? result.standing : []).map((grant: {paths: string[]}) =>
+    ({ paths: grant.paths, mode: 'read', standing: true }));
+  return { access: accessRows([...result.grants, ...standing]), standing: accessRows(standing),
+    workspaces: allocatedWorkspaces(result.workspaces) };
+}
+
 /** Every Agent's standing grants in one kernel read (it replays every WI journal). */
 export async function readStandingAccess(): Promise<Map<string, SessionAccess[]>> {
   const result = await runAccessCore('relay-standing-access', {}, 120_000);
@@ -222,6 +240,13 @@ export async function dispatchNativeWorkItemCommand(options: {
   const process = runtime.get(poolKey);
   if (acquired !== poolKey || !process)
     throw new Error('Native WI command requires the original conversation');
+  const agy=('runtime' in process?(process as {runtime?:string}).runtime:undefined)==='agy';
+  // agy has no process between turns: the core recognizes it by the conversation it named.
+  const native=nativeCommandSource(process as NativeSourceCandidate,poolKey);
+  if(!native){
+    await options.reply?.(AGY_NO_CONVERSATION);
+    return;
+  }
   if (!isLatest()) throw new Error('A later human input superseded this command');
   if(rollover&&(switchInProgress(poolKey)||stateManager?.getSession(poolKey)?.pendingWiSwitch)){
     await options.reply?.('一次 /wi switch 尚未完成，完成后再 /wi rollover；未做任何改动。');
@@ -241,36 +266,55 @@ export async function dispatchNativeWorkItemCommand(options: {
       acquire:options.acquire,control:options.control??runNativeChannel,newSessionId:options.newSessionId,
       isLatest:()=>latestHumanInput(poolKey)===ref});
     // The continuation goes first and clears the switch record once admitted; see deliverSwitchContinuation.
-    if(outcome.target)deliverSwitchContinuation({poolKey,runtime,stateManager:options.stateManager,
-      reply:text=>options.reply?.(text)??Promise.resolve(),message:annotatedHumanMessage(outcome.resumed
-      ? '切回 '+outcome.target+'：人类用 /wi switch 回到本会话。请用 pulse_work_item 恢复 '+outcome.target+'，按当前状态继续推进。'
-      : '接手 '+outcome.target+'：人类用 /wi switch 在新会话接手这个工作项。请用 pulse_work_item 恢复 '+outcome.target
-        +'，先读其检查点再继续推进；标准工作项若还没有计划，先起草计划请人类确认。',
-      source,poolKey)});
+    if(outcome.target)deliverSwitchContinuation({poolKey,runtime,stateManager:options.stateManager,agent:options.agent,
+      reply:text=>options.reply?.(text)??Promise.resolve(),message:text=>annotatedHumanMessage(text,source,poolKey)});
     await options.reply?.(outcome.text);
     return;
   }
-  const result=await (options.control??runNativeChannel)({ref,...(process.process?.pid
-    ? {pid:process.process.pid}
-    : {native_id:('codexThreadId' in process?process.codexThreadId:undefined)??process.sessionId,tenant:poolKey})});
-  await options.reply?.(nativeChannelReply(result));
+  const result=await (options.control??runNativeChannel)({ref,...native});
   const target=handoffWorkItem(source.message,result);
+  // The core has committed: the binding and the takeover go out before any chat reply, so a
+  // failed reply cannot leave the WI unbound or the Agent uninstructed.
+  let notice:string|undefined;
+  if(target&&agy&&'native_id' in native){
+    try{notice=bindAgyWorkItem(options,target,process.sessionId,native.native_id);}
+    catch(error){
+      // A failed state write must not hold back the takeover; the turns run unattributed until a /wi command binds again.
+      console.error({ts:new Date().toISOString(),level:'error',msg:'agy WI usage binding not saved',poolKey,error:String(error)});
+      notice='注意：'+target+' 已交给本会话，但用量绑定未能写盘，本会话的用量暂不计入该 WI；可稍后再发一次这条 /wi 命令。';
+    }
+  }
   // Taking over work is the human's instruction to the Agent, not only a lifecycle
   // readback: hand the same original input to the runtime in plain text.
-  if(target)handOver(options,annotatedHumanMessage(
-    '接手 '+target+'：人类已用 /wi 命令接手这个工作项（'+nativeChannelReply(result).replace(/\n/g,' · ')+'）。'
+  const readback=target?nativeChannelReply(result).replace(/\n/g,' · '):'';
+  if(target)handOver(options,annotatedHumanMessage(agy
+    ? agyTakeoverPrompt(target,readback)
+    : '接手 '+target+'：人类已用 /wi 命令接手这个工作项（'+readback+'）。'
     +'请用 pulse_work_item 恢复 '+target+'，按当前状态继续推进；标准工作项若还没有计划，先起草计划请人类确认。',
     source,poolKey));
+  await options.reply?.(notice?nativeChannelReply(result)+'\n'+notice:nativeChannelReply(result));
 }
 
-/** The continuation an Agent's own switch hands the session it entered: as /wi switch, but from the Host. */
-export function agentSwitchContinuation(target:string,resumed:boolean,by:'agent'|'human'='agent'):StreamJsonMessage {
+/**
+ * The continuation text a settled switch hands the session it entered, chosen by that session's
+ * runtime (`pending.dest.runtime`, the unit the conversation now stands on), never by the session
+ * it left: an agy target cannot call pulse_work_item and is told so; every other runtime resumes
+ * the WI with it. The one choice for the immediate continuation and for every later delivery.
+ */
+export function switchContinuation(pending:Pick<PendingWiSwitch,'target'|'resumed'|'dest'>,by:'agent'|'human'):{agy:boolean;text:string} {
+  const {target,resumed}=pending;
   const who=by==='agent'?'你用 request_switch':'人类用 /wi switch';
-  return {type:'human',content:'[Host WI switch'+(by==='agent'?': your own request_switch':'')
-    +'; this is not a new human decision.]\n'+(resumed
+  if(pending.dest.runtime==='agy')return {agy:true,text:agySwitchPrompt(target,who,resumed)};
+  return {agy:false,text:resumed
     ? '切回 '+target+'：'+who+' 回到本会话。请用 pulse_work_item 恢复 '+target+'，按当前状态继续推进。'
     : '接手 '+target+'：'+who+' 在新会话接手这个工作项。请用 pulse_work_item 恢复 '+target
-      +'，先读其检查点再继续推进；标准工作项若还没有计划，先起草计划请人类确认。')};
+      +'，先读其检查点再继续推进；标准工作项若还没有计划，先起草计划请人类确认。'};
+}
+
+/** The Host's wrapper for a continuation no human input carries (a recovery pass, an Agent's own switch). */
+function hostSwitchMessage(text:string,by:'agent'|'human'):StreamJsonMessage {
+  return {type:'human',content:'[Host WI switch'+(by==='agent'?': your own request_switch':'')
+    +'; this is not a new human decision.]\n'+text};
 }
 
 /** Continuations in flight in this process, by conversation and switch reference. */
@@ -281,14 +325,17 @@ const delivering=new Set<string>();
  * continuation under `operation_v1_wi_switch_<ref>`; only once the runtime admits it is the record
  * cleared. Not awaited: the turn it starts would hold the caller for its whole length. A restart
  * before admission leaves the record, and the handover pass delivers again with the same key.
- * `message` replaces the Host text (a human /wi switch carries the human's own input).
+ * `message` wraps the text instead of the Host header (a human /wi switch carries the human's own input).
+ * An agy target is bound to the WI first, when `agent` is given (see switchContinuation).
  * The continuation goes only to the recorded target session: when the conversation stands on
  * another one (a human /reset or /new, a rollover), the record is abandoned and nothing is sent.
  * Returns 'delivering' when the record waits on a delivery (started now or already in flight),
- * 'abandoned' when it was dropped, 'none' when no continuation is due.
+ * 'abandoned' when it was dropped, 'none' when no continuation is due, 'failed' when this attempt
+ * could not start (binding or a state write threw): the in-flight mark is cleared and the record
+ * stays, so the handover pass retries the same committed switch.
  */
 export function deliverSwitchContinuation(options:{poolKey:string;runtime:CommandRuntime;stateManager:StateManager;
-  reply:(text:string)=>Promise<unknown>;message?:StreamJsonMessage}):'delivering'|'abandoned'|'none' {
+  reply:(text:string)=>Promise<unknown>;message?:(text:string)=>StreamJsonMessage;agent?:AgentConfig}):'delivering'|'abandoned'|'none'|'failed' {
   const {poolKey,runtime,stateManager}=options;
   const saved=stateManager.getSession(poolKey);
   const pending=saved?.pendingWiSwitch;
@@ -302,30 +349,44 @@ export function deliverSwitchContinuation(options:{poolKey:string;runtime:Comman
   }
   if(delivering.has(key))return 'delivering';
   delivering.add(key);
-  const message=options.message??agentSwitchContinuation(pending.target,pending.resumed,pending.agent?'agent':'human');
-  const accepted=()=>{
-    try{
-      const now=stateManager.getSession(poolKey)?.pendingWiSwitch;
-      if(now?.ref===pending.ref&&now.phase==='entered'){
-        stateManager.updateSession(poolKey,{pendingWiSwitch:undefined});
-        stateManager.flushStrict();
-      }
-    }catch(error){console.error({ts:new Date().toISOString(),level:'error',msg:'WI switch record not cleared',
-      poolKey,error:String(error)});}
-    finally{delivering.delete(key);}
-  };
-  let sent:Promise<void>;
-  try{sent=Promise.resolve(runtime.sendIdempotent
-    ? runtime.sendIdempotent(poolKey,message,'operation_v1_wi_switch_'+pending.ref,{onAccepted:accepted})
-    : runtime.send(poolKey,message,{onAccepted:accepted}));}catch(error){sent=Promise.reject(error);}
-  sent.catch(async(error:unknown)=>{
+  const notSent=async(error:unknown)=>{
     delivering.delete(key);
     console.error({ts:new Date().toISOString(),level:'error',msg:'WI switch continuation not sent',poolKey,
       error:String(error)});
     try{await options.reply('切换已生效，接续提示暂未交给 Agent；Relay 会再投递，也可发一条消息让它恢复 '+pending.target+'。');}
     catch{/* best effort */}
-  });
-  return 'delivering';
+  };
+  // Binding and the state writes may throw (a full disk): the attempt then ends here, the mark
+  // is cleared and the record stays for the next handover pass.
+  try{
+    const by=pending.agent?'agent':'human';
+    const chosen=switchContinuation(pending,by);
+    // Bound before the turn starts, so the target's usage counts under the WI from its first turn.
+    const notice=chosen.agy&&options.agent
+      ? bindAgyWorkItem({poolKey,agent:options.agent,runtime,stateManager},pending.target,pending.dest.sessionId,
+        pending.dest.agyConversation?.sessionId===pending.dest.sessionId?pending.dest.agyConversation.conversationId:undefined)
+      : undefined;
+    if(notice)void Promise.resolve().then(()=>options.reply(notice)).catch(()=>{/* best effort */});
+    const message=options.message?options.message(chosen.text):hostSwitchMessage(chosen.text,by);
+    const accepted=()=>{
+      try{
+        const now=stateManager.getSession(poolKey)?.pendingWiSwitch;
+        if(now?.ref===pending.ref&&now.phase==='entered'){
+          stateManager.updateSession(poolKey,{pendingWiSwitch:undefined});
+          stateManager.flushStrict();
+        }
+      }catch(error){console.error({ts:new Date().toISOString(),level:'error',msg:'WI switch record not cleared',
+        poolKey,error:String(error)});}
+      finally{delivering.delete(key);}
+    };
+    Promise.resolve(runtime.sendIdempotent
+      ? runtime.sendIdempotent(poolKey,message,'operation_v1_wi_switch_'+pending.ref,{onAccepted:accepted})
+      : runtime.send(poolKey,message,{onAccepted:accepted})).catch(notSent);
+    return 'delivering';
+  }catch(error){
+    void notSent(error);
+    return 'failed';
+  }
 }
 
 /**
@@ -335,7 +396,8 @@ export function deliverSwitchContinuation(options:{poolKey:string;runtime:Comman
  * whether anything settled or was delivered.
  */
 export async function settleWiSwitch(options:{poolKey:string;runtime:CommandRuntime;stateManager:StateManager;
-  acquire:()=>Promise<string|null>;reply:(text:string)=>Promise<unknown>;control?:typeof runNativeChannel}):Promise<boolean>{
+  acquire:()=>Promise<string|null>;reply:(text:string)=>Promise<unknown>;control?:typeof runNativeChannel;
+  agent?:AgentConfig}):Promise<boolean>{
   const {poolKey,runtime,stateManager}=options;
   const pending=stateManager.getSession(poolKey)?.pendingWiSwitch;
   if(!pending)return false;
@@ -352,12 +414,12 @@ export async function settleWiSwitch(options:{poolKey:string;runtime:CommandRunt
     let live=runtime.get(poolKey);
     // Checked before starting anything: a replaced conversation is never started for an old record.
     if(!switchRecordCurrent(entered,stateManager.getSession(poolKey),live)){
-      if(deliverSwitchContinuation({poolKey,runtime,stateManager,reply:options.reply})==='abandoned')
+      if(deliverSwitchContinuation({poolKey,runtime,stateManager,reply:options.reply,agent:options.agent})==='abandoned')
         text=prefix+abandonedText(entered);
     }else{
       if((!live||live.state==='dead')&&await options.acquire()!==poolKey)return text!==undefined;
       const fresh=!delivering.has(poolKey+'\0'+entered.ref);
-      const delivered=deliverSwitchContinuation({poolKey,runtime,stateManager,reply:options.reply});
+      const delivered=deliverSwitchContinuation({poolKey,runtime,stateManager,reply:options.reply,agent:options.agent});
       if(delivered==='abandoned')text=prefix+abandonedText(entered);
       else if(text===undefined&&fresh&&delivered==='delivering')text=prefix+'切换已生效：'+entered.target
         +' 的接续提示重新交给 Agent。';
@@ -379,7 +441,7 @@ export async function settleWiSwitch(options:{poolKey:string;runtime:CommandRunt
  */
 export async function runAgentSwitch(options:{ref:string;target:string;poolKey:string;runtime:CommandRuntime;
   stateManager:StateManager;acquire:()=>Promise<string|null>;reply:(text:string)=>Promise<unknown>;
-  control?:typeof runNativeChannel;newSessionId?:()=>string}):Promise<SwitchOutcome> {
+  control?:typeof runNativeChannel;newSessionId?:()=>string;agent?:AgentConfig}):Promise<SwitchOutcome> {
   const {poolKey,runtime,target,ref}=options;
   // Relay restarted or the process exited: the source session is resumed to leave from it.
   if(!runtime.get(poolKey)&&await options.acquire()!==poolKey)throw new Error('agent_switch_source_unavailable');
@@ -387,7 +449,8 @@ export async function runAgentSwitch(options:{ref:string;target:string;poolKey:s
   const outcome=await switchWorkItem({poolKey,target,ref,runtime,stateManager:options.stateManager,
     acquire:options.acquire,control:options.control??runNativeChannel,newSessionId:options.newSessionId,
     isLatest:()=>latestHumanInput(poolKey)===latest,agentRequest:true});
-  if(outcome.target)deliverSwitchContinuation({poolKey,runtime,stateManager:options.stateManager,reply:options.reply});
+  if(outcome.target)deliverSwitchContinuation({poolKey,runtime,stateManager:options.stateManager,reply:options.reply,
+    agent:options.agent});
   try{await options.reply('Agent 自主切换：'+outcome.text);}
   catch(error){console.error({ts:new Date().toISOString(),level:'error',msg:'Agent switch notice not sent',poolKey,
     error:String(error)});}

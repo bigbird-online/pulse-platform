@@ -5,7 +5,8 @@ legacy ledger files, and shows collaboration contracts from the same read
 (`collaboration_inbox.board`). ComputeCost reads each item's `completions` as
 accepted WI Outcomes and its `merged_pull_requests` as the WI's output: pull
 requests the core merged itself and read back. `parent` names a child's parent
-WorkItem (null otherwise). A completion's `verification` is `independent`,
+WorkItem (null otherwise); `rollovers` lists the WI's completed session
+rollovers. A completion's `verification` is `independent`,
 `human`, or `agent_review` (a child accepted by its parent holder's review). The export carries no Host
 identity, grant or lifecycle authority and never writes the ledger.
 """
@@ -148,6 +149,29 @@ def merged_pull_requests(state: Json, history: list[Json]) -> list[Json]:
     return sorted(rows, key=lambda r: (r["repository"], r["number"]))
 
 
+def rollovers(history: list[Json]) -> list[Json]:
+    """Each completed session rollover: a successor accepted the reserved transfer.
+
+    ``requested_by`` is ``agent`` when the holder asked for it itself
+    (request_rollover), else ``host`` (the human's /wi rollover). A transfer
+    still reserved is not counted until its successor accepts it.
+    """
+    result: list[Json] = []
+    reserved: Json | None = None
+    for entry in history:
+        for event in entry["events"]:
+            if event["kind"] == "TransferReserved":
+                reserved = event.get("payload") or {}
+            elif event["kind"] == "TransferAccepted" and reserved is not None:
+                result.append({
+                    "at": entry["at"],
+                    "generation": (event.get("payload") or {}).get("generation"),
+                    "requested_by": "agent" if "agent_request" in reserved else "host",
+                })
+                reserved = None
+    return result
+
+
 def session_writes(history: list[Json]) -> list[Json]:
     """Each committed change a native session made to this WorkItem, keyed opaquely.
 
@@ -204,6 +228,8 @@ def row(
         "completions": completions(history),
         "merged_pull_requests": merged_pull_requests(state, history),
         "session_writes": session_writes(history),
+        # Completed session rollovers, oldest first; Stats reads their count per WI.
+        "rollovers": rollovers(history),
         "project_page": page_path(pages, wi),
     }
 

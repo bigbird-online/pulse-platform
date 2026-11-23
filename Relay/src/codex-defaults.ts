@@ -26,9 +26,13 @@ interface RuntimePriorityProfile {
   claude: { model: string };
 }
 
-function readRuntimePriorityProfile(): RuntimePriorityProfile | undefined {
-  const path = managedRelayPath('runtimePriority', process.env['PULSE_RUNTIME_PRIORITY_PATH']?.trim())
+function runtimePriorityProfilePath(): string {
+  return managedRelayPath('runtimePriority', process.env['PULSE_RUNTIME_PRIORITY_PATH']?.trim())
     || join(resolvePulseRoot(), 'data', 'runtime-priority.json');
+}
+
+function readRuntimePriorityProfile(): RuntimePriorityProfile | undefined {
+  const path = runtimePriorityProfilePath();
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
@@ -79,13 +83,23 @@ export function resolvePulseCodexModel(explicit?: string): string {
 }
 
 export function resolvePulseCodexReasoningEffort(explicit?: string): string {
+  return resolvePulseCodexReasoningEffortSource(explicit).value;
+}
+
+/** The Codex reasoning effort and where it came from, in the order Relay applies them. */
+export function resolvePulseCodexReasoningEffortSource(explicit?: string): { value: string; source: string } {
   const profile = readRuntimePriorityProfile();
-  return firstNonEmpty(
-    explicit,
-    process.env['PULSE_CODEX_REASONING_EFFORT'],
-    process.env['RELAY_CODEX_REASONING_EFFORT'],
-    profile?.codex.reasoning_effort,
-  ) ?? DEFAULT_PULSE_CODEX_REASONING_EFFORT;
+  const candidates: Array<[string | undefined, string]> = [
+    [explicit, '显式参数'],
+    [process.env['PULSE_CODEX_REASONING_EFFORT'], '环境变量 PULSE_CODEX_REASONING_EFFORT'],
+    [process.env['RELAY_CODEX_REASONING_EFFORT'], '环境变量 RELAY_CODEX_REASONING_EFFORT'],
+    [profile?.codex.reasoning_effort, `${runtimePriorityProfilePath()} 的 codex.reasoning_effort`],
+  ];
+  for (const [value, source] of candidates) {
+    const trimmed = value?.trim();
+    if (trimmed) return { value: trimmed, source };
+  }
+  return { value: DEFAULT_PULSE_CODEX_REASONING_EFFORT, source: 'Relay 内置默认' };
 }
 
 export function resolvePulseRuntimePriority(): Array<'codex' | 'cc'> {

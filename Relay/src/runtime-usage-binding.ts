@@ -6,7 +6,7 @@ export const RUNTIME_USAGE_BINDING_SCHEMA = 'pulse_runtime_usage_binding/v3' as 
 export const RUNTIME_USAGE_BINDING_ENV = 'PULSE_RUNTIME_USAGE_BINDING' as const;
 export const RUNTIME_AUTHORITY_REF_ENV = 'PULSE_RUNTIME_AUTHORITY_REF' as const;
 
-export type RuntimeUsageRuntime = 'pi' | 'codex' | 'chatgpt_work' | 'chatgpt_web' | 'cc' | 'cc_sdk';
+export type RuntimeUsageRuntime = 'pi' | 'codex' | 'chatgpt_work' | 'chatgpt_web' | 'cc' | 'cc_sdk' | 'agy';
 export type RuntimeProcurementSource =
   | 'chatgpt_subscription'
   | 'openrouter_api'
@@ -41,7 +41,7 @@ const FIELDS_V1 = [
 ] as const;
 const FIELDS_V2 = [...FIELDS_V1, 'authority_ref'] as const;
 const FIELDS_V3 = [...FIELDS_V2, 'execution_surface'] as const;
-const RUNTIMES = new Set<RuntimeUsageRuntime>(['pi', 'codex', 'chatgpt_work', 'chatgpt_web', 'cc', 'cc_sdk']);
+const RUNTIMES = new Set<RuntimeUsageRuntime>(['pi', 'codex', 'chatgpt_work', 'chatgpt_web', 'cc', 'cc_sdk', 'agy']);
 const PROCUREMENT = new Set<RuntimeProcurementSource>([
   'chatgpt_subscription',
   'openrouter_api',
@@ -164,7 +164,7 @@ export function runtimeUsageBindingEnvironment(
 }
 
 /** Conversation runtimes that can carry a WI runtime usage binding. */
-export type BoundConversationRuntime = 'pi' | 'codex' | 'cc' | 'cc-sdk';
+export type BoundConversationRuntime = 'pi' | 'codex' | 'cc' | 'cc-sdk' | 'agy';
 
 /** Relay 的会话运行时 id 与 ComputeCost/SCL 的用量运行时名：仅 cc-sdk 拼写不同。 */
 export function usageRuntimeForConversation(runtime: BoundConversationRuntime): RuntimeUsageRuntime {
@@ -172,7 +172,7 @@ export function usageRuntimeForConversation(runtime: BoundConversationRuntime): 
 }
 
 export function isBoundConversationRuntime(runtime: unknown): runtime is BoundConversationRuntime {
-  return runtime === 'pi' || runtime === 'codex' || runtime === 'cc' || runtime === 'cc-sdk';
+  return runtime === 'pi' || runtime === 'codex' || runtime === 'cc' || runtime === 'cc-sdk' || runtime === 'agy';
 }
 
 const CLAUDE_PROCUREMENT_ENV = 'PULSE_PROCUREMENT_SOURCE_CC' as const;

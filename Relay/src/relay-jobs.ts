@@ -9,7 +9,9 @@ import { pathToFileURL } from 'node:url';
 import type { Bot } from 'grammy';
 import { createScheduler } from './scheduler.js';
 import { mergeCronJobsState, resolveCronJobsStatePath } from './job-store.js';
-import { resolveCronJobsPath } from './config-paths.js';
+import { resolveConfigPath, resolveCronJobsPath } from './config-paths.js';
+import { createRouter } from './router.js';
+import { ownerIsolationFromRouter, type OwnerIsolation } from './agent-isolation.js';
 import { resolvePulseRuntimePriority } from './codex-defaults.js';
 import { writeCronJobsConfig } from './runtime-artifact-receipt.js';
 import { resolveRelayHttpHost, resolveRelayHttpPort } from './http-server.js';
@@ -218,9 +220,13 @@ async function cmdRun(args: string[]): Promise<number> {
   if (!id) { console.error('错误: 请指定任务 ID。'); return 1; }
   if (!local) return cmdRunResident(id);
 
+  // The same owner isolation as the resident Relay; without a readable Relay configuration it is unknown.
+  let ownerIsolationFor: (owner: string) => OwnerIsolation = () => 'unknown';
+  try { ownerIsolationFor = ownerIsolationFromRouter(createRouter(resolveConfigPath())); } catch { /* stays unknown */ }
   const scheduler = createScheduler(NOOP_BOT, CRON_JOBS_PATH, {
     registerCronTasks: false,
     deliveryEnabled: false,
+    ownerIsolationFor,
   });
   scheduler.start();
 

@@ -63,7 +63,8 @@
   恢复时刻（如 `You've hit your session limit · resets 5:20pm (Asia/Taipei)`）时，状态 `quotaRetries` 按槽记一条
   （原计划槽、所属定义、恢复后 2 分钟、次数）；补偿循环到点按原计划槽再跑一次，同槽同定义的成功按既有规则了结
   这次失败；同一任务同时有正常漏跑槽时先补正常槽（它推进 lastRunAt），待补跑槽不依赖该游标，下一轮再跑。
-  恢复时刻落在当前这一分钟内时按当天计。每槽最多 2 次，同时最多保留 8 个槽；不同槽互不覆盖。定义变更后旧定义的待补跑作废，早于本定义生效时间
+  恢复时刻落在当前这一分钟内时按当天计。等待补跑的这一轮记 `deferred`（原因 `quota_limit`），不计入连续失败、
+  不发失败告警，协作进度卡显示「额度恢复后自动补跑」，Stats 显示橙色「等待重试」；本轮结果、补跑计划与是否告警在同一次状态写入里定，写入在进度卡与告警之前；补跑仍撞上限或以其他错误结束才判失败并照常告警。每槽只补跑 1 次，同时最多保留 8 个槽，第 9 个槽不再等待、当即判失败并告警，已在等待的槽不被挤掉；旧版 Relay 留下的超过 1 次的待补跑不再执行；不同槽互不覆盖。定义变更后旧定义的待补跑作废（已记延期的槽也不再补跑、不补发告警，由新定义按计划运行），早于本定义生效时间
   的槽不补，热加载后才结束的旧定义运行不新增；恢复时刻超过 48 小时、无法解析或手动触发都不补跑；该槽以其他结果
   结束即清除。
   `@anchor symbol subscriptionResetAt`
@@ -73,6 +74,11 @@
   `@anchor test Relay/tests/quota-retry.test.ts :: "never runs a slot under another definition or before the definition activated"`
   `@anchor test Relay/tests/scheduler.test.ts :: "reads a subscription reset announced only on stderr into the run result"`
   `@anchor test Relay/tests/scheduler.test.ts :: "a due quota retry never hides a missed regular slot of the same job"`
+  `@anchor test Relay/tests/quota-retry.test.ts :: "retries a slot once: its first limit waits, a second fails it"`
+  `@anchor test Relay/tests/scheduler.test.ts :: "records the limited round as waiting, not failed, and keeps the plan across a restart"`
+  `@anchor test Relay/tests/scheduler.test.ts :: "a retry after the reset that succeeds settles the slot"`
+  `@anchor test Relay/tests/scheduler.test.ts :: "a retry that hits the limit again fails the slot and alerts"`
+  `@anchor test Relay/tests/scheduler.test.ts :: "a limit notice without a reset time fails the round as before"`
 - [x] 运行时故障切换：定时任务按 `agent.runtimePreference` 依次尝试（未写则从平台运行时优先级起），其后自动
   补上未列出的批处理运行时（Codex 与 CC 互为兜底），CC 以退出码 0 回的合成额度提示同样计为失败，模型额度用尽（含 Claude session/weekly limit 与 Codex usage limit）、
   限流或运行时不可用时换下一个；任务自身失败不切换。`runtimeStrict: true` 只跑所列运行时（如异构审核对），
@@ -86,6 +92,14 @@
   `@anchor test Relay/tests/scheduler.test.ts :: "a failed fallback keeps the earliest quota reset of every attempt (%s)"`
   `@anchor test Relay/tests/runtime-failover.test.ts :: "an unclassified fallback failure still carries the earlier quota notice"`
   `@anchor test Relay/tests/quota-retry.test.ts :: "reads each notice against the moment its attempt ended, not when the run finished"`
+- [x] 超长文本分条投递：调度器的 Telegram 与飞书文本（announce 结果、captionPath 文本、唤醒提醒、失败告警）
+  超过单条上限时按顺序分条发送，先在空行处切，其次换行，再次空格，都没有时按上限硬切（不切开代理对）；
+  Telegram 每条不超过 4096 个 UTF-16 码元（纯文本上限本身；不超过 4096 字节的持久通知因此仍是一条），飞书 text 每条不超过 20000 个（请求体上限 150 KB；正文经两层 JSON 编码，每个码元最多 7 字节，按最坏情况也不足 140000 字节）。
+  两者都以纯文本发送、不带解析模式，切分不会破坏标记。全部发出才记 `sent`；任一条失败即停发后续并记 `failed`，
+  错误写明第几条失败、之前已发几条。
+  `@anchor symbol splitPlainText`
+  `@anchor test Relay/tests/delivery.test.ts :: "fails the whole Telegram text when any part fails and sends nothing after it"`
+  `@anchor test Relay/tests/scheduler.test.ts :: "a weekly report longer than one Telegram message goes out in order, in parts (%s)"`
 - [x] 耐久性门：运行状态落盘失败时抑制 startup/reload 补偿
   `@anchor symbol persistRunStateNow`
 
@@ -160,13 +174,16 @@
 模型与 effort 只从 `Relay/config/compute-profiles.json` 解析；job 只写档位名，
 未写时取 `platform_default`。schema v2 禁止 Codex `model` 字面量：`media` 只声明
 CC `claude-sonnet-latest/medium` 与 Codex `codex-terra-latest/medium`，`platform_default`
-只声明 `codex-sol-latest/xhigh`。`review` 是 PR 异构审核档位（CC `claude-opus-latest/high`，
+声明 CC `claude-fable-latest` 与 Codex `codex-sol-latest/xhigh`。`review` 是 PR 异构审核档位（CC `claude-opus-latest/high`，
 Codex `codex-sol-latest/high`），内核用它的解析结果核对审核会话是否为当前旗舰；该档位只能写
 latest alias，两侧 effort 必须是 high、xhigh 或 max，否则解析失败。`review` 的 CC 侧不用短别名，
 而解析为 Relay 模型目录（受管路径 `models`，否则 `RELAY_MODEL_CATALOG_PATH`）中版本最高的
 `claude-opus-*` 完整型号；目录未配置、不可读或没有该家族条目时解析失败。`review` 只接受
 `claude-opus-latest` 与 `codex-sol-latest`；Codex 侧先取目录中版本最高的可见 Sol，再取它支持的、
-不低于配置值的最低强度，最新 Sol 不支持 high 及以上时解析失败，不降级到旧 Sol。CC latest alias 交给 Claude Code 原生短别名；Codex latest
+不低于配置值的最低强度，最新 Sol 不支持 high 及以上时解析失败，不降级到旧 Sol。其他 CC latest alias 交给 Claude Code 原生短别名。
+`claude-fable-latest` 传给 Claude Code 时使用 `fable`，具体版本由其客户端和提供者决定。聊天模型目录可登记同一个别名；
+CC SDK 有受管 `CLAUDE_BIN` 时使用该入口解析 Fable，避免使用 SDK 自带的旧版本。
+Codex latest
 alias 从运行用户的 Codex `models_cache.json` 选择同 family、支持目标 effort 且
 `visibility=list` 的最高数值版本。目录不可读、超过 7 天未刷新、alias 无匹配或 effort
 不支持均 fail closed，不回退到 Sol；alias 与
@@ -213,12 +230,22 @@ HTML 可展开引用。发送不阻塞 LLM 启动。运行结束后原地改写�
 上限）或不是合法 UTF-8 时不发文档，文字发送失败时文档虽已发出也记本轮投递失败，均走投递失败的
 `errorMessage` 与 `delivery.feishuOpenId` 失败告警。`captionPath` 写成绝对路径、空串或用在其他投递模式，
 以及 `documentPath` 为空串的 job 读入时跳过。静态 `delivery.caption` 行为不变。
+`telegram_document` 可设 `delivery.sendOutput: true`：文档（及 `captionPath` 文字）发出后，把本轮最后一条回复作为
+文字发给同一收件人（只发终稿，不带前面各轮的过程文字；终稿由运行时单独交出：CC 只认成功结束的 `result`（交互模式认以 end_turn 结束的
+终回合文字；失败的 `result` 与占位语 `No response requested.` 都不算终稿），进程退出后先读完 stdout 再定稿，Codex 取 `--output-last-message`），超长时按 Telegram 单条上限分条；终稿为空或运行时没有单独交出终稿时
+不发文档、记投递失败；回复发送失败时文档虽已发出
+也记本轮投递失败。`sendOutput` 不是布尔值或用在其他投递模式的 job 读入时跳过。
 
 `@anchor test Relay/tests/scheduler.test.ts :: "resolves a relative documentPath against agent.workspace with ${DATE} expansion"`
 `@anchor test Relay/tests/scheduler.test.ts :: "rejects a relative documentPath that escapes agent.workspace"`
 `@anchor test Relay/tests/scheduler.test.ts :: "rejects a relative documentPath whose symlink leaves agent.workspace"`
 `@anchor test Relay/tests/scheduler.test.ts :: "sends the captionPath text to Feishu after the document"`
 `@anchor test Relay/tests/scheduler.test.ts :: "sends the captionPath text to Telegram after the document"`
+`@anchor test Relay/tests/scheduler.test.ts :: "sends only the last reply to Telegram after the document when sendOutput is set"`
+`@anchor test Relay/tests/scheduler.test.ts :: "sends nothing and fails the delivery when sendOutput is set and the last reply is empty"`
+`@anchor test Relay/tests/scheduler.test.ts :: "sends nothing when the turn after the progress text ends without a reply or result"`
+`@anchor test Relay/tests/scheduler.test.ts :: "reads the final result even when the process exits before stdout is drained"`
+`@anchor test Relay/tests/scheduler.test.ts :: "fails the delivery when sendOutput is set and the reply cannot be sent"`
 `@anchor test Relay/tests/scheduler.test.ts :: "fails the delivery and sends nothing when the captionPath file is missing"`
 `@anchor test Relay/tests/scheduler.test.ts :: "fails the delivery and sends nothing when the captionPath escapes agent.workspace"`
 `@anchor test Relay/tests/scheduler.test.ts :: "fails the delivery when the captionPath text cannot be sent after the document"`
@@ -357,6 +384,18 @@ HTML 可展开引用。发送不阻塞 LLM 启动。运行结束后原地改写�
   “🔀 <仓库>#<编号> <结果>（<WI>）。”。去重与合同相同：每轮每个状态只投一次。
   `@anchor symbol pullRequestPrompt`
   `@anchor test Relay/tests/collab-delivery.test.ts :: "tells the session holding the WI that the kernel merged its pull request, once per round and status"`
+  收件对象：PR 结果只投给做出该轮 head 的会话，即用该 head 登记 `submit_pull_request` 的会话。内核按账本判定该会话是否已结束
+  （`author_ended`），可信记录有两种：它在登记之后亲自提交过交接（rollover，`TransferReserved`），交接的是该 WI 或子 WI 的父 WI；
+  它从该 WI 切走（其 `request_switch` 已由目标 WI 凭 Host 切换证明 `continue_here` 接入，或切走后该 WI 已由别的会话持有——
+  接入自己已持有的目标不落事件）。每轮都记 `author_entry`。定时会话登记的轮次（`author_entry: scheduler`）不投任何会话：定时会话
+  每次新建、从不进入对话，也不回退给持有者；该行标 `author_unattended: true`、`author_ended: false`、不带 `author_key`，结果只留在
+  内核 PR 记录、收件箱与 Stats。字段出现前登记的旧轮次可能来自定时会话，一律按已结束处理，回退给持有者（宁可持有者多收一次，
+  不丢）。别的会话接续或接管不算结束，某节点找不到该会话也不算。Relay 只把与路由键相符的原生 ID 交给渠道复核，切换期间新旧 ID
+  并存时，新会话不会通过对旧会话的复核。
+  `@anchor test Relay/tests/collab-delivery.test.ts :: "hands the channel only the routed session ID while a switch shows the old and new beside each other"`未结束时，只有登记会话所在节点的收件箱给出 `author_key`（与 `holder_key` 同一摘要，对象是登记会话），gate 只带这一个键
+  交给 Relay，Relay 只投原生会话与之相符的对话，它忙时等它空闲；其他节点、包括持有节点，一律不投。内核判定已结束后，结果不再带
+  `author_key`，由持有该 WI 的节点带 `holder_key` 投给持有者的会话。
+  `@anchor test Relay/tests/collab-delivery.test.ts :: "delivers a pull request result only to the session that registered its head"`
 - [x] 定时唤醒：任务带 `wake: {workItemId}` 时到点不起批处理会话。它的 gate 是 `collab-inbox-gate.py wake --actor
   <Agent> --wi <WI> --job <任务 id>`：读同一收件箱的 `held`（本 Agent 持有的 WI 与持有者），把该 WI 交给本机握着它的
   会话，经 `/internal/collab-deliver`（`role: wake`，`contract_id` 为 `wake.<任务>.<UTC 分钟>`，每个任务每分钟一次）。

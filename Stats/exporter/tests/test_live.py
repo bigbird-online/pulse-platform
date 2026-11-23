@@ -52,6 +52,10 @@ VALID_METRIC_STATUSES = {"available", "warming_up", "unknown", "not_applicable"}
 VALID_METRIC_QUALITIES = {"validated", "descriptive", "insufficient", "unavailable"}
 
 
+# ack-probe is retired and ships no default command; the fixture injects one.
+TEST_ACK_ARGV = ("/fixture/ack-probe", "--json")
+
+
 class FakeRunner:
     def __init__(
         self,
@@ -71,7 +75,7 @@ class FakeRunner:
     def run(self, argv, timeout=None):
         call = tuple(argv)
         self.calls.append(call)
-        if call == ACK_ARGV:
+        if call == TEST_ACK_ARGV:
             return self.ack
         if call == SYSTEMD_ARGV:
             return self.systemd
@@ -262,6 +266,7 @@ class LiveFixture:
         # defaults it to a no-op, and `test_the_codex_probe_never_runs_by_default`
         # holds that line; this stub makes the intent explicit at the call site.
         kwargs.setdefault("codex_probe", lambda: False)
+        kwargs.setdefault("ack_argv", TEST_ACK_ARGV)
         return LiveSnapshotService(paths=self.paths, runner=runner, now=now, **kwargs)
 
 
@@ -522,7 +527,7 @@ class LiveSnapshotTests(unittest.TestCase):
             self.assertEqual(snapshot["alerts"][0]["title"], "Handoff acknowledgement is overdue")
             self.assertNotEqual(snapshot["alerts"][0]["event_id"], "alert-1")
             self.assertNotIn("INV1:secret-ish-finding", rendered)
-            self.assertIn(ACK_ARGV, runner.calls)
+            self.assertIn(TEST_ACK_ARGV, runner.calls)
             self.assertIn(SYSTEMD_ARGV, runner.calls)
             persisted = json.loads(fixture.state.read_text(encoding="utf-8"))
             self.assertEqual(persisted["schema_version"], 1)
@@ -1006,6 +1011,20 @@ class LiveSnapshotTests(unittest.TestCase):
             self.assertEqual(ack_incidents[0]["state"], "open")
             ack_capability = next(item for item in second["capabilities"] if item["id"] == "s2.ack_overdue")
             self.assertEqual(ack_capability["freshness"]["state"], "error")
+
+    def test_retired_ack_probe_without_injected_command_runs_nothing(self) -> None:
+        self.assertEqual(ACK_ARGV, ())
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = LiveFixture(pathlib.Path(directory))
+            runner = FakeRunner(ack=ack_result(), systemd=systemd_result())
+            snapshot = json.loads(fixture.service(runner, ack_argv=ACK_ARGV).render_json())
+        self.assertNotIn(TEST_ACK_ARGV, runner.calls)
+        self.assertFalse(any(not call or call[0].endswith("ack-probe") for call in runner.calls))
+        capability = next(item for item in snapshot["capabilities"] if item["id"] == "s2.ack_overdue")
+        self.assertEqual(capability["health"], "unknown")
+        self.assertEqual(capability["freshness"]["state"], "error")
+        sources = {item["id"]: item for item in snapshot["provenance"]["sources"]}
+        self.assertEqual(sources["ack-probe"]["error_code"], "not_configured")
 
     def test_corrupt_state_and_incomplete_rebuild_force_unknown_without_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

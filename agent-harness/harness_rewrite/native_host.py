@@ -14,8 +14,9 @@ from pathlib import Path
 import re
 import subprocess
 import shlex
+import sys
 import ctypes
-from typing import Any
+from typing import Any, Callable
 
 from .runtime_presence import capture_native, process_stamp, procfs_absent
 from .access import agent_workspaces
@@ -36,8 +37,17 @@ from .model import (
 )
 
 
-def contained(path: Path, root: Path) -> bool:
-    return path == root or root in path.parents
+def contained(path: Path, root: Path | None) -> bool:
+    return root is not None and (path == root or root in path.parents)
+
+
+def session_root(profile: Json) -> Path | None:
+    """The profile's resolved session root; a root that does not exist contains no log,
+    so another profile's missing root never refuses this session."""
+    try:
+        return Path(profile["session_root"]).resolve(strict=True)
+    except FileNotFoundError:
+        return None
 
 
 def pidpath(pid: int) -> Path:
@@ -92,6 +102,27 @@ ENVIRONMENT_KEYS = frozenset(
         "HARNESS_REWRITE_ATTEMPT",
     }
 )
+
+
+def procargs_argv(raw: bytes) -> list[str]:
+    """argv with its kernel boundaries from KERN_PROCARGS2 bytes.
+
+    Layout: argc, exec path, NUL padding, then argc NUL-terminated strings.
+    Fewer complete strings than argc is a truncated or rewritten record.
+    """
+    if len(raw) < 4:
+        raise ValueError("Process arguments are truncated")
+    argc = int.from_bytes(raw[:4], sys.byteorder)
+    rest = raw[4:]
+    end = rest.find(b"\0")
+    if not 1 <= argc <= 65536 or end < 0:
+        raise ValueError("Process arguments are malformed")
+    while end < len(rest) and rest[end] == 0:
+        end += 1
+    parts = rest[end:].split(b"\0")
+    if len(parts) <= argc:
+        raise ValueError("Process arguments are truncated")
+    return [part.decode() for part in parts[:argc]]
 
 
 def procargs_fields(raw: bytes) -> tuple[str, dict[str, str]]:
@@ -154,6 +185,18 @@ def process_chain(pid: int, proc: Path = Path("/proc")) -> list[Json]:
             sessions = re.findall(
                 r"(?:^|\s)(--session-id|--resume)\s+([A-Za-z0-9-]{1,128})(?=\s|$)", arguments
             )
+            if "--conversation" in arguments:
+                # Flat ps text cannot tell an option from the same words inside
+                # a prompt argument; only the kernel's argv boundaries can. An
+                # unreadable, repeated or malformed option names no conversation.
+                from .session_sources import conversation_option
+
+                try:
+                    conversation = conversation_option(procargs_argv(procargs(pid)))
+                except (OSError, ValueError, UnicodeError):
+                    conversation = None
+                if conversation is not None:
+                    sessions.append(("--conversation", conversation))
             result.append(
                 {
                     "pid": pid,
@@ -219,12 +262,46 @@ def process_environment(pid: int, proc: Path) -> dict[str, str]:
     }
 
 
-def renamed_native(chain: list[Json], policy: Json, proc: Path) -> tuple[Json, Path] | None:
+def pi_process(
+    row: Json, proc: Path, macos: bool, titles: frozenset[str] | None = None
+) -> tuple[str, dict[str, str]] | None:
+    """The title and environment of this account's renamed Pi process, if it is one.
+
+    `titles` narrows which renamed processes count; on Linux the environment is
+    read only for a process that already has one of them.
+    """
+    from .native_compute import TITLE
+
+    titles = titles or frozenset({"pi", TITLE})
+    if macos:
+        if row["uid"] != os.getuid():
+            return None
+        try:
+            title, environment = procargs_fields(procargs(row["pid"]))
+        except (OSError, ValueError, UnicodeError):
+            return None
+    else:
+        directory = proc / str(row["pid"])
+        if not (directory / "comm").is_file():
+            return None
+        title = (directory / "comm").read_text().strip()
+        if row["uid"] != os.getuid() or title not in titles:
+            return None
+        environment = process_environment(row["pid"], proc)
+    return (title, environment) if title in titles else None
+
+
+def renamed_native(
+    chain: list[Json], policy: Json, proc: Path, *, dispatch_only: bool = False
+) -> tuple[Json, Path] | None:
     """Pi sets process.title='pi' (the SDK runner TITLE), erasing argv after startup.
 
     Linux reads comm, environ and exe from procfs. macOS has no procfs: the
     title and environment come from KERN_PROCARGS2 and the executable from
-    proc_pidpath; every check below is the same on both.
+    proc_pidpath; every check below is the same on both. `dispatch_only`
+    considers only the SDK runner of a kernel dispatch (title harness-pi-v1),
+    whose launch configuration, spawn receipt and session log are all proven;
+    an older Pi CLI dispatch without that configuration never qualifies.
     """
     from .native_compute import (
         sdk_entries,
@@ -237,23 +314,12 @@ def renamed_native(chain: list[Json], policy: Json, proc: Path) -> tuple[Json, P
 
     macos = procfs_absent(proc)
     for row in chain:
-        if macos:
-            if row["uid"] != os.getuid():
-                continue
-            try:
-                title, environment = procargs_fields(procargs(row["pid"]))
-            except (OSError, ValueError, UnicodeError):
-                continue
-            if title not in {"pi", TITLE}:
-                continue
-        else:
-            directory = proc / str(row["pid"])
-            if not (directory / "comm").is_file():
-                continue
-            title = (directory / "comm").read_text().strip()
-            if row["uid"] != os.getuid() or title not in {"pi", TITLE}:
-                continue
-            environment = process_environment(row["pid"], proc)
+        named = pi_process(row, proc, macos)
+        if named is None:
+            continue
+        title, environment = named
+        if dispatch_only and title != TITLE:
+            continue
         sdk_config = None
         executable = native_executable(row["pid"], proc)
         if "HARNESS_REWRITE_DISPATCH" in environment:
@@ -301,6 +367,8 @@ def renamed_native(chain: list[Json], policy: Json, proc: Path) -> tuple[Json, P
                 except (ValueError, OSError, KeyError) as exc:
                     raise Rejected("authority_denied", "SDK dispatch evidence differs") from exc
             files = list((root / "session").glob("*_" + receipt["native_session_id"] + ".jsonl"))
+        elif dispatch_only:
+            continue
         elif title == "pi" and "SCL_RELAY_HOST_CONTEXT" in environment:
             context = json.loads(environment["SCL_RELAY_HOST_CONTEXT"])
             parent = next((p for p in chain if p["pid"] == context.get("pid")), None)
@@ -352,6 +420,73 @@ def renamed_native(chain: list[Json], policy: Json, proc: Path) -> tuple[Json, P
     return None
 
 
+def dispatch_runner(chain: list[Json], policy: Json, proc: Path) -> int | None:
+    """Ancestry distance of the nearest SDK runner naming a kernel dispatch.
+
+    Only names the candidate; `renamed_native` proves it before it counts. Only
+    processes titled harness-pi-v1 are read further: another process in the
+    ancestry (an older Pi, any other program) is never read here, so its
+    unreadable environment cannot refuse a source nearer than it.
+    """
+    from .native_compute import TITLE
+
+    if "node" not in policy:
+        return None
+    node = Path(policy["node"]).resolve()
+    macos = procfs_absent(proc)
+    for index, row in enumerate(chain):
+        try:
+            named = pi_process(row, proc, macos, frozenset({TITLE}))
+        except OSError:
+            continue  # A process whose title or environment is unreadable names no dispatch.
+        if named is None or "HARNESS_REWRITE_DISPATCH" not in named[1]:
+            continue
+        try:
+            if native_executable(row["pid"], proc) == node:
+                return index
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def nearer_dispatch(
+    chain: list[Json],
+    policy: Json,
+    proc: Path,
+    locate: Callable[[list[Json], int | None], Json | None],
+) -> tuple[Json | None, tuple[Json, Path] | None]:
+    """The nearest session source, or the kernel-dispatched verifier nearer than it.
+
+    The principal is the nearest admitted process in the ancestry. A verifier
+    the kernel dispatched from inside an Agent's command stays that Agent's
+    descendant until the command returns. The nearest SDK runner is found
+    first; only processes nearer than it are candidate sources (`locate` with
+    `nearer_than`), still proven against the whole chain, so a candidate that
+    fails there refuses this invocation. Sources above the runner are never
+    read: neither the Agent's session above it nor its failure (an entry
+    binding revoked after the dispatch, a session root no longer available)
+    stands in for the dispatch proof below it. The runner itself is proven in
+    full (`renamed_native`: spawn receipt, launch configuration and session
+    log), so no producer process becomes a verifier by environment alone.
+    Returns (source, None) or (None, dispatched).
+    """
+    runner = dispatch_runner(chain, policy, proc)
+    binary = str(Path(policy["pi_binary"]).resolve())
+    if runner is None or any(
+        row["uid"] == os.getuid()
+        and any(str(Path(a).resolve()) == binary for a in row["argv"][:3] if a.startswith("/"))
+        for row in chain[:runner]
+    ):
+        return locate(chain, None), None  # No runner, or a nearer Pi CLI session is the principal.
+    source = locate(chain, runner)
+    if source is not None:
+        return source, None
+    dispatched = renamed_native(chain[runner : runner + 1], policy, proc, dispatch_only=True)
+    if dispatched is None:
+        raise Rejected("authority_denied", "SDK dispatch evidence differs")
+    return None, dispatched
+
+
 class NativeHost:
     def __init__(
         self,
@@ -393,12 +528,22 @@ class NativeHost:
         )
         from . import external_entry, session_sources
 
-        # An owner-confirmed external entry launcher is its own source (AH-084).
-        extra = external_entry.locate(
-            self.policy, chain, policy.parent / "harness.pyz"
-        ) or session_sources.locate(
-            self.policy, chain, proc, entry=policy.parent / "harness.pyz", pre_model=pre_model
-        )
+        def locate(rows: list[Json], nearer_than: int | None) -> Json | None:
+            # An owner-confirmed external entry launcher is its own source (AH-084).
+            return external_entry.locate(
+                self.policy, rows, policy.parent / "harness.pyz", nearer_than=nearer_than
+            ) or session_sources.locate(
+                self.policy,
+                rows,
+                proc,
+                entry=policy.parent / "harness.pyz",
+                pre_model=pre_model,
+                nearer_than=nearer_than,
+            )
+
+        extra, dispatched = nearer_dispatch(chain, self.policy, proc, locate)
+        if dispatched is not None:
+            native = None
         if extra is not None:
             native = None
         self.runtime = extra["runtime"] if extra else "pi"
@@ -408,6 +553,8 @@ class NativeHost:
         located = (
             (extra["process"], extra["path"])
             if extra
+            else dispatched
+            if dispatched is not None
             else None
             if native is not None
             else renamed_native(chain, self.policy, proc)
@@ -449,14 +596,31 @@ class NativeHost:
                         "Native session must have exactly one original log",
                     )
                 session_file = files[0].resolve(strict=True)
-            matches = [extra["profile"]] if extra is not None and extra["runtime"] == "external" else [
-                p
-                for p in self.policy["profiles"]
-                if p.get("runtime", "pi") == self.runtime
-                and (extra is None or p == extra["profile"])
-                and contained(session_file, Path(p["session_root"]).resolve(strict=True))
-                and (extra is not None or not p.get("standalone"))
-            ]
+            if extra is not None and extra["runtime"] == "external":
+                matches = [extra["profile"]]
+            elif dispatched is not None:
+                # A proven dispatch session lies in the dispatch root and belongs
+                # to a verifier profile; no producer profile is read for it.
+                matches = [
+                    p
+                    for p in self.policy["profiles"]
+                    if p["role"] == "verifier"
+                    and p.get("runtime", "pi") == "pi"
+                    and not p.get("standalone")
+                    and contained(
+                        session_file, Path(self.policy["dispatch_root"]).resolve(strict=True)
+                    )
+                    and contained(session_file, session_root(p))
+                ]
+            else:
+                matches = [
+                    p
+                    for p in self.policy["profiles"]
+                    if p.get("runtime", "pi") == self.runtime
+                    and (extra is None or p == extra["profile"])
+                    and contained(session_file, session_root(p))
+                    and (extra is not None or not p.get("standalone"))
+                ]
         if len(matches) != 1:
             raise Rejected("authority_denied", "Native session has no unique admitted profile")
         self.profile = matches[0]
@@ -616,7 +780,7 @@ class NativeHost:
         from .session_sources import original_user, rows, user_text
 
         if (
-            self.runtime in {"cc", "codex"} or self.profile.get("standalone")
+            self.runtime in {"cc", "codex", "agy"} or self.profile.get("standalone")
         ) and not self.environment.get("PULSE_PI_TENANT_ID"):
             return original_user(
                 self.native_log(), self.runtime, self.native_header["id"], ref, latest=latest
@@ -874,7 +1038,7 @@ class NativeHost:
     def pull_request_authors(self, commits: list[str], observed: Any) -> list[Json]:
         """The producing session and model of every commit the PR introduces.
 
-        Searches this Agent's own CC, Codex and Pi session roots from the installed
+        Searches this Agent's own CC, Codex, Pi and agy session roots from the installed
         policy (a profile without `runtime` is Pi); each candidate passes the same
         repository and reflog check.
         """

@@ -125,17 +125,17 @@ enum MenuBarArtwork {
         let quotaBadgeWidth = quotaWidth(quotaValue)
         let ccValue = model.menuCCText
         let ccWidth = quotaWidth(ccValue)
-        let grokValue = model.menuGrokText
-        let grokWidth = quotaWidth(grokValue)
+        let agyValue = model.menuAgyText
+        let agyWidth = quotaWidth(agyValue)
         let wiValue = model.menuWIText
-        // Deliberately reuse quotaWidth so CODEX, CC, GROK and WI have the same
+        // Deliberately reuse quotaWidth so CODEX, CC, AGY and WI have the same
         // visual footprint instead of making the counter look like a status suffix.
         let wiWidth = quotaWidth(wiValue)
         let badge = model.menuBadge
         let badgeWidth: CGFloat = badge.isEmpty ? 0 : max(14, ceil((badge as NSString).size(withAttributes: [.font: valueFont]).width)+6)
         let ccX = quotaBadgeWidth + badgeGap
-        let grokX = ccX + ccWidth + badgeGap
-        let wiX = grokX + grokWidth + badgeGap
+        let agyX = ccX + ccWidth + badgeGap
+        let wiX = agyX + agyWidth + badgeGap
         let badgeX = wiX + wiWidth
         let image = NSImage(size: NSSize(width: badgeX+badgeWidth, height: height), flipped: false) { _ in
             let center = NSMutableParagraphStyle(); center.alignment = .center
@@ -145,8 +145,8 @@ enum MenuBarArtwork {
             (quotaValue as NSString).draw(in: NSRect(x: 0, y: 0, width: quotaBadgeWidth, height: 16), withAttributes: figure)
             ("CC" as NSString).draw(in: NSRect(x: ccX, y: 14, width: ccWidth, height: 8), withAttributes: label)
             (ccValue as NSString).draw(in: NSRect(x: ccX, y: 0, width: ccWidth, height: 16), withAttributes: figure)
-            ("GROK" as NSString).draw(in: NSRect(x: grokX, y: 14, width: grokWidth, height: 8), withAttributes: label)
-            (grokValue as NSString).draw(in: NSRect(x: grokX, y: 0, width: grokWidth, height: 16), withAttributes: figure)
+            ("AGY" as NSString).draw(in: NSRect(x: agyX, y: 14, width: agyWidth, height: 8), withAttributes: label)
+            (agyValue as NSString).draw(in: NSRect(x: agyX, y: 0, width: agyWidth, height: 16), withAttributes: figure)
             ("WI" as NSString).draw(in: NSRect(x: wiX, y: 14, width: wiWidth, height: 8), withAttributes: label)
             (wiValue as NSString).draw(in: NSRect(x: wiX, y: 0, width: wiWidth, height: 16), withAttributes: figure)
             if !badge.isEmpty {
@@ -161,7 +161,7 @@ enum MenuBarArtwork {
 }
 
 enum MenuBarWidth {
-    /// Four equal slots (CODEX, CC, GROK, WI) at three-digit figures plus the marker.
+    /// Four equal slots (CODEX, CC, AGY, WI) at three-digit figures plus the marker.
     static let budget: CGFloat = 210
     static func merged(_ model: MenuBarViewModel) -> CGFloat {
         MenuBarArtwork.image(for: model).size.width + MenuBarMetrics.itemPadding

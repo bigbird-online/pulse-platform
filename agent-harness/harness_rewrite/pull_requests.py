@@ -56,7 +56,8 @@ MAX_ROUNDS = 3
 REVIEW_PROFILE = "review"
 REVIEW_EFFORTS = frozenset({"high", "xhigh", "max"})
 # The reviewer runs on the runtime of the other model family.
-REVIEW_RUNTIME = {"claude": "codex", "gpt": "cc"}
+# A Gemini author (agy) is reviewed in Codex: the GPT family, a flagship review runtime.
+REVIEW_RUNTIME = {"claude": "codex", "gpt": "cc", "gemini": "codex"}
 REPOSITORY = re.compile(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}\Z")
 
 
@@ -72,6 +73,8 @@ def family(model: object) -> str | None:
         return "claude"
     if value.startswith(("gpt-", "codex-")):
         return "gpt"
+    if value.startswith("gemini-"):
+        return "gemini"
     return None
 
 
@@ -495,16 +498,26 @@ def charged_to(wi: str, parent: Any, evidence: Json) -> bool:
     """ComputeCost charges every turn of the marked sub-agent to child `wi`.
 
     `dispatch_declared_wis` (Host `child_dispatch`) are the WIs ComputeCost
-    charges the turns to before its child rule: the child itself, or its parent
-    when ComputeCost's registry exports the child (`cost_child`) as an open child
+    charges the turns to before its child rule: the child itself, its parent,
+    or a sibling the export names under that parent (`cost_served`), when
+    ComputeCost's registry exports the child (`cost_child`) as an open child
     of that parent created no later than the first turn (`dispatch_since`).
+    One request may so advance several children, each by its marked sub-agent.
     """
     dispatch = evidence.get("dispatch_declared_wis")
     served = set(dispatch) if isinstance(dispatch, list) and dispatch else None
-    if served is None or not served <= {wi, parent}:
+    if served is None:
         return False
-    if parent not in served:
+    if served == {wi}:
         return True
+    exported = evidence.get("cost_served")
+    exported = exported if isinstance(exported, dict) else {}
+    if not all(
+        other in {wi, parent}
+        or isinstance(exported.get(other), dict) and exported[other].get("parent") == parent
+        for other in served
+    ):
+        return False
     cost = evidence.get("cost_child")
     created, since = (
         _instant(cost.get("created_at")) if isinstance(cost, dict) else None,
@@ -542,7 +555,9 @@ def attribution(
     child, a sub-agent whose first prompt names `[WI: <child>]` belongs to it
     when ComputeCost provably charges every turn of it there; registering on a
     parent, a marked sub-agent belongs to its open child when the session
-    declared only the parent or its turns are charged to the parent or child.
+    declared only the parent, its turns are charged to the parent or that
+    child, or, with declared siblings among them (one request advancing
+    several children in parallel), `charged_to` proves them by the export.
     Any other marked sub-agent whose turns are all charged to its marker WI
     belongs to that WI. Otherwise it belongs to its own declaration, else its
     session's. The child is open when registering on it (submission needs
@@ -560,7 +575,9 @@ def attribution(
     if isinstance(marker, str) and (
         parent is not None and marker == wi and charged_to(wi, parent, facts)
         or parent is None and marker in open_children and (
-            names == [wi] or served is not None and served <= {wi, marker})
+            names == [wi] or served is not None and served <= {wi, marker}
+            # A declared sibling moves the turns only with ComputeCost's export proof.
+            or charged_to(marker, wi, facts))
     ):
         return [marker]
     if isinstance(marker, str) and served == {marker}:
@@ -738,6 +755,9 @@ def submit(
             head_sha=head,
             candidate_id=operation,
             author=context.principal(),
+            # How the registering session was entered: a scheduler run takes no
+            # delivery, so the inbox routes its results to the holder.
+            author_entry=context.entry,
             author_model=model,
             authors=authors,
             review_block=block,
@@ -923,6 +943,18 @@ def can_begin(state: Json, effect: Json) -> None:
         raise Rejected("domain_conflict", "The merge no longer matches the latest reviewed round")
 
 
+def startable(state: Json, effect: Json) -> bool:
+    """Whether `can_begin` admits a new attempt of this merge or review request now.
+
+    A WI no longer active or completed, a withdrawn PR or a superseded round
+    refuses every new attempt for good; an open attempt is still read back."""
+    try:
+        can_begin(state, effect)
+    except Rejected:
+        return False
+    return True
+
+
 def apply_event(state: Json, kind: str, data: Json) -> bool:
     if kind == "PullRequestSubmitted":
         prs = state.setdefault("pull_requests", {})
@@ -937,6 +969,7 @@ def apply_event(state: Json, kind: str, data: Json) -> bool:
                 "candidate_id": data["candidate_id"],
                 "head_sha": data["head_sha"],
                 "author": data["author"],
+                **({"author_entry": data["author_entry"]} if "author_entry" in data else {}),
                 "author_model": data["author_model"],
                 "authors": data.get("authors"),
                 "review_block": data.get("review_block"),

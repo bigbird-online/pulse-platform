@@ -42,7 +42,7 @@ class RetirementTests(unittest.TestCase):
         self.assertFalse(r.is_retired(value))
     def test_registry_is_explicit_not_a_suppression_of_all_missing_sources(self):
         root=Path(__file__).parents[3]
-        registry=json.loads((root/'vultr-pulse-space/systemd/probe-heartbeats.json').read_text())
+        registry=json.loads((root/'Scripts/monitoring/probe-heartbeats.json').read_text())
         entries={s['source']:s for s in registry['sources']}
         for source in r.RETIRED_SOURCES:
             self.assertFalse(entries[source]['enabled']);self.assertIn('retirement_ref',entries[source])

@@ -45,6 +45,17 @@ class ChildWorkItemTests(base.RequestPurposeTests):
         self.export(self.item(CHILD, status='completed', closed_at='2026-01-01T03:00:00Z'))
         self.assert_child(CHILD)
 
+    def test_a_request_declaring_a_sibling_leaves_a_marked_child_its_usage(self):
+        sibling = 'wi_20260101_202'
+        self.export(self.item(CHILD), self.item(sibling)); self.child(wi=sibling)
+        self.collect(); states = self.states()
+        self.assertEqual(states[self.target('child')], ('assigned', CHILD))
+        self.assertEqual(states[self.target('a-after')], ('assigned', sibling))
+        # A declared WI under another parent is no sibling: the subagent inherits it.
+        self.main, self.children = [], {}
+        self.export(self.item(CHILD), self.item(sibling, parent=OTHER_WI)); self.child(wi=sibling)
+        self.collect(); self.assertEqual(self.states()[self.target('child')], ('assigned', sibling))
+
     def test_marker_naming_a_child_of_another_wi_inherits(self):
         self.export(self.item(CHILD, parent=OTHER_WI)); self.child()
         self.assert_child(WI)

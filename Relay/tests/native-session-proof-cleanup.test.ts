@@ -1,7 +1,7 @@
 /** A conversation proof lives only as long as its process; ownerless proofs are swept at start. */
 import { describe, it, expect, vi, afterAll } from 'vitest';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -10,7 +10,7 @@ vi.mock('../src/managed-paths.js', () => ({ managedRelayPath: () => data }));
 vi.mock('../src/native-work-item-command.js', () => ({
   nodeWorkItemCore: () => ({ python: '/usr/bin/python3', entrypoint: '/x/harness.pyz', extension: '/x/runtime/pi.mjs' }),
 }));
-const { forgetNativeProofOnExit, nativeProcessStamp, observeNativeSession, sweepNativeSessionProofs } =
+const { forgetNativeProofOnExit, nativeProcessStamp, observeNativeSession, retainNativeConversation, sweepNativeSessionProofs } =
   await import('../src/native-core-runtime.js');
 
 const proofs = join(data, 'native-session-proofs');
@@ -78,6 +78,21 @@ describe('native session proof cleanup', () => {
     record(process.pid, { relay_pid: ended });
     expect(sweepNativeSessionProofs()).toBe(1);
     expect(existsSync(path(process.pid))).toBe(false);
+  });
+
+  it('keeps one retained record per agy conversation through process exit and the startup sweep', () => {
+    const first = retainNativeConversation('agy-conv-1', 'owner:asobi', 'relay-session')!;
+    expect(retainNativeConversation('agy-conv-1', 'owner:asobi', 'relay-session')).toBe(first);
+    expect(first.startsWith(join(proofs, 'retained-'))).toBe(true);
+    expect(JSON.parse(readFileSync(first, 'utf8'))).toEqual({ schema: 'pulse.native-session-retained/v1', runtime: 'agy',
+      session_id: 'agy-conv-1', allocation_id: 'relay-session', tenant: 'owner:asobi', entry: 'telegram', relay_pid: process.pid });
+    expect(statSync(first).mode & 0o777).toBe(0o600);
+    const second = retainNativeConversation('agy-conv-2', 'owner:asobi:feishu', 'other-session')!;
+    expect(second).not.toBe(first);
+    expect(sweepNativeSessionProofs()).toBe(0);
+    expect([existsSync(first), existsSync(second)]).toEqual([true, true]);
+    expect(() => retainNativeConversation('../escape', 'owner:asobi', 'relay-session')).toThrow('Invalid native session source');
+    rmSync(first); rmSync(second);
   });
 
   it('logs an unreadable proof and keeps starting', () => {

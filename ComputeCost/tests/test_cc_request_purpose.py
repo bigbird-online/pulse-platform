@@ -307,7 +307,12 @@ class RequestPurposeTests(unittest.TestCase):
         reply=m.handle(call(WI),clock=lambda:OBSERVED,host='cc')
         self.assertEqual(reply['structuredContent']['schema'],'cc_request_wi/v1')
         initialized=m.handle({'method':'initialize','params':{}},clock=lambda:OBSERVED,host='cc')
-        self.assertIn(m.CC_DESCRIPTION,initialized['instructions'])
+        self.assertIn(m.CC_RULE,initialized['instructions'])
+        # The rule appears once: the tool description only points to it.
+        [tool]=m.handle({'method':'tools/list','params':{}},clock=lambda:OBSERVED,host='cc')['tools']
+        self.assertNotIn('子代理',tool['description'])
+        self.assertIn('并行推进多个子 WI',m.CC_RULE)
+        self.assertNotIn('人类消息触发',m.CC_RULE)
         self.assertEqual(m.cc_transport(WI)['schema'],'cc_session_wi/v1')
 
 

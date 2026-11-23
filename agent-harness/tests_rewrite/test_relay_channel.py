@@ -9,9 +9,10 @@ from harness_rewrite.model import Rejected, digest
 from harness_rewrite.relay_channel import command_host
 from tests_rewrite.test_relay_session import rig as rig, process
 from tests_rewrite.test_native_host import native as native
+from harness_rewrite.session_sources import AGY_TRANSCRIPT
 
 
-@pytest.mark.parametrize("runtime", ["pi", "cc", "codex"])
+@pytest.mark.parametrize("runtime", ["pi", "cc", "codex", "agy"])
 @pytest.mark.parametrize("command", ["cancel", "checkpoint"])
 def test_original_channel_command_commits_without_model_dispatch(
     rig, monkeypatch, capsys, runtime, command
@@ -42,6 +43,8 @@ def test_original_channel_command_commits_without_model_dispatch(
                 "payload": {"id": native_id, "cwd": str(sessions), "source": "cli"},
             }
             if runtime == "codex"
+            else {"step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT", "content": "previous input"}
+            if runtime == "agy"
             else {
                 "type": "user",
                 "sessionId": native_id,
@@ -49,14 +52,23 @@ def test_original_channel_command_commits_without_model_dispatch(
                 "message": {"role": "user", "content": "previous input"},
             }
         )
-        (sessions / (native_id + ".jsonl")).write_text(json.dumps(row) + "\n")
+        if runtime == "agy":
+            # agy keeps one directory per conversation under its brain root.
+            transcript = sessions / native_id / AGY_TRANSCRIPT
+            transcript.parent.mkdir(parents=True)
+            transcript.write_text(json.dumps(row) + "\n")
+        else:
+            (sessions / (native_id + ".jsonl")).write_text(json.dumps(row) + "\n")
         proofs = proc.parent / "proofs"
         proofs.mkdir(mode=0o700)
-        proof = proofs / "123.json"
+        # agy has no process between turns; Relay retains its conversation record instead.
+        proof = proofs / ("retained-0123.json" if runtime == "agy" else "123.json")
         proof.write_text(
             json.dumps(
                 {
-                    "schema": "pulse.native-session-source/v1",
+                    "schema": "pulse.native-session-retained/v1"
+                    if runtime == "agy"
+                    else "pulse.native-session-source/v1",
                     "runtime": runtime,
                     "session_id": native_id,
                     "tenant": tenant,

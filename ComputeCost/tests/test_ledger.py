@@ -173,5 +173,45 @@ class VerifiedReadTests(unittest.TestCase):
                 UsageLedger(root).receipt_snapshot()
 
 
+
+class IndexedIngest:
+    """The same ingest cases, deciding by fact-index point reads (WI754)."""
+
+    def setUp(self):
+        from pulse_compute_cost.fact_index import ingest_index_provider
+        UsageLedger.index_provider = ingest_index_provider()
+        self.addCleanup(setattr, UsageLedger, "index_provider", None)
+
+
+class IndexedLedgerAppendSectionTests(IndexedIngest, LedgerAppendSectionTests):
+    pass
+
+
+class IndexedVerifiedReadTests(IndexedIngest, VerifiedReadTests):
+    pass
+
+
+class IngestLookupChoiceTests(unittest.TestCase):
+    def test_off_creates_no_index_and_on_indexes_every_append(self):
+        from pulse_compute_cost.fact_index import ingest_index_provider
+        from pulse_compute_cost.receipts import Receipt
+        rows = [Receipt.make('coverage', ['fixture', n], {'domain': 'usage', 'wi': None, 'source_ref': None,
+            'status': 'unknown', 'expected': None, 'observed': None, 'watermark': None,
+            'reason': None, 'source_detail': None}, occurred_at=None,
+            observed_at='2026-10-20T00:00:00+00:00', producer='fixture') for n in range(2)]
+        with tempfile.TemporaryDirectory() as root:
+            ledger = UsageLedger(root)
+            ledger.ingest_receipts(rows[:1])
+            self.assertEqual(ledger.last_ingest_lookup, "table")
+            self.assertFalse((Path(root) / "derived").exists())
+            UsageLedger.index_provider = ingest_index_provider()
+            self.addCleanup(setattr, UsageLedger, "index_provider", None)
+            indexed = UsageLedger(root)
+            self.assertEqual(indexed.ingest_receipts(rows)["inserted"], 1)
+            self.assertEqual(indexed.last_ingest_lookup, "index")
+            self.assertEqual(indexed._index.binding().sequence, 2)
+            self.assertEqual(oct((Path(root) / "derived" / "fact-index.sqlite").stat().st_mode & 0o777), "0o600")
+
+
 if __name__ == "__main__":
     unittest.main()

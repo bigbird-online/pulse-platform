@@ -255,7 +255,7 @@ def shape(policy: Json) -> None:
     for profile in profiles:
         identity(profile["actor"])
         runtime = profile.get("runtime", "pi")
-        if runtime not in {"pi", "cc", "codex"}:
+        if runtime not in {"pi", "cc", "codex", "agy"}:
             raise ValueError("Unsupported native runtime")
         if "original_workspace_roots" in profile:
             if runtime != "codex" or not profile.get("workspace_roots"):

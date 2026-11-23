@@ -21,7 +21,7 @@ OBJECTS = ".harness/core/objects/"
 SCHEMA = "harness.observation-stream/v1"
 KINDS = frozenset({"stage_goal", "stage_output", "stage_feedback", "stage_participation", "stage_link",
     "output_assessment", "execution_expectation", "execution", "usage", "attribution", "human",
-    "delivery", "review", "value", "human_summary", "coverage"})
+    "delivery", "review", "value", "human_summary", "coverage", "native_input"})
 
 
 class ObservationStore:

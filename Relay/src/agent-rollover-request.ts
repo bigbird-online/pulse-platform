@@ -9,6 +9,7 @@ import {dirname,join} from 'node:path';
 import {guardAccountStatePath} from './test-account-path-guard.js';
 import {humanInputsDir} from './scl-human-decision.js';
 import {switchInProgress} from './native-wi-switch.js';
+import {conversationNativeIds,coreNativeId,type NativeIdSource} from './session-identity.js';
 import type {StateManager} from './types.js';
 import type {CommandRuntime} from './commands.js';
 
@@ -60,11 +61,11 @@ export async function adoptAgentRolloverRequests(input:{dir:string;stateManager:
     }
     if(session.nativeSessionHistory?.some(h=>h.rolloverRef===request.ref)){retire();continue;}
     const live=input.runtime.get(request.tenant);
-    const nativeId=live&&(('codexThreadId' in live?live.codexThreadId:undefined)??live.sessionId);
+    const nativeId=live&&coreNativeId(live as NativeIdSource);
     if(!live||live.state==='dead'){
       // A Relay restart or exit can leave the idle source with no instance; its persisted identity
       // still names the source, so the rollover recovers it the way a pending handover would.
-      if(session.sessionId!==request.sourceNativeId&&session.codexThreadId!==request.sourceNativeId){retire();continue;}
+      if(!conversationNativeIds(session).includes(request.sourceNativeId)){retire();continue;}
     }else{
       if(nativeId!==request.sourceNativeId){retire();continue;}
       if(['busy','starting'].includes(live.state))continue;

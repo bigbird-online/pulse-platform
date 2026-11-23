@@ -188,6 +188,9 @@ def stage(job, now, spec=None):
     if job.get('current_run_live'):
         phase = state.get('currentRun',{}).get('phase')
         return 'orange','排队中' if phase == 'queued' else '执行中','当前已登记运行仍由同一调度进程承载。',latest,next_at
+    if raw and not stale and raw.get('deferred'):
+        # Relay marks a round deferred only while its slot is planned to run again.
+        return 'orange','等待重试','本轮主动延期，尚未完成业务交付。',latest,next_at
     if raw and not stale and raw['status'] in ('error','timeout'):
         return 'red',outcome(raw),'当前定义下的本轮失败已被任务自身记录。',latest,next_at
     if due is None and upcoming is not None:
@@ -211,8 +214,6 @@ def stage(job, now, spec=None):
         reminded = raw.get('deliveryStatus') == 'sent'
         return ('orange','未送达','没有会话握着该 WI，本轮唤醒未送达；'
                 + ('已提醒负责人。' if reminded else '提醒也未发出。'),latest,next_at)
-    if raw.get('deferred'):
-        return 'orange','等待重试','本轮主动延期，尚未完成业务交付。',latest,next_at
     if raw.get('skipped') and job.get('skip_allowed'):
         summary = raw.get('skipSummary')
         declared = spec.get('skip')

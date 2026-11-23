@@ -11,6 +11,7 @@ import { persistQueuedTurns, replayPendingTurns } from '../src/shutdown-interrup
 import type { PersistedSession } from '../src/types.js';
 import { resolveToolFileOutboxPath } from '../src/tool-file-outbox.js';
 import type { SpawnConfig, StreamJsonMessage } from '../src/types.js';
+import { INTERNAL_TURN_REFUSED, fencedInternalTurn, watchInternalTurn } from '../src/internal-turn-fence.js';
 
 // --- Mock child_process ---
 
@@ -142,6 +143,29 @@ describe('pool declared subscription source', () => {
     expect(secondArgs).toContain('--resume');
     expect(secondArgs).toContain(config.sessionId);
     expect(readFileSync(history, 'utf8')).toBe(original);
+  });
+
+  it('uses a private Console key helper for native API mode without passing its key to argv or env', async () => {
+    const file = join(root, 'relay.env');
+    const secret = 'sk-ant-fixture-console-key';
+    const apiKeyPath = join(root, 'anthropic-api.key');
+    writeFileSync(join(root, 'relay-auth'), 'claude_auth=api\n', { mode: 0o600 });
+    writeFileSync(apiKeyPath, secret + '\n', { mode: 0o600 });
+    pool = createPool({ cleanupIntervalMs: 999999, ccMode: 'print', oauthEnvFile: file });
+    const child = createMockProcess();
+    mockSpawn.mockReturnValueOnce(child);
+    const config = { ...baseConfig, workspace: root, userHome: root, ccModel: 'claude-opus-5-5' };
+    const started = pool.spawn(config);
+    child.stdout.write('{"type":"system","content":"ready"}\n');
+    await expect(started).resolves.toMatchObject({ ccAuthMode: 'api', sessionId: config.sessionId });
+    const [, args, options] = mockSpawn.mock.calls[0] as [string, string[], { env: NodeJS.ProcessEnv }];
+    expect(args.join(' ')).not.toContain(secret);
+    expect(Object.values(options.env)).not.toContain(secret);
+    const settings = JSON.parse(args[args.lastIndexOf('--settings') + 1]);
+    expect(settings.apiKeyHelper).toContain(apiKeyPath);
+    expect(settings.env.ANTHROPIC_BASE_URL).toBe('https://api.anthropic.com');
+    expect(options.env.CLAUDE_CODE_OAUTH_TOKEN).toBe('');
+    expect(args).toContain(config.ccModel);
   });
 
   it('refuses to launch through a stale settings token copy', async () => {
@@ -314,6 +338,36 @@ describe('pool.spawn', () => {
     const modelIdx = args.indexOf('--model');
     expect(modelIdx).toBeGreaterThan(-1);
     expect(args[modelIdx + 1]).toBe('sonnet-xyz');
+  });
+
+  it('passes the conversation /think level as CC --effort, and no effort CC lacks', async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+    const promise = pool.spawn({ ...baseConfig, reasoningLevel: 'max' });
+    proc.stdout.write('{"type":"system","content":"ready"}\n');
+    await promise;
+    const args = mockSpawn.mock.calls[0][1] as string[];
+    expect(args[args.indexOf('--effort') + 1]).toBe('max');
+    await pool.kill(baseConfig.tenantId);
+
+    const other = createMockProcess();
+    mockSpawn.mockReturnValue(other);
+    const next = pool.spawn({ ...baseConfig, reasoningLevel: 'minimal' });
+    other.stdout.write('{"type":"system","content":"ready"}\n');
+    await next;
+    expect(mockSpawn.mock.calls[1][1]).not.toContain('--effort');
+  });
+
+  it('passes the native Fable alias when a Relay agent selects claude-fable-latest', async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = pool.spawn({ ...baseConfig, ccModel: 'claude-fable-latest' });
+    proc.stdout.write('{"type":"system","content":"ready"}\n');
+    await promise;
+
+    const [, args] = mockSpawn.mock.calls[0];
+    expect(args[args.indexOf('--model') + 1]).toBe('fable');
   });
 
   it('drops --model when ccModel contains TUI state like "opus[1m]"', async () => {
@@ -724,12 +778,10 @@ describe('pool.spawn', () => {
       await interactivePool.spawn(baseConfig);
 
       const args = mockSpawn.mock.calls[0][1] as string[];
-      expect(args).toEqual(expect.arrayContaining([
-        '--setting-sources',
-        'user,project,local',
-        '--settings',
-        settingsPath,
-      ]));
+      // The user settings file is the user source CC loads anyway; the single
+      // --settings value carries Relay's inline trims (cc-session-settings).
+      expect(args).toEqual(expect.arrayContaining(['--setting-sources', 'user,project,local']));
+      expect(JSON.parse(args[args.lastIndexOf('--settings') + 1]).skillOverrides.dataviz).toBe('off');
       expect(args).not.toContain('--bare');
       expect(args).not.toContain(JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'https://example.invalid' } }));
     } finally {
@@ -838,8 +890,11 @@ describe('pool.spawn', () => {
       const args = mockSpawn.mock.calls[0][1] as string[];
       expect(args).toContain('--settings');
       const idx = args.indexOf('--settings');
-      expect(args[idx + 1]).toBe(realpathSync(tenantSettingsPath));
+      // CC runs with the tenant HOME, so its user source is the tenant's settings;
+      // the inline --settings value names nothing of Relay's home.
+      expect(JSON.parse(args[idx + 1]).skillOverrides.dataviz).toBe('off');
       expect(args[idx + 1]).not.toContain(relayHome);
+      expect(existsSync(realpathSync(tenantSettingsPath))).toBe(true);
     } finally {
       interactivePool.dispose();
       if (originalHome === undefined) delete process.env['HOME'];
@@ -2213,6 +2268,41 @@ describe('pool events', () => {
       else process.env['RELAY_OUTBOX_DIR'] = previousOutboxRoot;
       rmSync(workspace, { recursive: true, force: true });
     }
+  });
+
+  it('writes a queued delivery only to the session it was routed to', async () => {
+    const proc=createMockProcess();mockSpawn.mockReturnValue(proc);
+    const messages:StreamJsonMessage[]=[];pool.on('response',(_tenant,msg)=>messages.push(msg));
+    const spawned=pool.spawn({...baseConfig,ccMode:'print'});
+    proc.stdout.write('{"type":"system","content":"ready"}\n');await spawned;
+    const stdin=captureStdin(proc);
+    const outcomes:string[]=[];
+    await pool.send('member-000',{type:'human',content:'A'});
+    watchInternalTurn('cc-ref',outcome=>outcomes.push(outcome));
+    const queued=pool.send('member-000',fencedInternalTurn({type:'human',content:'pr result'},['test-session-uuid'],'cc-ref'),
+      {correlationId:'B',idempotencyKey:'B',effect:'no-effect',hostAttemptRef:'attempt-B'});
+    // The process now holds another session (as a replacement for a /wi switch would) when the queue drains.
+    pool.get('member-000')!.sessionId='another-session';
+    proc.stdout.write('{"type":"result","result":"A done"}\n');await queued;
+    await new Promise(r=>setTimeout(r,20));
+    expect(stdin.text()).not.toContain('pr result');
+    expect(outcomes).toEqual(['refused']);
+    expect(messages.at(-1)).toMatchObject({type:'result',subtype:INTERNAL_TURN_REFUSED,host_attempt_ref:'attempt-B'});
+    expect(pool.get('member-000')?.state).toBe('idle');
+  });
+
+  it('writes a delivery for its own session without the fence', async () => {
+    const proc=createMockProcess();mockSpawn.mockReturnValue(proc);
+    const spawned=pool.spawn({...baseConfig,ccMode:'print'});
+    proc.stdout.write('{"type":"system","content":"ready"}\n');await spawned;
+    const stdin=captureStdin(proc);
+    const outcomes:string[]=[];
+    watchInternalTurn('cc-own',outcome=>outcomes.push(outcome));
+    await pool.send('member-000',fencedInternalTurn({type:'human',content:'pr result'},['test-session-uuid'],'cc-own'));
+    await new Promise(r=>setTimeout(r,10));
+    expect(stdin.text()).toContain('pr result');
+    expect(stdin.text()).not.toContain('expect_native_ids');
+    expect(outcomes).toEqual(['consumed']);
   });
 
   it('retains queued B attempt context when print A result synchronously drains the queue', async () => {

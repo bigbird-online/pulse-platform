@@ -115,6 +115,7 @@ vi.mock('grammy', () => ({
 
 import { RUNTIME_NOTIFICATION_TURN, tagRuntimeNotificationTurn } from '../src/runtime-background-work.js';
 import { RUNTIME_NOTIFICATION_REPLY_LEAD } from '../src/channel-rendering.js';
+import { watchInternalTurn } from '../src/internal-turn-fence.js';
 import { createConversationRuntimeManager, type ConversationProcess, type ConversationRuntimeAdapter } from '../src/conversation-runtime.js';
 import { createRouter } from '../src/router.js';
 import { handleCommand as handleFeishuCommand, ensureProcess as ensureFeishuProcess, wirePoolEvents, type MessageHandlerContext } from '../src/channels/feishu.js';
@@ -892,7 +893,7 @@ describe('buildRuntimePhotoMessage', () => {
   });
 });
 
-function processFor(tenantId: string, runtime: 'cc' | 'codex' | 'pi'): ConversationProcess {
+function processFor(tenantId: string, runtime: 'cc' | 'codex' | 'pi' | 'agy'): ConversationProcess {
   return {
     tenantId,
     runtime,
@@ -905,7 +906,7 @@ function processFor(tenantId: string, runtime: 'cc' | 'codex' | 'pi'): Conversat
   };
 }
 
-function createMockAdapter(id: 'cc' | 'codex' | 'pi'): ConversationRuntimeAdapter & { events: EventEmitter } {
+function createMockAdapter(id: 'cc' | 'codex' | 'pi' | 'agy'): ConversationRuntimeAdapter & { events: EventEmitter } {
   const events = new EventEmitter();
   const processes = new Map<string, ConversationProcess>();
   const yoloModes = new Map<string, boolean>();
@@ -1344,6 +1345,38 @@ describe('TG conversation runtime fallback', () => {
         expect(delivered[0]).toContain('error_during_execution');
         expect(delivered[0]).not.toContain('secret-key');
       }
+    } finally {
+      runtime.dispose();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('delivers one explicit agy failure notice and never reports an automatic recovery', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'relay-tg-agy-failure-'));
+    const runtime = createConversationRuntimeManager();
+    const adapter = createMockAdapter('agy');
+    runtime.register(adapter);
+    try {
+      const configPath = join(dir, 'relay.json');
+      writeFileSync(configPath, JSON.stringify({ users: [{
+        userId: 'owner', chatId: '111222333', defaultAgent: 'pulse',
+        agents: [{ id: 'pulse', name: 'Pulse', emoji: 'P', botToken: '123456:test-token',
+          workspace: dir, sessionId: 'relay-session', runtime: 'agy' }],
+      }] }));
+      await createTelegramBots({ runtime, router: createRouter(configPath), stateManager: createMemoryStateManager() }).start();
+      const bot = grammyMock.instances[0];
+      await bot.handlers.get('message:text')?.({ chat: { id: 111222333 }, message: { text: 'hi' }, reply: vi.fn(async () => {}) });
+      // The agy adapter's failed turn (egress refused, start timeout, denied permission): result, error, exit.
+      adapter.events.emit('response', 'owner:pulse', { type: 'result', is_error: true, runtime: 'agy' });
+      adapter.events.emit('error', 'owner:pulse',
+        new Error('agy egress unavailable: proxyconnect (www.googleapis.com); the request was not retried through another egress'));
+      adapter.events.emit('exit', 'owner:pulse', 1);
+      await vi.waitFor(() => expect(bot.api.sendMessage.mock.calls.some((call) => String(call[1]).includes('agy 出口不可用'))).toBe(true));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const texts = bot.api.sendMessage.mock.calls.map((call) => String(call[1]));
+      expect(texts.filter((text) => text.includes('agy 出口不可用'))).toHaveLength(1);
+      expect(texts.join('\n')).not.toContain('已自动恢复');
+      expect(texts.join('\n')).not.toContain('正在恢复中');
     } finally {
       runtime.dispose();
       rmSync(dir, { recursive: true, force: true });
@@ -3051,21 +3084,22 @@ beforeEach(() => { vi.stubEnv('RELAY_WORK_PROCESS_DETAILS', 'off'); });
 
 
 describe('TG collaboration delivery', () => {
-  async function setup() {
+  async function setup(kind: 'cc' | 'agy' = 'cc') {
     const dir = mkdtempSync(join(tmpdir(), 'relay-tg-collab-'));
     const configPath = join(dir, 'relay.json');
     writeFileSync(configPath, JSON.stringify({ users: [{ userId: 'owner', chatId: '111222333', defaultAgent: 'aki',
       agents: [{ id: 'aki', name: 'Aki', emoji: 'A', botToken: '123456:fake-token-not-a-real-secret',
-        workspace: '/tmp/aki', sessionId: 'session-aki', runtime: 'cc' }] }] }));
-    const cc = createMockAdapter('cc');
+        workspace: '/tmp/aki', sessionId: 'session-aki', runtime: kind }] }] }));
+    const cc = createMockAdapter(kind);
     const runtime = createConversationRuntimeManager();
     runtime.register(cc);
     const stateManager = createMemoryStateManager();
-    stateManager.updateSession('owner:aki', { poolKey: 'owner:aki', agentId: 'aki', runtime: 'cc',
-      sessionId: 'session-aki', turnCount: 1, maxTurns: 100, lastActivity: Date.now(), status: 'active' });
+    stateManager.updateSession('owner:aki', { poolKey: 'owner:aki', agentId: 'aki', runtime: kind,
+      sessionId: 'session-aki', turnCount: 1, maxTurns: 100, lastActivity: Date.now(), status: 'active',
+      ...(kind === 'agy' ? { agyConversation: { sessionId: 'session-aki', conversationId: 'conv-1' } } : {}) });
     const bots = createTelegramBots({ runtime, router: createRouter(configPath), stateManager });
     await bots.start();
-    return { dir, cc, bots, bot: grammyMock.instances.at(-1)! };
+    return { dir, cc, runtime, bots, bot: grammyMock.instances.at(-1)! };
   }
 
   it('starts one turn in the owned conversation whose native session is the holder', async () => {
@@ -3099,6 +3133,46 @@ describe('TG collaboration delivery', () => {
       expect(await bots.deliverInternalTurn('owner:other', 'contract prompt', ['session-aki'])).toBe(false);
       expect(await bots.deliverInternalTurn('owner:aki', 'contract prompt', ['session-old'])).toBe(false);
       expect(cc.send).not.toHaveBeenCalled();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('hands the delivery fenced to its session; a CC switch while the notice is out refuses it before it is sent', async () => {
+    const { dir, cc, bots, bot } = await setup();
+    try {
+      const outcomes: string[] = [];
+      watchInternalTurn('tg-cc', outcome => outcomes.push(outcome));
+      bot.api.sendMessage.mockImplementationOnce(async () => {
+        // A /wi switch lands while Telegram answers: the pool key now holds a new session.
+        await cc.spawn({ tenantId: 'owner:aki', sessionId: 'session-new' } as never);
+        return {} as never;
+      });
+      await bots.deliverInternalTurn('owner:aki', 'contract prompt', ['session-aki'], undefined, 'tg-cc');
+      expect(cc.send).not.toHaveBeenCalled();
+      expect(outcomes).toEqual(['refused']);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it('delivers to an agy conversation by its conversation, and refuses it once agy names another meanwhile', async () => {
+    const { dir, cc, bots, bot } = await setup('agy');
+    try {
+      cc.spawn.mockImplementation(async (config: { tenantId: string; sessionId?: string }) => {
+        const proc = { ...processFor(config.tenantId, 'agy'), sessionId: config.sessionId || 'agy-session', agyConversationId: 'conv-1' };
+        (cc.get as ReturnType<typeof vi.fn>).mockReturnValue(proc);
+        return proc;
+      });
+      const outcomes: string[] = [];
+      watchInternalTurn('tg-1', outcome => outcomes.push(outcome));
+      await bots.deliverInternalTurn('owner:aki', 'result prompt', ['conv-1'], undefined, 'tg-1');
+      expect(cc.send).toHaveBeenCalledTimes(1);
+      expect((cc.send as ReturnType<typeof vi.fn>).mock.calls[0]![1]).toEqual({ type: 'human', content: 'result prompt' });
+      watchInternalTurn('tg-2', outcome => outcomes.push(outcome));
+      bot.api.sendMessage.mockImplementationOnce(async () => {
+        (cc.get('owner:aki') as { agyConversationId?: string }).agyConversationId = 'conv-2';
+        return {} as never;
+      });
+      await bots.deliverInternalTurn('owner:aki', 'result prompt', ['conv-1'], undefined, 'tg-2');
+      expect(cc.send).toHaveBeenCalledTimes(1);
+      expect(outcomes).toEqual(['consumed', 'refused']);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });

@@ -610,7 +610,7 @@ def main(argv: list[str] | None = None, *, _host: NativeHost | None = None) -> i
 
             human_ref = None
             if (
-                host.runtime in {"cc", "codex"} or host.profile.get("standalone")
+                host.runtime in {"cc", "codex", "agy"} or host.profile.get("standalone")
             ) and not host.environment.get("PULSE_PI_TENANT_ID"):
                 try:
                     human_ref = original_user(

@@ -80,6 +80,8 @@ enum MetricID {
     static let grokResetsAt = "relay.grok.resets_at"
     static let grokPeriodStart = "relay.grok.period_start"
     static let grokPlanLabel = "relay.grok.plan_label"
+    /// agy account quota: one row per current bucket (group, window, remaining_fraction, resets_at).
+    static let agyQuota = "relay.agy.quota"
 
     /// 真正的新输入。`input_tokens` 是「新输入 + 缓存复读 + 缓存写入」的合计,
     /// 实测 1.2245 亿里 1.2069 亿是 cache_read——把它当「今天用了多少」会把

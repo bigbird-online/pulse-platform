@@ -41,6 +41,8 @@ def _parser() -> argparse.ArgumentParser:
                         help="verify support for the compact cost snapshot without reading production data")
     parser.add_argument("--probe-cost-compression", action="store_true",
                         help="verify bounded gzip cost snapshot support without reading production data")
+    parser.add_argument("--probe-cost-adjustments", action="store_true",
+                        help="verify support for closed weeks and adjustment entries without reading production data")
     parser.add_argument("--json", action="store_true", required=True, help="emit one JSON object to stdout")
     return parser
 
@@ -83,6 +85,12 @@ def main(argv: list[str] = None, live_service_factory=LiveSnapshotService.defaul
         if decode_cost_dashboard(compressed_dashboard_bytes(probe)) != probe:
             return 2
         print(json.dumps({'schema': COMPRESSED_PROBE_SCHEMA}))
+        return 0
+    if args.probe_cost_adjustments:
+        from pulse_stats.adjustments import PROBE_SCHEMA, probe
+        if not probe():
+            return 2
+        print(json.dumps({'schema': PROBE_SCHEMA}))
         return 0
     if args.cost_dashboard_only:
         if (args.fixture is not None or args.compute_cost_shadow is not None

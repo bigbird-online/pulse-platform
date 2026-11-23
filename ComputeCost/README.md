@@ -226,6 +226,13 @@ review history, acceptance, human hours or future value. Historical summary-only
 in time. Native vs Host cross-source relationships without shared coverage identity remain conflicts;
 the current path does not guess or claim all those production relationships have been wired.
 
+### 离线局部性对照（WI754 第 1 步，不在例行路径）
+
+`locality-check --registry <sources.json> --watermark N --out <私有目录> --phase index|full|packages|stages|report`
+对同一账本前缀先全量判定，再逐会话包（`session_packages.py` 的连接键）判定，逐条比较；每个阶段单独一个进程。
+事实索引（`fact_index.py`）只建在 `--out` 下，不写账本和任何生产状态。它读全量账本，只在 Oracle 上以
+`MemoryMax=9G` 运行，与例行周期互斥；结果与门槛判定在 `<out>/locality-report.json`。
+
 ### PR #513 source-identity continuation (historical contract)
 
 The actual Telegram/Feishu ordinary text path now retains an authenticated input proof on the
@@ -688,6 +695,8 @@ PYTHONPATH=ComputeCost python -m pulse_compute_cost.source_registration \
 ```
 
 All roots must be explicit existing owned directories; only add `--cc` for an applicable approved real source. The output is newly created mode0600; this command cannot overwrite production, change the ledger root, alter source permissions, or activate collection. Keep active/archive Codex roots in one source (`paths`) so the existing adapter reconciles copied rollouts together. Overlapping incompatible registrations fail rather than silently creating a second input.
+
+`--agy` registers the account's `~/.gemini/antigravity-cli/brain` root. Each conversation's `transcript_full.jsonl` gives one usage row per model step (`agy_transcript.v1`); a missing token field stays unknown. The steps take the WI of the Relay Host turn (`agy_result.v1`, under the runtime usage binding) only when they conserve its tokens exactly. agy has no public per-token price, so its usage is unpriced (`agy_price_unknown`), never valued at a catalog rate.
 
 After private candidate replay, activate the reviewed registry through the existing controlled deployment. Stats' installed refresh runtime includes its own ComputeCost package: update the publisher's exact runtime as well as relevant collectors; upgrading an unrelated checkout does not update Stats. Do not reinstall the unchanged App merely to update collection. Production two-refresh/restart acceptance remains with WI300; the current evidence is recorded in the [Stats baseline](../specs/stats-query-dashboard.md#已证基线与边界).
 

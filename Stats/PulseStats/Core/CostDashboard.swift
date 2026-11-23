@@ -20,6 +20,8 @@ struct CostDashboard: Codable, Equatable, Sendable {
     var workItems: [CostWorkItem]? = nil
     /// GitHub merges outside the core and direct pushes to main, if audited.
     var pullRequestAnomalies: PullRequestAnomalies? = nil
+    /// Pushed observations the publisher had not all judged yet: the amounts are incomplete.
+    var collectionBacklog: CollectionBacklog? = nil
 
     /// A compatible publication with a sane clock. Its content stays on screen,
     /// marked with its own time, until a newer publication replaces it.
@@ -138,6 +140,65 @@ struct CostDataNotice: Equatable, Sendable {
     var text: String { [day, headline].compactMap { $0 }.joined(separator: " · ") }
 }
 
+/// Peers whose spooled observation bundles the publication left for later collections.
+struct CollectionBacklog: Codable, Equatable, Sendable {
+    let status: String
+    let reason: String
+    let peers: [Peer]
+
+    struct Peer: Codable, Equatable, Sendable {
+        let id: String
+        let deferredBundles: Int
+    }
+
+    /// Beside the total: these figures do not hold every observation yet.
+    var tileText: String {
+        "未收齐：" + peers.map { "\($0.id) 待读 \($0.deferredBundles) 包" }.joined(separator: "、")
+    }
+
+    /// Above the 产出与成本 table: the whole table is an incomplete result.
+    static let tableHeadline = "数据未收齐，金额与归属不完整"
+    var tableDetail: String {
+        peers.map { "\($0.id) 还有 \($0.deferredBundles) 包观察数据待读" }.joined(separator: "、")
+            + "。表中金额偏低，未识别、待核验与异常行可能只是数据未到；收齐前不要把这些数字当作完整结果。"
+    }
+}
+
+/// Entries booked in a view's window against already closed weeks.
+/// Only display: the exporter has checked that `total` is own usage plus these.
+struct CostAdjustments: Codable, Equatable, Sendable {
+    let entryCount: Int
+    let unpricedEntryCount: Int
+    let knownTotalTokens: Int
+    let pricedMachineCashUsd: String
+
+    var amount: Decimal? { CostText.signedDecimal(pricedMachineCashUsd) }
+    /// "含调整 +$0.30" beside a total; nil when nothing was booked.
+    var noteText: String? {
+        guard entryCount > 0, let amount else { return nil }
+        return "含调整 " + (amount < 0 ? "−" : "+") + StatsFormat.usdDecimal(amount.magnitude)
+    }
+}
+
+/// Own usage plus adjustments: the figure a reader shows when present.
+struct CostAdjustedTotal: Codable, Equatable, Sendable {
+    let knownTotalTokens: Int?
+    let pricedMachineCashUsd: String
+    var amount: Decimal? { CostText.signedDecimal(pricedMachineCashUsd) }
+}
+
+/// When the previous week was closed, at which ledger watermark, and which peers it lacked.
+struct CostClosedWeek: Codable, Equatable, Sendable {
+    struct Gap: Codable, Equatable, Sendable {
+        let peer: String
+        let reason: String
+    }
+    let weekStart: String
+    let closedAt: String
+    let watermark: Int
+    let gaps: [Gap]
+}
+
 /// The publisher's latest cycle (`cost_refresh`), never a cost fact itself.
 struct CostRefreshStatus: Codable, Equatable, Sendable {
     let state: String
@@ -150,12 +211,17 @@ struct CostRefreshStatus: Codable, Equatable, Sendable {
         let id: String
         let status: String
         let reason: String?
+        var deferredBundles: Int? = nil
     }
 
-    /// Why a peer's source was not read in the latest completed cycle.
+    /// Why a peer's source was not (completely) read in the latest completed cycle.
     func peerReason(node: String?) -> String? {
         guard state == "completed", let node,
-              let peer = peers?.first(where: { $0.id == node && $0.status == "unreachable_or_invalid" }) else { return nil }
+              let peer = peers?.first(where: { $0.id == node && ["unreachable_or_invalid", "partial"].contains($0.status) })
+        else { return nil }
+        if let deferred = peer.deferredBundles {
+            return CostText.refreshReason(peer.reason) + "，待读 \(deferred) 包"
+        }
         return CostText.refreshReason(peer.reason)
     }
 
@@ -233,6 +299,11 @@ struct CostQueryView: Codable, Equatable, Sendable {
     var activeAgents: [String]? = nil
     var populationScope: String? = nil
     var stages: CostStageProjection? = nil
+    /// Entries against closed weeks booked in this window; absent from older publications.
+    var adjustments: CostAdjustments? = nil
+    var total: CostAdjustedTotal? = nil
+    var adjustmentOnlyGroups: [CostQueryGroup]? = nil
+    var closedWeek: CostClosedWeek? = nil
     var validStages: CostStageProjection? {
         guard let stages, stages.isValid(in: query, recordedAt: recordedAt) else { return nil }
         return stages
@@ -347,13 +418,37 @@ struct CostQueryView: Codable, Equatable, Sendable {
     /// without the priced total fall back to the partial amount.
     var totalCostExact: String? {
         let cost = summary.cost
-        guard cost.isValid else { return nil }
+        guard ownCostIsCoherent else { return nil }
         if cost.machineCashUsd != nil { return cost.machineCashUsd }
         guard cost.pricedEventCount != nil || cost.pricedMachineCashUsd != nil else { return cost.partialMachineCashUsd }
-        guard cost.pricedTotalIsValid(eventCount: summary.usage.eventCount) else { return nil }
         return cost.pricedMachineCashUsd
     }
+    /// False when the own cost contradicts itself: then no amount is shown.
+    /// True with no amount means own usage is merely unpriced.
+    private var ownCostIsCoherent: Bool {
+        let cost = summary.cost
+        guard cost.isValid else { return false }
+        if cost.machineCashUsd != nil || (cost.pricedEventCount == nil && cost.pricedMachineCashUsd == nil) { return true }
+        return cost.pricedTotalIsValid(eventCount: summary.usage.eventCount)
+    }
     var totalCostAmount: Decimal? { CostText.decimal(totalCostExact) }
+    /// The published total (own usage plus adjustments) when it can be shown.
+    private var publishedAdjustedTotal: Decimal? {
+        guard let adjustments, adjustments.entryCount > 0, adjustments.amount != nil, ownCostIsCoherent else { return nil }
+        return total?.amount
+    }
+    /// The headline amount: own usage plus adjustments when the publisher closes weeks.
+    /// Unpriced own usage still shows the priced entries; an unreadable total leaves the own amount.
+    var adjustedTotalAmount: Decimal? { publishedAdjustedTotal ?? totalCostAmount }
+    /// Beside the headline amount: the entries in it and what it does not cover.
+    var adjustmentNote: String? {
+        guard total != nil, let note = adjustments?.noteText else { return nil }
+        guard publishedAdjustedTotal != nil else { return "调整未计入：合计无效" }
+        var gaps: [String] = []
+        if totalCostAmount == nil { gaps.append("自身用量未计价") }
+        if let unpriced = adjustments?.unpricedEntryCount, unpriced > 0 { gaps.append("\(unpriced) 条调整未计价") }
+        return gaps.isEmpty ? note : note + "（" + gaps.joined(separator: "，") + "）"
+    }
     /// Rows needing a correction, and rows whose only reasons are proof gaps.
     var reasonClassCounts: (anomaly: Int, proofGapOnly: Int) {
         let rows = presentationRows
@@ -710,13 +805,14 @@ struct CostWorkItem: Codable, Equatable, Sendable {
 }
 
 /// How a row's usage got its WI. Keys: declared, holder_supplement,
-/// scheduled_job, classified (reviewed non-WI), unattributed.
+/// scheduled_job, classified (reviewed non-WI), undeclared (a human request
+/// that declared no WI), unattributed.
 struct CostAttribution: Codable, Equatable, Sendable {
     let sources: [String: CostAttributionSource]
     var job: CostScheduledJob? = nil
     static let labels: [(key: String, text: String)] = [
         ("declared", "声明"), ("holder_supplement", "持有补充"), ("exploration", "探索"), ("scheduled_job", "自动任务"),
-        ("classified", "已审非 WI"), ("unattributed", "未关联")]
+        ("classified", "已审非 WI"), ("undeclared", "未声明 WI"), ("unattributed", "未关联")]
     var summary: String {
         Self.labels.compactMap { item in sources[item.key].map { "\(item.text) \($0.eventCount) 条" } }
             .joined(separator: " · ")
@@ -741,6 +837,8 @@ struct CostQueryGroup: Codable, Equatable, Sendable, Identifiable {
     var detail: CostActivityDetail? = nil
     var tenant: CostTenantIdentity? = nil
     var attribution: CostAttribution? = nil
+    var adjustments: CostAdjustments? = nil
+    var total: CostAdjustedTotal? = nil
     /// Display only; attached from the document, never part of a row's key.
     var workItem: CostWorkItem? = nil
     /// This row's WI's kernel-merged PRs in the view's period; attached, never decoded.
@@ -755,7 +853,8 @@ struct CostQueryGroup: Codable, Equatable, Sendable, Identifiable {
         return String(wi.dropFirst("cron:".count))
     }
     /// Confirmed non-WI work: reviewed cron/none or a scheduler job.
-    var isNonWI: Bool { ["cron", "none"].contains(key["wi"] ?? "") || scheduledJobID != nil }
+    /// Usage outside any WI: scheduled jobs, declared non-WI work, and human requests that declared no WI.
+    var isNonWI: Bool { ["cron", "none", "undeclared"].contains(key["wi"] ?? "") || scheduledJobID != nil }
     /// "自动任务：<任务名>" for a scheduler job row.
     var scheduledJobText: String? {
         guard let id = scheduledJobID else { return nil }
@@ -800,13 +899,21 @@ struct CostQueryGroup: Codable, Equatable, Sendable, Identifiable {
         if ["unassigned", "ambiguous"].contains(key["wi"] ?? "unassigned") { return "未关联" }
         return outcomeCount.map { "\($0) 项" } ?? "未提供"
     }
+    /// Relay channels, scheduled runs, and the native session entrypoints the meter extracts.
+    static func entrypointTitle(_ name: String) -> String {
+        if name.hasPrefix("codex:"), name.count > "codex:".count { return "Codex（\(name.dropFirst("codex:".count))）" }
+        return ["codex_app": "Codex App", "feishu": "飞书", "telegram": "Telegram", "cli": "命令行", "automation": "无",
+                "sdk": "SDK", "codex_exec": "Codex 命令行", "pi_cli": "Pi 命令行", "relay": "Relay"][name] ?? name
+    }
     var id: String { key.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "|") }
     var name: String { key.values.first ?? "未知分组" }
     var title: String {
         if name == "ambiguous" {
             return key.keys.first == "wi" ? "WI 归属待核验" : "归属冲突"
         }
-        if name == "unassigned" {
+        if name == "undeclared" && key.keys.first == "wi" { return "未声明 WI" }
+        // The meter publisher names a missing model or entrypoint "unknown"; older ones "unassigned".
+        if name == "unassigned" || (name == "unknown" && key.keys.first != "wi") {
             switch key.keys.first {
             case "agent": return "Agent 未识别"
             case "wi": return "WI 未关联"
@@ -822,7 +929,7 @@ struct CostQueryGroup: Codable, Equatable, Sendable, Identifiable {
         // Historical receipts keep the node that measured them.
         case "node": return CostNode.title(name)
         case "runtime": return ["codex": "Codex", "pi": "Pi", "cc": "Claude Code", "cc_sdk": "Claude Code SDK"][name] ?? name
-        case "entrypoint": return ["codex_app": "Codex App", "feishu": "飞书", "telegram": "Telegram", "cli": "CLI", "automation": "无"][name] ?? name
+        case "entrypoint": return Self.entrypointTitle(name)
         default: return name
         }
     }
@@ -974,6 +1081,11 @@ struct CostProviderActivity: Codable, Equatable, Sendable {
 }
 
 enum CostText {
+    /// A published signed amount (adjustments may be negative).
+    static func signedDecimal(_ value: String?) -> Decimal? {
+        guard let value, value.hasPrefix("-") else { return decimal(value) }
+        return decimal(String(value.dropFirst())).map { -$0 }
+    }
     static func decimal(_ value: String?) -> Decimal? {
         guard let value, value.count <= 38,
               value.range(of: #"^[0-9]+(?:\.[0-9]+)?$"#, options: .regularExpression) != nil,
@@ -995,6 +1107,8 @@ enum CostText {
         case "peer_timeout": return "远端采集超时"
         case "peer_receipt_invalid": return "远端回执无效"
         case "paused_by_decision": return "按决定暂停采集"
+        case "observation_backlog": return "观察包积压，分轮读取中"
+        case "resolved_view_mismatch": return "增量视图与现状表对账不符，本轮未发布"
         default: return "发布失败"
         }
     }
@@ -1487,6 +1601,10 @@ extension CostQueryView {
         activeAgents = try? c.decodeIfPresent([String].self,forKey:.activeAgents)
         populationScope = try? c.decodeIfPresent(String.self,forKey:.populationScope)
         stages = try? c.decodeIfPresent(CostStageProjection.self,forKey:.stages)
+        adjustments = try? c.decodeIfPresent(CostAdjustments.self,forKey:.adjustments)
+        total = try? c.decodeIfPresent(CostAdjustedTotal.self,forKey:.total)
+        adjustmentOnlyGroups = try? c.decodeIfPresent([CostQueryGroup].self,forKey:.adjustmentOnlyGroups)
+        closedWeek = try? c.decodeIfPresent(CostClosedWeek.self,forKey:.closedWeek)
     }
 }
 
@@ -1500,6 +1618,8 @@ extension CostQueryGroup {
         detail = try? c.decodeIfPresent(CostActivityDetail.self,forKey:.detail)
         tenant = try? c.decodeIfPresent(CostTenantIdentity.self,forKey:.tenant)
         attribution = try? c.decodeIfPresent(CostAttribution.self,forKey:.attribution)
+        adjustments = try? c.decodeIfPresent(CostAdjustments.self,forKey:.adjustments)
+        total = try? c.decodeIfPresent(CostAdjustedTotal.self,forKey:.total)
     }
 }
 

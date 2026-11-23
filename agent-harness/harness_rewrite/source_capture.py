@@ -23,7 +23,7 @@ def artifact_roots(
     """
     from .domain import authorized
     from .existing_execution import retained_binding
-    from .workspaces import ready, retired
+    from .workspaces import ready, retired, retiring
 
     context = kernel._host(handle)
     if context.read_only_reason:
@@ -38,7 +38,7 @@ def artifact_roots(
         for resource in state.get("workspaces", {}).values():
             if (
                 not ready(state, resource) or retired(state, resource)
-                or resource.get("retirement") or resource.get("superseded_by")
+                or retiring(state, resource) or resource.get("superseded_by")
                 or not authorized(
                     state, context, intent, resource["resources"], same_agent_records=True
                 )

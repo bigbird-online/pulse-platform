@@ -414,6 +414,26 @@ describe('CodexConversationRuntime', () => {
     await tick();
   });
 
+  it('runs the session /think level as reasoning effort, switchable for the next turn', async () => {
+    const first = createMockProcess();
+    const second = createMockProcess();
+    mockSpawn.mockReturnValueOnce(first).mockReturnValueOnce(second);
+    const runtime = createCodexConversationRuntime({ codexBin: 'codex-test' });
+    await runtime.spawn({ tenantId: 'owner:aki', runtime: 'codex', workspace: '/workspace', sessionId: 'logical-session',
+      reasoningLevel: 'low' });
+    await runtime.send('owner:aki', { type: 'human', content: 'one' });
+    expect(mockSpawn.mock.calls[0][1]).toContain('model_reasoning_effort="low"');
+    await expect(runtime.setThinkingLevel!('owner:aki', 'max')).rejects.toThrow('no reasoning effort max');
+    await runtime.setThinkingLevel!('owner:aki', 'high');
+    expect(await runtime.listThinkingLevels!('owner:aki')).toEqual(['low', 'medium', 'high', 'xhigh']);
+    first.emit('exit', 0, null);
+    await tick();
+    await runtime.send('owner:aki', { type: 'human', content: 'two' });
+    expect(mockSpawn.mock.calls[1][1]).toContain('model_reasoning_effort="high"');
+    second.emit('exit', 0, null);
+    await tick();
+  });
+
   it('uses spawn codexYoloDefault for the turn command', async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);

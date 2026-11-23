@@ -5,6 +5,7 @@ const RUNTIME_NAMES: Record<string, string> = {
   codex: 'Codex',
   cc: 'Claude Code',
   'cc-sdk': 'Claude SDK',
+  agy: 'agy',
 };
 const PUBLIC_ERROR_CODES = new Set([
   'provider_request_failed', 'provider_quota_exceeded', 'provider_rate_limited',
@@ -78,6 +79,11 @@ function classifiedErrorDetail(message: string): string | undefined {
   if (/^(?:Codex error:\s*)?The usage limit has been reached$/i.test(message)) return '模型订阅用量已达上限';
   if (/^Pi RPC [a-z_]+ request timed out$/i.test(message)) return 'Pi RPC 请求超时';
   if (/^codex conversation runtime timed out after \d+ms$/i.test(message)) return 'Codex 运行超时';
+  if (/^agy egress unavailable\b/i.test(message)) {
+    return 'agy 出口不可用（代理连接失败或无应答），本次未改走其他出口，请检查 agy 出口后重试';
+  }
+  if (/^agy conversation runtime timed out after \d+ms$/i.test(message)) return 'agy 运行超时';
+  if (/^agy permission denied\b/i.test(message)) return 'agy 无头模式拒绝了所需的工具权限';
   if (/^cc-sdk engine produced no output within \d+ms after \d+ restart\(s\) \(silent stall\)$/i.test(message)) {
     return 'Claude SDK 未产生输出，重试后仍超时';
   }
@@ -127,8 +133,8 @@ export function publicRuntimeExceptionNotice(runtime: unknown, error: unknown): 
 /** Forward selected native failure fields through the shared redaction boundary. */
 export function publicRuntimeResultNotice(message: StreamJsonMessage, runtimeHint?: unknown): string | undefined {
   if (message.type !== 'result' || message.is_error !== true || message.public_failure_reported === true) return undefined;
-  // Codex emits a more specific error event immediately after its error result.
-  if ((message.runtime ?? runtimeHint) === 'codex' &&
+  // Codex and agy emit a more specific error event immediately after their error result.
+  if (((message.runtime ?? runtimeHint) === 'codex' || (message.runtime ?? runtimeHint) === 'agy') &&
       (!Array.isArray(message.errors) || message.errors.length === 0)) return undefined;
   const errors = Array.isArray(message.errors) ? message.errors
     : message.errors === undefined ? [] : [message.errors];

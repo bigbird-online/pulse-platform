@@ -133,7 +133,7 @@ def candidate_registry(registry: Mapping[str, Any], native: Mapping[str, list[st
         raise ReceiptError("invalid existing source registry")
     if not isinstance(registry.get("ledger_root"), str) or not registry["ledger_root"]:
         raise ReceiptError("existing ledger root is required")
-    if any(kind not in {"pi", "codex", "cc"} for kind in native):
+    if any(kind not in {"pi", "codex", "cc", "agy"} for kind in native):
         raise ReceiptError("unsupported native registration")
     result = deepcopy(dict(registry))
     ids = [s.get("id") for s in result["sources"]]
@@ -461,7 +461,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--registry", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
-    for kind in ("pi", "codex", "cc"):
+    for kind in ("pi", "codex", "cc", "agy"):
         parser.add_argument("--" + kind, action="append", default=[])
     parser.add_argument("--runtime-manifest", type=Path)
     parser.add_argument("--harness-root", type=Path)
@@ -483,7 +483,7 @@ def main() -> int:
             # ledger, or permission to replace an existing Host registration.
             if (not args.stage_semantics or args.registry.exists() or args.registry.is_symlink()
                     or not args.registry.is_absolute() or args.registry.resolve() != args.registry
-                    or any((args.pi, args.codex, args.cc, args.runtime_manifest,
+                    or any((args.pi, args.codex, args.cc, args.agy, args.runtime_manifest,
                         args.harness_root, args.receipt_root, args.relay_config, args.tenant_registry,
                         args.verification_registration_root, args.verification_authority_root,
                         args.verification_host, args.verification_surface))):
@@ -494,7 +494,7 @@ def main() -> int:
             st = args.registry.lstat()
             if args.registry.is_symlink() or not args.registry.is_file() or st.st_uid != os.getuid() or st.st_mode & 0o077:
                 raise ReceiptError("existing registry must be owner-only")
-            result = candidate_registry(json.loads(args.registry.read_text()), {k:getattr(args,k) for k in ("pi","codex","cc")})
+            result = candidate_registry(json.loads(args.registry.read_text()), {k:getattr(args,k) for k in ("pi","codex","cc","agy")})
         if args.runtime_manifest:
             if not args.receipt_root:
                 raise ReceiptError("inspected runtime receipt root is required")

@@ -28,7 +28,17 @@ POLICY = "session_wi_declaration.v1"
 NO_WI = "none"
 NO_WI_POLICY = "non_wi_activity.v1"
 DESCRIPTION = "登记当前 session 的归属，调用一次即可。要改文件、提 PR 或动生产时登记所属 WI；闲聊、只读查询、解释说明登记 none，不要为此新建 WI。"
-CC_DESCRIPTION = "登记当前原生请求的归属。要改文件、提 PR 或动生产时声明所属 WI；闲聊、只读查询、解释说明声明 none，不要为此新建 WI。每个新的人类请求或独立任务各自声明；复用会话不继承前一请求的归属。当前请求的子任务保留原始请求归属；子代理不需要声明，继承原请求的 WI 或其首行 [WI: 子WI] 指定的子 WI。一个会话只为一个 WI 谱系（一个 WI 及其子 WI）写代码、提 PR：声明过谱系外 WI 的会话，其提交登记会被拒；谱系外 WI 的写工作请人类 /new 后在新会话声明。本请求已声明 none 后不再改声明，写操作留到下一条请求。子 WI 的提交在人类消息触发的回合里由带标记的子代理做。"
+# CC shows MCP server instructions in every session's context: the CC rule lives
+# there once. The tool description only says what to pass and points to it.
+CC_RULE = (
+    "登记当前原生请求的归属。要改文件、提 PR 或动生产时声明所属 WI；闲聊、只读查询、解释说明声明 none，不要为此新建 WI。"
+    "每个新的人类请求或独立任务各自声明；复用会话不继承前一请求的归属。当前请求的子任务保留原始请求归属。"
+    "子代理不需要声明：首行无标记的继承原请求的 WI；首行为 [WI: 子WI] 的为该子 WI 工作，其提交与成本归该子 WI；"
+    "一个请求可派多个带标记的子代理，并行推进多个子 WI。"
+    "一个会话只为一个 WI 谱系（一个 WI 及其子 WI）写代码、提 PR：声明过谱系外 WI 的会话，其提交登记会被拒；"
+    "谱系外 WI 的写工作请人类 /new 后在新会话声明。本请求已声明 none 后不再改声明，写操作留到下一条请求。"
+)
+CC_DESCRIPTION = "登记当前请求的归属：wi 填所属 WI 编号，非写工作填 none。何时声明见 pulse-request-purpose 的服务器说明。"
 UUID = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", re.I)
 
 
@@ -662,7 +672,7 @@ def handle(message, *, clock, host="codex"):
             "protocolVersion": "2025-03-26",
             "capabilities": {"tools": {}},
             "serverInfo": {"name": SERVER, "version": "0.2"},
-            "instructions": f"使用 {TOOL}：{CC_DESCRIPTION if host == 'cc' else DESCRIPTION}",
+            "instructions": f"使用 {TOOL}：{CC_RULE if host == 'cc' else DESCRIPTION}",
         }
     if method == "ping":
         return {}

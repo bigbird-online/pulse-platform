@@ -21,6 +21,29 @@ round's candidate ID, repository, number, status, head, instant, the kernel's
 next step and, after a review, its score and first-line summary. Older gates
 ignore the separate list.
 
+A pull request result goes only to the session that made the round's head:
+the session that registered `submit_pull_request` with that head. Until the
+journal shows that session ended, the row carries `author_ended: false` and, on
+the surface the session registered on, `author_key`, the same one-way digest as
+`holder_key` but of the registering session; the Relay delivers it there alone,
+waiting while that conversation is busy, and no other surface or session
+delivers it. The journal shows the session ended when, after registering,
+it handed off the WI holding the round (rollover: `TransferReserved` in an
+entry it committed, on the WI or, for a child, its parent), or switched away
+from it (its `request_switch` entered in the target by `continue_here` with
+the Host's switch proof, or followed by another session holding the WI). A
+round registered before rounds recorded the entry may have come from a
+scheduler run nothing can reach, so it counts as ended: its holder hears of it.
+A continuation or takeover by another session does not end it, nor does a
+conversation missing on some node. Then the row says `author_ended: true`, carries no
+`author_key`, and the WI holder's session (`target.holder_key`) receives it.
+A round registered by a scheduler run (`author_entry: scheduler`) goes to no
+session: that run is a fresh native session that never enters a conversation,
+and its result is not the holder's conversation to answer. Its row says
+`author_unattended: true` and `author_ended: false` and carries no
+`author_key`, so no gate delivers it; the result stays in the kernel's pull
+request record, this inbox and Stats.
+
 A main-only recipient contract may name the recipient's own target WI; a
 requester contract is settled on the WI it was offered from, which is therefore
 its target. For either the inbox reports who holds that WI: the inbox Agent on
@@ -155,15 +178,16 @@ def next_step(state: Json, key: str, item: Json) -> Json | None:
             if "pending" in owing.values()
             else ["complete", "return"],
         }
+    settler = collaboration.settler(state, item)
     settle = [
         owed
-        for owed in collaboration.awaiting_settlement(state, item["offered_by"]["actor"])
+        for owed in (collaboration.awaiting_settlement(state, settler) if settler else [])
         if owed["contract_id"] == key
     ]
     if settle:
         return {
             "role": "requester",
-            "actors": [item["offered_by"]["actor"]],
+            "actors": [settler],
             "actions": settle[0]["options"],
         }
     return None
@@ -293,6 +317,10 @@ def pull_request_results(
             **({"review": {"score": review["score"], "summary": summary(review["reason"])}}
                if review is not None and value != "merged" else {}),
             "target_work_item_id": wi,
+            "author_session": item["author"],
+            # A round registered before the kernel recorded the entry: unknown.
+            "author_entry": item.get("author_entry", UNKNOWN_ENTRY),
+            "submitted_at": item["submitted_at"],
         })
     return rows
 
@@ -320,6 +348,60 @@ def target(work_item_id: str, actor: str, surface: str | None,
             "holder_key": holder_key(holder["session"])}
 
 
+def handoffs(history: list[Json]) -> Json:
+    """The few journal facts that can end a session, kept instead of the history:
+    rollovers (`TransferReserved`) and Agent switches asked (`request_switch`)
+    with who committed them and when, and the attested switch proofs that a
+    `continue_here` entered with (`SessionContinued.source`)."""
+    found: Json = {"transfers": [], "switches": [], "entered": set()}
+    for entry in history:
+        kinds = {e["kind"] for e in entry["events"]}
+        principal = entry["semantics"].get("principal")
+        if "TransferReserved" in kinds:
+            found["transfers"].append((str(entry["at"]), principal))
+        asked = (entry.get("result") or {}).get("switch_request")
+        if isinstance(asked, dict) and isinstance(asked.get("target"), str):
+            found["switches"].append(
+                (str(entry["at"]), principal, entry["request_id"], asked["target"]))
+        found["entered"].update(
+            e["payload"]["source"] for e in entry["events"] if e["kind"] == "SessionContinued")
+    return found
+
+
+# The entry of a round registered before rounds recorded it.
+UNKNOWN_ENTRY = "unrecorded"
+
+
+def session_ended(index: dict[str, Json], lineage: list[str], session: Json, since: str,
+                  entry: Any = None, holder: Json | None = None) -> bool:
+    """The kernel's own record that `session` will take no more turns on this
+    round's WI. A round whose entry was never recorded may be a scheduler run
+    nothing can reach, so it counts as ended (the holder may hear of it once
+    more, never not at all). Otherwise the session, after registering, handed
+    the WI (or a child's parent) over by rollover, or switched away from it:
+    its `request_switch` was entered in the target by `continue_here` with the
+    Host's switch proof, or, since some entries succeed without that event, the
+    WI is now held by another session (`holder`). No conversation missing on
+    some node counts. Scheduler rounds never reach here (see `inbox`)."""
+    if entry == UNKNOWN_ENTRY:
+        return True
+    start = instant(since)
+    entered = set().union(*(index[wi]["entered"] for wi in index))
+    for wi in lineage:
+        found = index.get(wi)
+        if found is None:
+            continue
+        if any(who == session and instant(at) >= start for at, who in found["transfers"]):
+            return True
+        if any(who == session and instant(at) >= start and (
+                holder is not None and holder != session
+                or digest({"source": session, "source_wi": wi, "request_id": request,
+                           "target": target}) in entered)
+               for at, who, request, target in found["switches"]):
+            return True
+    return False
+
+
 def parent_state(conn: Any, namespace: str, wi: str) -> Json:
     state = Kernel._replay(conn, namespace, wi)[0]
     if state is None:
@@ -336,6 +418,8 @@ def inbox(storage: Any, namespace: str, actor: str, surface: str | None = None,
     items: list[Json] = []
     results: list[Json] = []
     holders: dict[str, Json | None] = {}
+    index: dict[str, Json] = {}
+    parents: dict[str, str | None] = {}
     unavailable: list[Json] = []
     with storage.connection(write=False, collection="list") as conn:
         if conn.execute(
@@ -361,6 +445,7 @@ def inbox(storage: Any, namespace: str, actor: str, surface: str | None = None,
             # not active (stopped, transferring, ended, unreadable) nobody holds it.
             state = children.followed(state, lambda parent: parent_state(conn, namespace, parent))
             holders[wi] = state.get("holder") if state["status"] == "active" else None
+            index[wi], parents[wi] = handoffs(history), state.get("parent")
             if state["status"] not in OPEN:
                 continue
             results += pull_request_results(wi, state, history, actor, now)
@@ -391,7 +476,7 @@ def inbox(storage: Any, namespace: str, actor: str, surface: str | None = None,
                         "kind": owed["kind"],
                         "status": owed["status"],
                         "main_only": collaboration.main_only(item),
-                        "offered_by": actor,
+                        "offered_by": item["offered_by"]["actor"],
                         "offered_at": offered_at(history, owed["contract_id"]),
                         **({"deadline": item["deadline"]} if "deadline" in item else {}),
                         "answered_by": owed["answered_by"],
@@ -405,6 +490,20 @@ def inbox(storage: Any, namespace: str, actor: str, surface: str | None = None,
         if "target_work_item_id" in item:
             item["target"] = target(item.pop("target_work_item_id"), actor, surface,
                                     holders, unreadable)
+    for row in results:
+        # The round's registering session made its head: it alone receives the
+        # result until the journal shows it ended; then the WI holder does. A
+        # scheduler run's result goes to no session.
+        author, since, entry = row.pop("author_session"), row.pop("submitted_at"), row.pop("author_entry")
+        if entry == collaboration.UNATTENDED_ENTRY:
+            row["author_unattended"], row["author_ended"] = True, False
+            continue
+        lineage = [row["work_item_id"], *([parents[row["work_item_id"]]]
+                                         if parents.get(row["work_item_id"]) else [])]
+        row["author_ended"] = session_ended(index, lineage, author, since, entry,
+                                            holders.get(row["work_item_id"]))
+        if not row["author_ended"] and surface is not None and author.get("surface") == surface:
+            row["author_key"] = holder_key(author["session"])
     # The WIs this Agent's sessions hold, for scheduled wakes of a held session.
     held = [target(wi, actor, surface, holders, unreadable)
             for wi, holder in sorted(holders.items()) if holder is not None and holder["actor"] == actor]

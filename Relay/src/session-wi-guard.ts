@@ -10,7 +10,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { StreamJsonMessage } from './types.js';
 
-export const SESSION_WI_REMINDER = '[Relay] 本请求尚未声明归属：要改文件、提 PR 或动生产时先调用 declare_session_wi 登记所属 WI；闲聊、只读查询声明 none，不要为此新建 WI。';
+/** A trigger only: the rule itself is the declaration tool's own (MCP instructions or tool description). */
+export const SESSION_WI_REMINDER = '[Relay] 本请求尚未调用 declare_session_wi 声明归属。';
 
 /** The tools runtime/cc-session-wi-guard.mjs judges; all other tools never reach the hook. */
 export const GUARD_MATCHER = 'Bash|mcp__pulse__pulse_work_item';

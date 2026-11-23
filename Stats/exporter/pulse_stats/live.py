@@ -112,6 +112,7 @@ class LiveSnapshotService:
             codex_quota=Path.home()/".local/state/pulse/stats/codex-quota-v1.json",
             cc_quota=Path.home()/".local/state/pulse/stats/cc-quota-v1.json",
             grok_quota=Path.home()/".local/state/pulse/stats/grok-quota-v1.json",
+            agy_quota=Path.home()/".local/state/pulse/stats/agy-quota-v1.json",
             wi_facts=Path.home()/".local/state/pulse/stats/wi-facts-v1.json",
         ), Path.home()/".local/share/pulse/config/relay/paths.json")
         return cls(

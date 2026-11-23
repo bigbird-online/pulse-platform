@@ -78,6 +78,29 @@ class Pending(Exception):
     """Natural acceptance has no scheduled publication to judge yet."""
 
 
+def verify_original_queries(document, frozen_for, catalog):
+    """Each published view is the original query at its watermark, report digest included.
+
+    `frozen_for(query, canonical_order)` answers that query over the frozen
+    ledger. The full engine lists rows in its preparation order; the
+    incremental engine (refresh.json incremental.views=on) in entity order,
+    which is the same query read with canonical_order. Either must match exactly.
+    """
+    from pulse_compute_cost.stats_dashboard import project_cost
+    for view in document['views']:
+        q=dict(view['query']);q['group_by']=tuple(q['group_by']);q['work_items']=tuple(q['work_items'])
+        witness=retained_catalog_witness(view,catalog)
+        raw=frozen_for(q).query(CollaborationQuery(**q),catalog=catalog['catalog'],catalog_observed_at=witness)
+        if raw['report_sha256']!=view['report_sha256']:
+            raw=frozen_for(q,True).query(CollaborationQuery(**q),catalog=catalog['catalog'],catalog_observed_at=witness)
+        if raw['report_sha256']!=view['report_sha256'] or project_cost(raw['summary']['cost'])!=view['summary']['cost']:
+            raise AssertionError('original query and publisher differ')
+        if raw['summary']['usage']['tokens']!=view['summary']['usage']['tokens']:
+            raise AssertionError('publisher Token facts differ')
+        if [(g['key'],project_cost(g['cost'])) for g in raw['groups'] if view['dimension']!='activity' or g['usage']['event_count']>0]!=[(g['key'],g['cost']) for g in view['groups']]:
+            raise AssertionError('published groups differ from query')
+
+
 def at(value):return datetime.fromisoformat(value.replace('Z','+00:00'))
 
 
@@ -267,26 +290,19 @@ def verify(revision, *, observations=2, timeout=DEFAULT_READBACK_TIMEOUT, requir
             from pulse_compute_cost.agent_tenants import load_agent_tenants
             agent_tenants=load_agent_tenants(registry)
         frozen_queries = {}
-        def frozen_for(query):
-            key = (query.get('as_of'), query.get('watermark'))
+        def frozen_for(query, canonical_order=False):
+            # The incremental engine (refresh.json incremental.views=on) lists rows in
+            # entity order: the same original query read in canonical order.
+            key = (query.get('as_of'), query.get('watermark'), canonical_order)
             if key not in frozen_queries:
                 frozen_queries[key] = CollaborationQuerySession(frozen_ledger.receipt_snapshot(
-                    as_of=key[0], watermark=key[1]), agent_tenants=agent_tenants)
+                    as_of=key[0], watermark=key[1]), agent_tenants=agent_tenants, canonical_order=canonical_order)
             return frozen_queries[key]
         catalog=load_catalog_snapshot(resolve_catalog_path(registry=registry,
             registry_path=home/'.local/state/pulse/compute-cost/sources.json'))
         if catalog is None:
             raise AssertionError('installed publication price evidence is unavailable')
-        from pulse_compute_cost.stats_dashboard import project_cost
-        for view in document['views']:
-            q=dict(view['query']);q['group_by']=tuple(q['group_by']);q['work_items']=tuple(q['work_items'])
-            raw=frozen_for(q).query(CollaborationQuery(**q),catalog=catalog['catalog'],catalog_observed_at=retained_catalog_witness(view,catalog))
-            if raw['report_sha256']!=view['report_sha256'] or project_cost(raw['summary']['cost'])!=view['summary']['cost']:
-                raise AssertionError('original query and publisher differ')
-            if raw['summary']['usage']['tokens']!=view['summary']['usage']['tokens']:
-                raise AssertionError('publisher Token facts differ')
-            if [(g['key'],project_cost(g['cost'])) for g in raw['groups'] if view['dimension']!='activity' or g['usage']['event_count']>0]!=[(g['key'],g['cost']) for g in view['groups']]:
-                raise AssertionError('published groups differ from query')
+        verify_original_queries(document, frozen_for, catalog)
         today=next(v for v in document['views'] if v['period']=='today' and v['dimension']=='activity')
         week=next(v for v in document['views'] if v['period']=='week' and v['dimension']=='activity')
         period_acceptance=verify_current_activity(today,week) if require_actors else None

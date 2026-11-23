@@ -10,7 +10,7 @@ import json
 
 from .cc_input_context import _conflicting_copy, _native_parent, _request_text, _task_notifications, _task_origin
 from .cc_lineage import _main_root_session, _sidechain_root_session
-from .child_work_items import child_of, dispatch_marker
+from .child_work_items import dispatch_marker, lineage_child
 from .events import parse_timestamp
 from .receipts import Receipt, ReceiptError, current_receipts, digest, reference
 
@@ -327,7 +327,7 @@ def request_attributions(facts, usages, bindings, declarations, observed, childr
             proofs.update({d['native_evidence_ref'], d['request_ref'], d['request_record_ref'], d['tool_scope_ref'], *d['ancestry_refs']})
         marker = binding.get('child_marker')
         if (marker and payload['policy'] == POLICY and payload['wi']
-                and child_of(children or {}, marker[0], payload['wi'], parse_timestamp(start, 'native boundary'))):
+                and lineage_child(children or {}, marker[0], payload['wi'], parse_timestamp(start, 'native boundary'))):
             proofs.add(reference('cc_child_work_item', [marker[0], payload['wi'], marker[1]]))
             payload['wi'] = marker[0]
         # Keep the collector's stable per-observation entity. A policy

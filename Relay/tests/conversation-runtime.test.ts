@@ -14,6 +14,7 @@ import {
   type ConversationRuntimeAdapter,
 } from '../src/conversation-runtime.js';
 import type { ContextSoftWarningEvent, Pool, ProcessStatusInfo, SessionEndReason, SpawnConfig, StreamJsonMessage } from '../src/types.js';
+import { fencedInternalTurn, watchInternalTurn } from '../src/internal-turn-fence.js';
 
 function processFor(tenantId: string, runtime: 'cc' | 'codex' | 'cc-sdk' | 'pi'): ConversationProcess {
   return {
@@ -423,6 +424,32 @@ describe('conversation runtime contract', () => {
     cc.events.emit('exit', 'member-000:amanda', 1);
     expect(onResponse).not.toHaveBeenCalled();
     expect(onExit).not.toHaveBeenCalled();
+  });
+
+  it('carries a delivery through a turn fallback only into the session it was routed to', async () => {
+    const cc = Object.assign(createMockAdapter('cc'), { fencesInternalTurns: true });
+    const codex = createMockAdapter('codex');
+    const manager = createConversationRuntimeManager();
+    manager.register(cc);
+    manager.register(codex);
+    manager.on('error', () => {});
+    await manager.spawn({ tenantId: 'member-000:amanda', conversationRuntimePreference: ['cc', 'codex'],
+      workspace: '/tmp/workspace', sessionId: 'session-1' });
+    const outcomes: string[] = [];
+    watchInternalTurn('fallback-1', outcome => outcomes.push(outcome));
+    // The adapter checks the delivery itself, so the manager hands it on still fenced.
+    await manager.send('member-000:amanda', fencedInternalTurn({ type: 'human', content: 'pr result' }, ['cc-session'], 'fallback-1'));
+    expect(cc.sentMessages[0]).toMatchObject({ expect_native_ids: ['cc-session'], internal_delivery_ref: 'fallback-1' });
+    expect(outcomes).toEqual([]);
+    cc.events.emit('error', 'member-000:amanda', new Error('429 code=1310 Weekly/Monthly Limit Exhausted'));
+    await new Promise((resolve) => setImmediate(resolve));
+    // The replacement runs another session: the delivery is refused there, not sent.
+    expect(codex.spawn).toHaveBeenCalledOnce();
+    expect(codex.send).not.toHaveBeenCalled();
+    expect(outcomes).toEqual(['refused']);
+    // The refused turn no longer holds the queue: the next turn is served and settled normally.
+    await manager.send('member-000:amanda', { type: 'human', content: 'next' });
+    expect(codex.send).toHaveBeenCalledOnce();
   });
 
   it('falls back during a turn when the active runtime is rate-limited before any assistant response', async () => {
@@ -900,6 +927,40 @@ describe('ComputeCost producer integration',()=>{
       cc.events.emit('response','t',resultB);
       expect(capture.response).toHaveBeenLastCalledWith(b,resultB);
     } finally { manager?.dispose();vi.useRealTimers(); }
+  });
+  it('records the next turns of a conversation under the WI binding given to it while live',async()=>{
+    const codex=Object.assign(createMockAdapter('codex'),{bindRuntimeUsage:vi.fn()});
+    const begin=vi.fn(()=>({ref:'attempt',finished:false}) as any);
+    const capture={begin,finish:vi.fn(),response:vi.fn(),gap:vi.fn(),human:vi.fn(),linkHuman:vi.fn()};
+    const manager=createConversationRuntimeManager({collaborationCapture:capture});manager.register(codex);
+    try {
+      await manager.spawn({tenantId:'t',runtime:'codex',workspace:'/synthetic',sessionId:'s'});
+      const binding=buildRuntimeUsageBinding({workItemId:'wi_20261122_053',agentId:'asobi',phase:'conversation',epoch:1,
+        runtime:'codex',procurementSource:'unknown'});
+      manager.bindRuntimeUsage('t',binding);
+      expect(codex.bindRuntimeUsage).toHaveBeenCalledWith('t',binding);
+      await manager.send('t',{type:'human',content:'A'});
+      expect(begin).toHaveBeenLastCalledWith('codex',expect.objectContaining({computeCostBinding:binding}),expect.anything());
+    } finally { manager.dispose(); }
+  });
+  it('stops recording turns under a WI binding the runtime withdrew',async()=>{
+    let carried:any;
+    const codex=Object.assign(createMockAdapter('codex'),{bindRuntimeUsage:vi.fn((_t:string,b:any)=>{carried=b;}),
+      runtimeUsageBinding:vi.fn(()=>carried)});
+    const begin=vi.fn(()=>({ref:'attempt',finished:false}) as any);
+    const capture={begin,finish:vi.fn(),response:vi.fn(),gap:vi.fn(),human:vi.fn(),linkHuman:vi.fn()};
+    const manager=createConversationRuntimeManager({collaborationCapture:capture});manager.register(codex);
+    try {
+      await manager.spawn({tenantId:'t',runtime:'codex',workspace:'/synthetic',sessionId:'s'});
+      const binding=buildRuntimeUsageBinding({workItemId:'wi_20261122_053',agentId:'asobi',phase:'conversation',epoch:1,
+        runtime:'codex',procurementSource:'unknown'});
+      manager.bindRuntimeUsage('t',binding);
+      await manager.send('t',{type:'human',content:'A'});
+      expect(begin).toHaveBeenLastCalledWith('codex',expect.objectContaining({computeCostBinding:binding}),expect.anything());
+      carried=undefined;  // The runtime withdrew it (agy: another native conversation).
+      await manager.send('t',{type:'human',content:'B'});
+      expect((begin.mock.calls.at(-1) as any)[1].computeCostBinding).toBeUndefined();
+    } finally { manager.dispose(); }
   });
   it('captures a runtime-notification turn under its parent Relay dispatch',async()=>{
     const cc=createMockAdapter('cc');let seq=0;

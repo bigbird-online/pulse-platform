@@ -145,7 +145,7 @@ def authorized(
     if intent in SCOPED_INTENTS - {"checkpoint"} and any(
         not workspaces.retired(state, resource)
         and not resource.get("superseded_by")
-        and (resource.get("retirement") or not workspaces.ready(state, resource))
+        and (workspaces.retiring(state, resource) or not workspaces.ready(state, resource))
         and any(overlaps(r, other) for r in requested for other in resource["resources"])
         for resource in state.get("workspaces", {}).values()
     ):
@@ -219,7 +219,7 @@ def denial(
         if (
             not workspaces.retired(state, resource)
             and not resource.get("superseded_by")
-            and (resource.get("retirement") or not workspaces.ready(state, resource))
+            and (workspaces.retiring(state, resource) or not workspaces.ready(state, resource))
             and any(overlaps(r, other) for r in requested for other in resource["resources"])
         ):
             return (
@@ -1502,8 +1502,13 @@ def observation(state: Json | None, context: HostContext, revision: int) -> Json
                 )
             }, 'retry': delivery.retry_policy(effect),
                # A resource intention that can never send or resume again.
-               **({'obsolete': workspaces.obsolete(state, effect)}
-                  if effect["effect_kind"] in workspaces.EFFECT_KINDS else {})}
+               **({'obsolete': workspaces.obsolete(state, effect),
+                   # The host that holds the workspace runs it (`workspaces.on_host`).
+                   'host': workspaces.host_of(state, effect["snapshot"]["resource_id"])}
+                  if effect["effect_kind"] in workspaces.EFFECT_KINDS else {}),
+               # Whether the kernel would admit a new merge attempt now.
+               **({'startable': pull_requests.startable(state, effect)}
+                  if effect["effect_kind"] == pull_requests.MERGE_KIND else {})}
             for effect in state["effects"].values()
         ]
         if state

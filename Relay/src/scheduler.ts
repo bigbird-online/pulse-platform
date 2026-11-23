@@ -27,6 +27,7 @@ import {
   runCcBatch,
 } from './runtime.js';
 import { resolvePulseRuntimePriority } from './codex-defaults.js';
+import { createAgyBatchRuntimeAdapter } from './agy-batch-runtime.js';
 import { resolveComputeProfile } from './compute-profiles.js';
 import { sharedAccessPromptLines, standingAccessPromptLine } from './config-paths.js';
 import { standingAccessFor } from './standing-access.js';
@@ -523,6 +524,10 @@ function invalidDeliveryPaths(delivery: ScheduledJob['delivery']): string | unde
     && (typeof delivery.documentPath !== 'string' || !delivery.documentPath.trim())) {
     return 'delivery.documentPath';
   }
+  if (delivery.sendOutput !== undefined
+    && (typeof delivery.sendOutput !== 'boolean' || delivery.mode !== 'telegram_document')) {
+    return 'delivery.sendOutput';
+  }
   if (delivery.captionPath === undefined) return undefined;
   if (typeof delivery.captionPath !== 'string' || !delivery.captionPath.trim()
     || isAbsolute(delivery.captionPath)
@@ -796,6 +801,14 @@ async function deliverTelegramDocument(
   }
   const captionFile = readDeliveryCaptionFile(job, 'telegram_document');
   if (!captionFile.ok) return captionFile;
+  // The reply is checked before anything is sent, so a run without one sends no document either.
+  // Only the run's last reply is sent; `output` also joins the text of earlier turns.
+  const reply = job.delivery.sendOutput === true ? (result.finalReply ?? '').trim() : undefined;
+  if (reply === '') {
+    return { ok: false, errorMessage: result.finalReply === undefined
+      ? 'telegram_document sendOutput: the runtime did not separate the last reply'
+      : 'telegram_document sendOutput: the run left no reply to send' };
+  }
 
   const caption = job.delivery.caption
     ? expandDeliveryTemplate(job.delivery.caption, job)
@@ -828,6 +841,22 @@ async function deliverTelegramDocument(
       console.error({ ts: new Date().toISOString(), level: 'error', module: 'scheduler', job: job.id, msg: 'Telegram captionPath delivery failed', receiptId: textReceipt.id, error: textReceipt.error });
       return { ok: false, errorMessage };
     }
+  }
+  if (reply !== undefined) {
+    // Plain text, cut at Telegram's limit like every scheduled text.
+    const replyReceipt = await deliverTelegramText({
+      id: `delivery:${job.id}:telegram-document-reply:${Date.now()}`,
+      correlationId: `job:${job.id}`,
+      channel: 'telegram',
+      address: { channel: 'telegram', kind: 'telegram_chat', value: job.delivery.to },
+      payload: { kind: 'text', text: reply },
+    }, bot);
+    if (replyReceipt.status !== 'sent') {
+      const errorMessage = `telegram_document reply delivery failed (document already sent): ${replyReceipt.error ?? 'unknown error'}`;
+      console.error({ ts: new Date().toISOString(), level: 'error', module: 'scheduler', job: job.id, msg: 'Telegram document reply delivery failed', receiptId: replyReceipt.id, error: replyReceipt.error });
+      return { ok: false, errorMessage };
+    }
+    console.log({ ts: new Date().toISOString(), level: 'info', module: 'scheduler', job: job.id, msg: 'Delivered reply to Telegram after document', chatId: Number(job.delivery.to), receiptId: replyReceipt.id, attempts: replyReceipt.attempts });
   }
   return { ok: true };
 }
@@ -936,12 +965,15 @@ async function maybeAlertJobFailureFeishu(
   const openId = job.delivery.feishuOpenId;
   if (!openId) return;
   if (result.status === 'ok') return;
+  // A slot waiting for its subscription limit to reset is not failed yet; its retry alerts if it fails.
+  if (result.deferred) return;
   if (job.convergent === true) {
     // A convergent job's next success settles this failure, so a failure that
     // recovers by itself must not take a human's attention. Alert once, only
     // when the streak has neither recovered nor stopped repeating.
+    // The state already counts this run: it is recorded before the alert.
     const state = holder()._state ?? { consecutiveErrors: 0 };
-    const failures = state.consecutiveErrors + 1;
+    const failures = state.consecutiveErrors;
     const since = Date.parse(state.failingSince ?? '');
     const lastingMs = Number.isFinite(since) ? Date.now() - since : 0;
     if (state.failureAlerted || failures < PERSISTENT_FAILURE_RUNS || lastingMs < PERSISTENT_FAILURE_MS) {
@@ -1130,6 +1162,7 @@ async function executeJob(
   automaticGuard?: () => void,
   displayName?: AgentDisplayName,
   stateHolder: () => ScheduledJob = () => job,
+  settle: (result: JobResult) => JobResult = (result) => result,
 ): Promise<JobResult> {
   const terminalRun = terminalRegistry.startRun(job.id, job.owner);
   const runId = terminalRun.runId;
@@ -1321,13 +1354,13 @@ async function executeJob(
     } else if (timedOut || (exitCode === 1 && stdout === '' && durationMs >= timeoutMs - 1000)) {
       status = 'timeout';
       executionStatus = 'timeout';
-      errorMessage = `${runtime ?? 'runtime'} timeout after ${durationMs}ms`;
+      errorMessage = `${runtime ?? 'runtime'} timeout after ${durationMs}ms${runtimeResult.failureReason ? `: ${runtimeResult.failureReason}` : ''}`;
     } else {
       status = 'error';
       executionStatus = 'error';
       errorMessage = runtimeResult.spawnErrorCode
         ? `${runtime ?? 'runtime'} unavailable (${runtimeResult.spawnErrorCode})`
-        : `${runtime ?? 'runtime'} exited with code ${exitCode}`;
+        : `${runtime ?? 'runtime'} exited with code ${exitCode}${runtimeResult.failureReason ? `: ${runtimeResult.failureReason}` : ''}`;
     }
 
     if ((attemptedRuntimes?.length ?? 0) > 1) {
@@ -1371,6 +1404,7 @@ async function executeJob(
       executionStatus,
       deliveryStatus,
       output: stdout,
+      ...(runtimeResult.finalText !== undefined ? { finalReply: runtimeResult.finalText } : {}),
       durationMs,
       runtime,
       attemptedRuntimes,
@@ -1527,9 +1561,18 @@ async function executeJob(
       const stderrHead = clipStderr(runtimeResult.stderr ?? '');
       if (stderrHead) logEntry.stderrHead = stderrHead;
     }
+    // The run's state, its retry and whether it counts as failed are decided in
+    // one step, before anything is awaited: what the notice and the alert say
+    // is what the durable state records.
+    result = settle(result);
+    if (result.deferred) {
+      // Limited, not failed: the slot runs again after the reset, and that run settles it.
+      logEntry.deferred = true;
+      logEntry.deferredReason = result.deferredReason;
+    }
     console.log(logEntry);
 
-    await progressNotice?.finish(result.status, result.durationMs);
+    await progressNotice?.finish(result.deferred ? 'deferred' : result.status, result.durationMs);
     await maybeAlertJobFailureFeishu(job, result, feishuClient, terminalRegistry, runId, stateHolder);
 
     return result;
@@ -1542,7 +1585,7 @@ async function executeJob(
     }
     console.error({ ts: new Date().toISOString(), level: 'error', module: 'scheduler', job: job.id, runId, msg: 'executeJob unexpected error', error: String(err) });
     const durationMs = Date.now() - startedAt;
-    const crashResult: JobResult = { jobId: job.id, runId, status: 'error', executionStatus: 'error', deliveryStatus: 'skipped', output: '', durationMs, errorMessage: String(err) };
+    const crashResult = settle({ jobId: job.id, runId, status: 'error', executionStatus: 'error', deliveryStatus: 'skipped', output: '', durationMs, errorMessage: String(err) });
     await progressNotice?.finish('error', durationMs);
     // crash-type failures (spawn error / unexpected throw) bypass the normal
     // finish path above, so alert here too — this is exactly the "skill never
@@ -1594,6 +1637,8 @@ export interface SchedulerOptions {
   ccWriteBoundaryFor?: (owner: string) => boolean;
   /** The owner Agent's `commitRepos` and `allowedDomains` for its bounded CC runs. */
   ccRepoAccessFor?: (owner: string) => import('./cc-write-boundary.js').CcRepoAccess | undefined;
+  /** Whether the owner Agent runs as the Relay host account (agent-isolation.ts); absent is unknown. */
+  ownerIsolationFor?: (owner: string) => import('./agent-isolation.js').OwnerIsolation;
   /** The session WI MCP Relay's CC conversations get; every scheduled CC run gets it too. */
   ccSessionWiMcp?: import('./cc-session-wi-mcp.js').CcSessionWiMcp;
   /**
@@ -1688,6 +1733,7 @@ export function createScheduler(
       createCcBatchRuntimeAdapter({ sessionWiMcp: options.ccSessionWiMcp }),
       createCcInteractiveBatchRuntimeAdapter({ sessionWiMcp: options.ccSessionWiMcp }),
       createCodexBatchRuntimeAdapter(),
+      createAgyBatchRuntimeAdapter(),
     ],
   });
 
@@ -1745,8 +1791,13 @@ export function createScheduler(
     return jobs.filter(job => job.runNode === currentNode);
   }
 
-  function recordJobRunState(job: ScheduledJob, result: JobResult,
-    observation = startObservation(job)): void {
+  /**
+   * Folds a finished run into the job's state and returns the result as
+   * recorded: marked deferred exactly when the state now keeps its slot
+   * waiting for a subscription limit to reset.
+   */
+  function recordJobRunState(job: ScheduledJob, finished: JobResult,
+    observation = startObservation(job)): JobResult {
     const live = (liveRuns.get(job.id) ?? []).filter(run => run !== observation);
     if (live.length) liveRuns.set(job.id, live); else liveRuns.delete(job.id);
     // reload() replaces jobStore and its job objects while already-claimed work
@@ -1757,28 +1808,35 @@ export function createScheduler(
     // definition decides how its outcome reads.
     const target = jobStore?.getJob(job.id) ?? job;
     const prior = target._state;
+    const failed = finished.status !== 'ok';
+    const now = new Date().toISOString();
+    const quotaRetries = nextQuotaRetries(prior?.quotaRetries, {
+      scheduledFor: observation.scheduledFor, definitionHash: observation.definitionHash,
+      failed, quotaResetAt: finished.quotaResetAt,
+    }, finishObservation({ ...job, _state: prior }, finished, observation).definitionHash);
+    const waiting = failed ? quotaRetries?.find(item => item.scheduledFor === observation.scheduledFor) : undefined;
+    const { deferred: _deferred, deferredReason: _reason, ...plain } = finished;
+    void _deferred; void _reason;
+    const result: JobResult = waiting ? { ...plain, deferred: true, deferredReason: 'quota_limit' } : plain;
     const observed = { ...finishObservation({ ...job, _state: prior }, result, observation),
       currentRun: live.at(-1) };
-    const failed = result.status !== 'ok';
-    const now = new Date().toISOString();
+    // A slot waiting for its limit to reset leaves the failure streak as it was.
+    const counted = failed && !waiting;
     target._state = {
       ...observed,
-      consecutiveErrors: failed ? (prior?.consecutiveErrors ?? 0) + 1 : 0,
+      consecutiveErrors: counted ? (prior?.consecutiveErrors ?? 0) + 1 : failed ? (prior?.consecutiveErrors ?? 0) : 0,
       lastRunAt: now,
       lastStatus: result.status,
-      failingSince: failed ? (prior?.failingSince ?? now) : undefined,
+      failingSince: counted ? (prior?.failingSince ?? now) : failed ? prior?.failingSince : undefined,
       failureAlerted: failed && prior?.failureAlerted === true ? true : undefined,
-      quotaRetries: nextQuotaRetries(prior?.quotaRetries, {
-        scheduledFor: observation.scheduledFor, definitionHash: observation.definitionHash,
-        failed, quotaResetAt: result.quotaResetAt,
-      }, observed.definitionHash),
+      quotaRetries,
     };
-    const waiting = target._state.quotaRetries?.find(item => item.scheduledFor === observation.scheduledFor);
-    if (failed && waiting) {
+    if (waiting) {
       console.warn({ ts: now, level: 'warn', module: 'scheduler', job: job.id,
         msg: 'subscription limit reached; slot will run again after reset', ...waiting });
     }
     jobStore?.persistRunState();
+    return result;
   }
 
   function acquireWorkspace(workspace: string, jobId: string): Promise<() => void> {
@@ -1883,6 +1941,8 @@ export function createScheduler(
     let releaseCapacity: (() => void) | undefined;
     let releaseWorkspace: (() => void) | undefined;
     const observation = startObservation(job, scheduledFor);
+    // The run as executeJob recorded it, once it has.
+    let settled: JobResult | undefined;
     liveRuns.set(job.id, [...(liveRuns.get(job.id) ?? []), observation]);
     job._state = { ...(job._state ?? { consecutiveErrors: 0 }), currentRun: observation };
     try {
@@ -1906,7 +1966,8 @@ export function createScheduler(
         deliveryBot,
         (input, preference) => runtimeOrchestrator.run({ ...input,
           ccWriteBoundary: options.ccWriteBoundaryFor?.(job.owner) === true,
-          ccRepoAccess: options.ccRepoAccessFor?.(job.owner) }, preference),
+          ccRepoAccess: options.ccRepoAccessFor?.(job.owner),
+          ownerIsolation: options.ownerIsolationFor?.(job.owner) ?? 'unknown' }, preference),
         deliveryEnabled,
         deliveryFeishuClient,
         source,
@@ -1919,12 +1980,18 @@ export function createScheduler(
         options.agentDisplayName,
         // The failure streak lives on the current definition after a reload.
         () => jobStore?.getJob(job.id) ?? job,
+        // A run is recorded once; a crash after that keeps the first record.
+        (finished) => (settled ??= recordJobRunState(job, finished, observation)),
       );
-      recordJobRunState(job, result, observation);
+      if (!settled) return recordJobRunState(job, result, observation);
+      // The alert may have marked the streak alerted after the record.
+      jobStore?.persistRunState();
       return result;
     } catch (error) {
-      recordJobRunState(job, {jobId: job.id, status: 'error', executionStatus: 'error',
-        deliveryStatus: 'skipped', output: '', durationMs: Math.max(0, Date.now()-Date.parse(observation.startedAt))}, observation);
+      if (!settled) {
+        recordJobRunState(job, {jobId: job.id, status: 'error', executionStatus: 'error',
+          deliveryStatus: 'skipped', output: '', durationMs: Math.max(0, Date.now()-Date.parse(observation.startedAt))}, observation);
+      }
       throw error;
     } finally {
       // The one ownership boundary of the claim, so resolver/workspace

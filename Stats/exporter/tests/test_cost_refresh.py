@@ -411,6 +411,28 @@ class CostRefreshTests(unittest.TestCase):
                                'mode':'export','error_type':'FileNotFoundError','reason':'publication_failed'})
         self.assertNotIn(str(self.root),captured.getvalue())
 
+    def test_incremental_ingest_switch_attaches_the_fact_index_only_when_on(self):
+        source = self.root / 'a.jsonl'
+        refresh.install_peer_input(source, self.data)
+        timings = {}
+        with refresh.ingest_index({}):
+            self.assertIsNone(UsageLedger.index_provider)
+            collect_registered_sources(self.registry([source]), self.ledger, timings=timings)
+        self.assertFalse((self.ledger.root / 'derived').exists())
+        self.assertNotIn('ingest_lookup', timings)
+        self.assertEqual(timings['inserted'], len(self.ledger.receipt_snapshot()['facts']))
+        indexed = UsageLedger(self.root / 'indexed-ledger')
+        timings = {}
+        with refresh.ingest_index({'incremental': {'ingest': 'on'}}):
+            collect_registered_sources({**self.registry([source]), 'ledger_root': str(indexed.root)}, indexed,
+                                       timings=timings)
+        self.assertIsNone(UsageLedger.index_provider)
+        self.assertEqual(timings['ingest_lookup'], 'index')
+        self.assertTrue((indexed.root / 'derived' / 'fact-index.sqlite').is_file())
+        self.assertEqual(indexed.receipt_snapshot()['facts'], self.ledger.receipt_snapshot()['facts'])
+        with self.assertRaises(ValueError), refresh.ingest_index({'incremental': {'ingest': 'shadow'}}):
+            pass
+
     def test_same_receipts_from_two_nodes_are_not_two_costs(self):
         a, b = self.root / 'a.jsonl', self.root / 'b.jsonl'
         refresh.install_peer_input(a, self.data)

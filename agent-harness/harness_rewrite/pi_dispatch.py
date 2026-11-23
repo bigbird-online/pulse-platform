@@ -45,6 +45,17 @@ def launcher_failed_before_exec(root: Path) -> bool:
     return marker.is_file() and empty_proof_unspawned()
 
 
+# Session proofs of the process that dispatches; a verifier never carries them.
+INHERITED_PROOFS = frozenset(
+    {"PULSE_PI_TENANT_ID", "SCL_RELAY_HOST_CONTEXT", "SCL_SESSION_REF", "HARNESS_REWRITE_ATTEMPT"}
+)
+
+
+def dispatch_environment() -> dict[str, str]:
+    """The dispatcher's environment without its own session proofs."""
+    return {k: v for k, v in os.environ.items() if k not in INHERITED_PROOFS}
+
+
 class PiDispatch:
     def __init__(
         self,
@@ -89,6 +100,19 @@ class PiDispatch:
     def merges(self) -> PullRequestMerge:
         return PullRequestMerge(self.policy["pull_request_gate"], self.policy["python"],
                                 markers=merge_markers(self.policy))
+
+    def deferrable(self, effect: Json) -> bool:
+        return effect["effect_kind"] == MERGE_KIND and self.merges().deferrable(effect)
+
+    def local(self, effect: Json) -> bool:
+        """A workspace effect runs only on the host that holds the workspace."""
+        from .workspaces import EFFECT_KINDS, on_host
+
+        return effect["effect_kind"] not in EFFECT_KINDS or on_host(
+            effect, self.policy.get("surface"))
+
+    def defer(self, effect: Json) -> str | None:
+        return self.merges().defer(effect) if effect["effect_kind"] == MERGE_KIND else None
 
     def readback(self, effect: Json) -> tuple[str, Json]:
         if effect["effect_kind"] == MERGE_KIND:
@@ -218,7 +242,7 @@ Finish only after CLI confirms your result; report any real error verbatim witho
         resource = runner_bytes()
         self.fixed_file(root / RUNNER, resource)
         argv = [self.policy["node"], str(root / RUNNER)]
-        environment = dict(os.environ)
+        environment = dispatch_environment()
         environment["PI_CODING_AGENT_DIR"] = self.policy["agent_config_dir"]
         environment["HARNESS_REWRITE_DISPATCH"] = effect["effect_id"]
         self.fixed_file(

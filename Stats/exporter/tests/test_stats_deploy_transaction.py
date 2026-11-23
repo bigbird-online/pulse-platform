@@ -295,6 +295,22 @@ class DeploymentTransactionTests(unittest.TestCase):
         self.assertEqual(plistlib.loads((self.installed / 'Contents/Info.plist').read_bytes())['PulseSourceRevision'], B)
         self.assertFalse((self.state / 'publisher-enrollments').exists())
 
+    def test_deployment_moves_the_entry_of_a_paused_oracle_publisher_with_the_reader_it_selects(self):
+        # A paused peer keeps its entry, but this deployment still selects B on Oracle;
+        # the entry ownermac pulls and pushes through must follow it.
+        self.peer_homes = {'pulse@oracle-node-1': self.peer_homes['tcloud-node2']}
+        oracle = {'id': 'oracle-node-1', 'host': 'pulse@oracle-node-1', 'python': d.PEER_PYTHON,
+                  'transport': 'shared_ledger',
+                  'script': f'/home/pulse/.local/share/pulse/stats/releases/{C}/Scripts/pulse-stats-cost-refresh.py'}
+        self.original = {'source_revision': A, 'peers': [oracle], 'publisher': 'oracle-node-1', 'peer_id': 'ownermac',
+                         'paused_peers': {'oracle-node-1': 'paused_by_decision'}}
+        self.native_publisher()
+        d.deploy(self.args)
+        self.assertEqual(self.revision(self.peer_homes['pulse@oracle-node-1']), B)
+        config = json.loads(self.config.read_bytes())
+        self.assertEqual(config['peers'], [{**oracle, 'script': oracle['script'].replace(C, B)}])
+        self.assertEqual(config['paused_peers'], {'oracle-node-1': 'paused_by_decision'})
+
     def test_native_core_node_does_not_require_stats_selectors_to_read_receipts(self):
         self.native_publisher()
         registry = self.home / '.local/state/pulse/compute-cost/sources.json'

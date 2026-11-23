@@ -3,9 +3,11 @@ import { relayChildEnv } from './relay-secrets.js';
 import {execFile} from 'node:child_process';
 import type {AgentConfig,StateManager,ConversationRuntimeId,SpawnConfig} from './types.js';
 import type {CommandRuntime} from './commands.js';
-import {conversationLaunch} from './conversation-launch.js';
+import {agyConversationBinding,conversationLaunch,switchedSessionRuntime} from './conversation-launch.js';
 import {nodeWorkItemCore} from './native-work-item-command.js';
 import {underlyingRuntime} from './runtime-identity.js';
+import {conversationNativeIds,nativeCommandSource,type NativeSourceCandidate} from './session-identity.js';
+import {agyRolloverPrompt,bindAgyWorkItem} from './agy-work-item.js';
 
 /** standInSessionId: the one session a human named to stand in for the source, by the /reset that made it
  * or by a later /wi rollover in the same channel. No other session is ever replaced.
@@ -108,7 +110,7 @@ async function advance(input:Input):Promise<Readback>{
     // No instance (Relay restarted, or the process exited), but this host's session still names the source:
     // the plan is persisted first and the source is recovered below before the core re-checks it at prepare.
     const dormant=!!input.sourceNativeId&&(!live||live.state==='dead')&&!!stored
-      &&(stored.sessionId===input.sourceNativeId||stored.codexThreadId===input.sourceNativeId)?stored:undefined;
+      &&conversationNativeIds(stored).includes(input.sourceNativeId)?stored:undefined;
     if(!input.ref||!dormant&&(!live||['busy','starting','dead'].includes(live.state)))
       throw new Error('native_rollover_requires_idle_original_session');
     const previous=stored?.nativeSessionHistory?.find(h=>h.rolloverRef===input.ref);
@@ -155,8 +157,10 @@ async function advance(input:Input):Promise<Readback>{
     if(!live||live.sessionId!==plan.sourceSessionId)return observed;
     if(['busy','starting'].includes(live.state))throw new Error('native_rollover_source_busy');
     assertResumeCurrent(input.resume);
-    observed=await control({stage:'prepare',ref:plan.ref,...(live.process?.pid?{pid:live.process.pid}
-      :{native_id:('codexThreadId' in live?live.codexThreadId:undefined)??live.sessionId,tenant:poolKey})});
+    const source=nativeCommandSource(live as NativeSourceCandidate,poolKey);
+    if(!source)return {status:'rejected',error:{code:'native_rollover_source_unidentified',
+      reason:'agy 会话还没有对话，内核认不出原会话；原会话保留。'}};
+    observed=await control({stage:'prepare',ref:plan.ref,...source});
     if(plan.origin==='agent'&&!observed.session_handover?.prepared&&observed.status==='rejected'
       &&observed.error?.retryable!==true){
       // The core refused the Agent's own request (its frontier moved on, an effect is in doubt):
@@ -198,7 +202,12 @@ async function advance(input:Input):Promise<Readback>{
   if(source.sessionId!==plan.targetSessionId){
     // This is a channel projection after the source's committed relinquishment.
     // Historical bindings remain as provenance; no new grant is manufactured.
+    // A source a /wi switch saved for its WI hands that place to the successor, which then keeps
+    // the source's runtime on later launches as the source did (conversation-launch.ts).
+    const switched=switchedSessionRuntime(source)!==undefined;
     stateManager.updateSession(poolKey,{sessionId:plan.targetSessionId,runtime:plan.runtime,
+      ...(switched?{workItemSessions:{...source.workItemSessions,[handover.wi]:{at:new Date().toISOString(),
+        unit:{sessionId:handover.target_session_id,runtime:plan.runtime}}}}:{}),
       codexThreadId:undefined,activeWorkItemRuntimeBinding:undefined,pendingWorkItemEntry:undefined,
       interruptedUserMessage:undefined,wasBusyAtShutdown:undefined,
       nativeSessionHistory:[...(source.nativeSessionHistory??[]),{sessionId:source.sessionId,
@@ -207,21 +216,31 @@ async function advance(input:Input):Promise<Readback>{
     stateManager.flushStrict();
   }
   if(!live||live.state==='dead'){
+    // A successor rebuilt after a restart keeps the WI binding already saved for it (bound below only when missing).
+    const kept=plan.runtime==='agy'?agyConversationBinding(saved(),plan.targetSessionId!):undefined;
     live=await runtime.spawn({...launch,runtime:plan.runtime,conversationRuntimePreference:[plan.runtime],
       sessionId:plan.targetSessionId,resume:handover.target_session_exists===true,
       codexThreadId:plan.runtime==='codex'?handover.target_native_id:undefined,
       runtimeSessionBinding:undefined,activeWorkItemRuntimeBinding:undefined,runtimeUsageBinding:undefined,
       hostRecoveryDecisionPath:undefined,hostRecoveryNativeSessionFile:undefined,
       canonicalResourceNativeProofPath:undefined,
-      computeCostBinding:undefined,measurementBaselineReference:undefined,nativeHandoverRef:plan.ref} as SpawnConfig);
+      computeCostBinding:kept,measurementBaselineReference:undefined,nativeHandoverRef:plan.ref} as SpawnConfig);
   }
   if(live.sessionId!==plan.targetSessionId)throw new Error('native_rollover_actual_target_changed');
-  if(!handover.accepted&&live.process?.pid){
-    observed=await control({stage:'accept',ref:plan.ref,pid:live.process.pid});
+  const agy=plan.runtime==='agy';
+  // agy cannot accept from inside its successor (no tools) and runs no process between turns:
+  // Relay accepts it by the conversation its bootstrap turn started, on the pass after that turn.
+  const successor=agy?nativeCommandSource(live as NativeSourceCandidate,poolKey)
+    :live.process?.pid?{pid:live.process.pid}:undefined;
+  if(!handover.accepted&&successor){
+    observed=await control({stage:'accept',ref:plan.ref,...successor});
   }
+  // The successor's turns, its bootstrap included, count toward the WI it continues.
+  if(agy&&saved()?.agyWorkItemBinding?.sessionId!==plan.targetSessionId)
+    bindAgyWorkItem({poolKey,agent,runtime,stateManager},handover.wi,plan.targetSessionId);
   if(!handover.target_bootstrap_observed && !['busy','starting'].includes(live.state)){
     if(!runtime.sendIdempotent)throw new Error('native_rollover_idempotent_dispatch_unavailable');
-    await runtime.sendIdempotent(poolKey,{type:'human',content:
+    await runtime.sendIdempotent(poolKey,agy?{type:'human',content:agyRolloverPrompt(plan.ref,handover.wi)}:{type:'human',content:
       '[Host session continuation; this is not a new human decision.]\n'+
       '[Host continuation operation: '+plan.ref+']\n'+
       'Read and resume the original WorkItem '+handover.wi+' with pulse_work_item. '+

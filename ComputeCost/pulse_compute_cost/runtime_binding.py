@@ -38,6 +38,7 @@ _ALLOWED_RUNTIMES = {
     "chatgpt_web",
     "cc",
     "cc_sdk",
+    "agy",
 }
 _ALLOWED_PROCUREMENT = {
     "chatgpt_subscription",

@@ -211,7 +211,7 @@ class FamilyTests(unittest.TestCase):
         # The Agent query names the parent on the child's row and the family beside it.
         from argparse import Namespace
         from pulse_stats import query
-        source = Namespace(cost=lambda: document, app=lambda: None)
+        source = Namespace(cost=lambda: document, app=lambda: None, compactions=lambda: None, facts=lambda: None)
         ask = Namespace(period='today', group=None, agent=None, work_item_id=None, runtime=None)
         answer = query.q_cost(source, ask)
         self.assertEqual({r['key']['wi']: r.get('wi_parent') for r in answer['rows']},

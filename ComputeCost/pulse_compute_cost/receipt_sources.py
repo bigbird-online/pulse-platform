@@ -48,7 +48,8 @@ def _source_digest(path: Path, data: bytes | None = None) -> str:
     return digest_hex(view[offset:offset + 65536] for offset in range(0, len(view), 65536))
 
 
-def normalize_usage(runtime: str, usage: object, *, mapping: str | None = None) -> dict[str, int | None]:
+def normalize_usage(runtime: str, usage: object, *, mapping: str | None = None,
+                    model: str | None = None) -> dict[str, int | None]:
     """Nulls stay null. The mapping, not a model name, defines inclusive input."""
     raw = usage if isinstance(usage, Mapping) else {}
     def count(*names: str) -> int | None:
@@ -72,6 +73,14 @@ def normalize_usage(runtime: str, usage: object, *, mapping: str | None = None) 
             i = InputTokenClasses.from_inclusive(i, r, w).uncached_input
         except TokenSemanticsError as exc:
             raise ReceiptError(str(exc)) from exc
+    elif runtime == "agy":
+        # agy input_tokens excludes cache reads; output_tokens includes thinking.
+        # Its CLI reports no cache-write class. Only for Gemini is it known to be
+        # 0 (agy ACP reports cachedWriteTokens 0, wi666 N01 h02); agy's Claude,
+        # GPT-OSS or an unknown model may write cache: unknown, never 0.
+        i, r, o = count("input_tokens"), count("cache_read_tokens"), count("output_tokens")
+        gemini = isinstance(model, str) and model.startswith("gemini-")
+        w = 0 if gemini and any(v is not None for v in (i, r, o)) else None
     else:
         i = count("input_tokens", "inputTokens")
         r = count("cache_read_input_tokens", "cacheReadInputTokens")
@@ -98,7 +107,7 @@ def usage_receipt(runtime: str, identity: object, usage: object, *, at: str | No
     mapping = mapping or f"{runtime}_native.v1"
     return Receipt.make("usage", identity, {
         **(common or _common()), "execution_ref": execution_ref, "native_scope_ref": native_scope_ref,
-        "runtime": runtime, "model": model, "provider": provider, "tokens": normalize_usage(runtime, usage, mapping=mapping),
+        "runtime": runtime, "model": model, "provider": provider, "tokens": normalize_usage(runtime, usage, mapping=mapping, model=model),
         "native_tokens": {k:v for k,v in (usage.items() if isinstance(usage, Mapping) else []) if k in NATIVE_TOKEN_FIELDS},
         "mapping": mapping, "granularity": granularity, "coverage_ref": coverage_ref,
         "covers": covers or [], "interval_start": interval[0] if interval else None,
@@ -1697,7 +1706,8 @@ def _observed(observe: dict, batch: list[Receipt], root_paths: list[Path], root_
 def collect_registered_sources(registry: Mapping[str, Any], ledger: UsageLedger, *, force_recompute: bool = False,
                                timings: dict[str, Any] | None = None,
                                retirements: Mapping[str, Mapping[str, str]] | None = None,
-                               recoveries: Mapping[str, Mapping[str, Any]] | None = None) -> dict[str, Any]:
+                               recoveries: Mapping[str, Mapping[str, Any]] | None = None,
+                               now: str | None = None) -> dict[str, Any]:
     """Read each configured source, preserve errors as independent coverage facts.
 
     Nodes append to one shared stream. When another node appended after this
@@ -1718,7 +1728,7 @@ def collect_registered_sources(registry: Mapping[str, Any], ledger: UsageLedger,
             timings["attempts"] = attempt
         try:
             return _collect_once(registry, ledger, force_recompute=force_recompute, timings=timings,
-                                 retirements=retirements, recoveries=recoveries)
+                                 retirements=retirements, recoveries=recoveries, now=now)
         except SnapshotChanged:
             if attempt == COLLECTION_ATTEMPTS:
                 raise
@@ -1745,20 +1755,9 @@ def observe_registered_sources(registry: Mapping[str, Any], *, cache_root: Path,
     return sink
 
 
-def _collect_once(registry: Mapping[str, Any], ledger: UsageLedger | None, *, force_recompute: bool,
-                  timings: dict[str, Any] | None,
-                  retirements: Mapping[str, Mapping[str, str]],
-                  recoveries: Mapping[str, Mapping[str, Any]], observe: dict | None = None) -> dict[str, Any]:
-    if registry.get("schema") != REGISTRY_SCHEMA or not isinstance(registry.get("sources"), list):
-        raise ReceiptError("invalid source registry")
-    mark = _StageTimer(timings)
-    now = utc_text(datetime.now(timezone.utc))
-    snapshot = ledger.receipt_snapshot() if observe is None else {"facts": observe["facts"], "watermark": 0}
-    mark("ledger_snapshot")
-    from .native_parse_cache import NativeParseCache, input_signature
-    native_cache = NativeParseCache((ledger.root if observe is None else observe["cache_root"]) / "native-cache",
-                                    force=force_recompute)
-    active, conflicts = current_receipts(snapshot["facts"])
+def ledger_heads(facts: list[Receipt]) -> tuple:
+    """What a collection judges against: (active, conflicts, prior_by_entity, known_by_fact, actor_heads)."""
+    active, conflicts = current_receipts(facts)
     from .native_metering import metered_observation
     # The prior successful collector may already have appended a coarse copy
     # without an edge. Recover only this proven precision relationship; other
@@ -1766,10 +1765,35 @@ def _collect_once(registry: Mapping[str, Any], ledger: UsageLedger | None, *, fo
     active.extend(row for versions in conflicts.values()
                   if (row := metered_observation(versions)) is not None)
     prior_by_entity = {r.entity_ref: r for r in active}
-    known_by_fact = {r.fact_ref: r for r in snapshot["facts"]}
+    known_by_fact = {r.fact_ref: r for r in facts}
     from .actor_identity import ActorHeads
     # Actor claims settle against current heads, old identity formula included.
     actor_heads = ActorHeads(prior_by_entity, [*active, *(r for rows in conflicts.values() for r in rows)])
+    return active, conflicts, prior_by_entity, known_by_fact, actor_heads
+
+
+def _collect_once(registry: Mapping[str, Any], ledger: UsageLedger | None, *, force_recompute: bool,
+                  timings: dict[str, Any] | None,
+                  retirements: Mapping[str, Mapping[str, str]],
+                  recoveries: Mapping[str, Mapping[str, Any]], observe: dict | None = None,
+                  working: Any = None, now: str | None = None) -> dict[str, Any]:
+    """One collection. ``working`` (``incremental_collect.Working``) replaces the
+    ledger snapshot by its facts at its sequence, and sees the decided batch
+    before ingest (``working.settle``): it may ask for a larger working set,
+    keep rows back, or (judge only) ingest nothing. ``now`` fixes the observation
+    time, so two judgements of one input can be compared."""
+    if registry.get("schema") != REGISTRY_SCHEMA or not isinstance(registry.get("sources"), list):
+        raise ReceiptError("invalid source registry")
+    mark = _StageTimer(timings)
+    now = now or utc_text(datetime.now(timezone.utc))
+    snapshot = ({"facts": observe["facts"], "watermark": 0} if observe is not None else
+                ledger.receipt_snapshot() if working is None else
+                {"facts": working.facts, "watermark": working.sequence})
+    mark("ledger_snapshot")
+    from .native_parse_cache import NativeParseCache, input_signature
+    native_cache = NativeParseCache((ledger.root if observe is None else observe["cache_root"]) / "native-cache",
+                                    force=force_recompute)
+    active, conflicts, prior_by_entity, known_by_fact, actor_heads = ledger_heads(snapshot["facts"])
     mark("current_receipts")
     batch, summaries, coverage_revision_conflicts = [], [], []
     recovered_coverage_entities: list[str] = []
@@ -1814,8 +1838,10 @@ def _collect_once(registry: Mapping[str, Any], ledger: UsageLedger | None, *, fo
         bindings, authority_error = {}, True
     mark("execution_bindings")
     # Each spooled observation bundle stands in for the sources it carries.
-    from .native_observations import commit_pushed, expand_pushed, source_heads
-    pushed_sources = expand_pushed(registry["sources"], retirements)
+    from .native_observations import (commit_pushed, expand_pushed, local_core_marker, mark_pushed_core,
+                                      merge_pushed_core, pushed_fill, source_heads, supersedes_pushed_core)
+    pushed_sources = expand_pushed(registry["sources"], retirements,
+                                   limits=working.bundle_limits if working is not None else None)
     # Snapshot inputs are versioned against the stream here, where the stream is known.
     from .request_inputs import load_read_marks, save_read_marks, version_inputs
     read_marks_path = read_marks = None
@@ -1831,7 +1857,7 @@ def _collect_once(registry: Mapping[str, Any], ledger: UsageLedger | None, *, fo
             raise ReceiptError("source IDs must be present and unique")
         ids.add(source["id"])
         kind = source.get("kind")
-        if kind not in {"relay_host", "pi", "cc", "codex", "harness_bundle", "harness_root", "harness_core", "receipts"}:
+        if kind not in {"relay_host", "pi", "cc", "codex", "agy", "harness_bundle", "harness_root", "harness_core", "receipts"}:
             raise ReceiptError("unsupported registered source kind")
         if source["id"] in retirements or (observe is not None and source["id"] not in observe["run"]):
             continue
@@ -1877,6 +1903,9 @@ def _collect_once(registry: Mapping[str, Any], ledger: UsageLedger | None, *, fo
             if pushed is not None:
                 # Rows as the observing node's readers produced them, undecided.
                 imported, inventories = list(pushed["rows"]), list(pushed["inventories"])
+                if kind == "harness_core":
+                    # Named as pushed: a core source the collector enrolls later supersedes them.
+                    imported = [mark_pushed_core(source_ref, row) for row in imported]
             elif kind == "harness_root":
                 files = read_harness_root(path, now, imported, detail=detail,
                     include_outcomes="wi_outcome_context.v1" in registry.get("required_receipt_features", []))
@@ -2022,6 +2051,31 @@ def _collect_once(registry: Mapping[str, Any], ledger: UsageLedger | None, *, fo
                     if f.is_symlink():
                         raise ReceiptError("source symlink is not accepted")
                     source_digests.append(_source_digest(f))
+            elif kind == "agy":
+                from .agy_usage import read_agy, transcript_files
+                # Each conversation is isolated: a misplaced or unreadable
+                # transcript is skipped and the source reports itself partial.
+                rejected: list[Path] = []
+                files = _observed_files(observe, source, transcript_files(path, rejected))
+                for _ in _observed_files(observe, source, rejected):
+                    failure(detail, "unsafe_source")
+                    native_diagnostics.append("native_files_incomplete")
+                for f in files:
+                    try:
+                        if f.is_symlink():
+                            raise ReceiptError("source symlink is not accepted")
+                        source_bytes = f.read_bytes()
+                    except (OSError, ReceiptError):
+                        failure(detail, "source_unreadable")
+                        native_diagnostics.append("native_files_incomplete")
+                        continue
+                    source_digests.append(_source_digest(f, source_bytes))
+                    try:
+                        native_cache.receipts(read_agy, f, now, source_bytes, imported)
+                    except (ValueError, TypeError, KeyError):
+                        # One damaged transcript keeps its read prefix; the source is partial.
+                        failure(detail, "invalid_native_record")
+                        native_diagnostics.append("native_files_incomplete")
             else:
                 cc_bound_sessions: list[tuple[Path, bytes]] = []
                 cc_input_prefixes = []
@@ -2196,6 +2250,16 @@ def _collect_once(registry: Mapping[str, Any], ledger: UsageLedger | None, *, fo
             detail["files_read"] = len(source_digests)
         raw_count = (pushed["coverage"]["raw_count"] if pushed is not None else
                      source_total_count if source_total_count is not None else len(imported))
+        # A pushed copy of this core facts source: its Outcomes neither this read nor
+        # the stream holds join it (with their own snapshot witness); coverage stays this read's.
+        pushed_core = {}
+        if pushed is None and kind == "harness_core" and pushed_sources["core"].get(source["id"]):
+            extra = merge_pushed_core(source_ref, imported,
+                                      lambda entity: entity in prior_by_entity or entity in conflicts,
+                                      pushed_sources["core"][source["id"]],
+                                      lambda entity: None if entity in conflicts else prior_by_entity.get(entity))
+            imported.extend(row for row, _ in extra)
+            pushed_core = {row.entity_ref: origin for row, origin in extra}
         source_batch_start = len(batch)
         if observe is not None:
             from .native_observations import bundle_config
@@ -2252,6 +2316,12 @@ def _collect_once(registry: Mapping[str, Any], ledger: UsageLedger | None, *, fo
                 actor_claims.append(row)
                 continue
             prior = prior_by_entity.get(row.entity_ref)
+            if (kind == "harness_core" and pushed is None and row.entity_ref not in pushed_core
+                    and supersedes_pushed_core(source_ref, prior, row)):
+                # The local export decides an Outcome a pushed copy filled in.
+                row = Receipt.make(row.kind, None, row.payload, occurred_at=row.occurred_at,
+                    observed_at=row.observed_at, producer=row.producer, evidence=row.evidence,
+                    entity_ref=row.entity_ref, supersedes=prior.fact_ref)
             # A later reread of the same weak session inference cannot
             # undo an explicit declaration for this exact native input.
             # Strong task claims remain independent and conflict normally.
@@ -2288,7 +2358,10 @@ def _collect_once(registry: Mapping[str, Any], ledger: UsageLedger | None, *, fo
             # A new candidate requires explicit supersession; never approve it using an old review.
             if (prior and row.kind == prior.kind and row.payload == prior.payload
                     and row.occurred_at == prior.occurred_at and row.producer == prior.producer):
-                row = replace(prior, evidence=tuple(sorted(set(prior.evidence) | set(row.evidence))))
+                confirmed = ({local_core_marker(source_ref)} if kind == "harness_core" and pushed is None
+                             and row.entity_ref not in pushed_core and pushed_fill(source_ref, prior) else set())
+                # The local export confirming a pushed fill makes it the export's: later pushes keep off it.
+                row = replace(prior, evidence=tuple(sorted(set(prior.evidence) | set(row.evidence) | confirmed)))
             if prior and row.kind == "execution_expectation" and prior.payload != row.payload:
                 old, new = prior.payload, row.payload
                 stable = all(old[k] == new[k] for k in ("wi", "executor", "runtime", "scope", "source_ref", "started_at"))
@@ -2318,7 +2391,7 @@ def _collect_once(registry: Mapping[str, Any], ledger: UsageLedger | None, *, fo
                         evidence=tuple(sorted(set(prior.evidence) | set(row.evidence))), entity_ref=row.entity_ref, supersedes=prior.fact_ref)
             if prior and kind == "codex" and row.kind == "usage":
                 row = paginated_counter_correction(prior, row) or row
-            if prior and kind in {"pi", "cc", "codex", "relay_host"} and row.kind in {"usage", "execution"} and prior.payload != row.payload and row.supersedes != prior.fact_ref:
+            if prior and kind in {"pi", "cc", "codex", "agy", "relay_host"} and row.kind in {"usage", "execution"} and prior.payload != row.payload and row.supersedes != prior.fact_ref:
                 revised = [prior]
                 _revision(revised, row)
                 if len(revised) == 1:
@@ -2362,8 +2435,15 @@ def _collect_once(registry: Mapping[str, Any], ledger: UsageLedger | None, *, fo
             # A changed source snapshot is not new evidence for every unchanged
             # historical assertion. Keep its first byte-snapshot witness; the
             # coverage row below records today's full source fingerprint.
-            batch[source_batch_start:] = [replace(r, evidence=tuple(sorted(set(r.evidence) | {source_ref}
+            batch[source_batch_start:] = [r if r.entity_ref in pushed_core else
+                replace(r, evidence=tuple(sorted(set(r.evidence) | {source_ref}
                 | ({origin} if r.fact_ref not in known_by_fact else set()))))
+                for r in batch[source_batch_start:]]
+        if pushed_core:
+            # The bundle's snapshot witnesses the rows only it carried.
+            batch[source_batch_start:] = [replace(r, evidence=tuple(sorted(set(r.evidence) | {source_ref}
+                | ({pushed_core[r.entity_ref]} if pushed_core[r.entity_ref] and r.fact_ref not in known_by_fact
+                   else set())))) if r.entity_ref in pushed_core else r
                 for r in batch[source_batch_start:]]
         # Explicit host configuration bounds the trusted impact. Unscoped
         # sources retain the historical global-unknown behavior. Receipt
@@ -2549,6 +2629,13 @@ def _collect_once(registry: Mapping[str, Any], ledger: UsageLedger | None, *, fo
     retired = retirement_receipts(active, conflicts, retirements, now)
     batch.extend(retired)
     mark("source_retirements")
+    if working is not None:
+        batch = working.settle(batch)
+        mark("working_set_settle")
+        if batch is None:  # Judged only: nothing is ingested, consumed or committed.
+            return {"schema": "computecost_collection/v1", "inserted": 0, "duplicates": 0,
+                    "watermark": snapshot["watermark"], "sources": summaries,
+                    "bundle_paths": [str(path) for path in pushed_sources["paths"]]}
     result = ledger.ingest_receipts(batch, expected_watermark=snapshot["watermark"])
     mark("ingest_receipts")
     # A bundle cursor means its omitted prefix is durable in this ledger. If
@@ -2556,10 +2643,14 @@ def _collect_once(registry: Mapping[str, Any], ledger: UsageLedger | None, *, fo
     native_cache.commit_receipt_bundles(result["watermark"])
     if read_marks is not None:
         save_read_marks(read_marks_path, read_marks)  # Only with the ingest that decided against them.
-    commit_pushed(pushed_sources["paths"])
+    if working is None or working.commit_bundles:
+        commit_pushed(pushed_sources["paths"])
     mark("commit_receipt_bundles")
     if timings is not None:
         timings["batch_facts"] = len(batch)
+        timings["inserted"], timings["duplicates"] = result["inserted"], result["duplicates"]
+        if getattr(ledger, "last_ingest_lookup", "table") not in (None, "table"):
+            timings["ingest_lookup"] = ledger.last_ingest_lookup
     return {"schema": "computecost_collection/v1", **result, "sources": summaries,
             "parser_cache": native_cache.summary(),
             "coverage_revision_conflicts": coverage_revision_conflicts,

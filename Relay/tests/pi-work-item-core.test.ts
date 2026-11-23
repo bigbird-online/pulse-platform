@@ -293,6 +293,40 @@ describe('brief results and on-demand pages', () => {
     expect(executed.details.result).toBe(full);
   });
 
+  it('opens a resume brief with the latest checkpoint and names it as the first part', async () => {
+    const summary = '交接：PR #1742 已合并，下一步部署 Relay 并复核投递；' + 'x'.repeat(2000);
+    const resumed = {...full, status:'read_only', request_id:undefined,
+      result:{...full.result, original_request_result:undefined,
+        latest_checkpoint:{record_id:'op_ck9', author:'pulse', summary, position:812}}};
+    const tool = install(vi.fn().mockResolvedValue(resumed));
+    const text = (await tool.execute('call', {action:'resume', work_item_id:'wi_20261015_422'})).content[0].text;
+    expect(text.length).toBeLessThanOrEqual(BRIEF_LIMIT);
+    expect(text).toContain('latest checkpoint op_ck9: 交接：PR #1742 已合并，下一步部署 Relay 并复核投递；');
+    expect(text).toMatch(/parts: result\.latest_checkpoint\(2k\)/);
+    const read = (await tool.execute('call', {action:'resume', work_item_id:'wi_20261015_422',
+      path:'result.latest_checkpoint.summary'})).content[0].text;
+    expect(read).toContain('交接：PR #1742 已合并');
+  });
+
+  it('keeps next_action whole beside a long checkpoint with real-length identifiers', () => {
+    // Real record and candidate IDs are op_ + 64 hex characters (67).
+    const id = (c: string) => 'op_' + c.repeat(64);
+    const resumed = {status:'read_only', work_item:{id:'wi_20261015_422', local_revision:1947},
+      next_action:{intent:'record_pull_request_review', candidate_id:id('c'), reason:'review_requested'},
+      result:{latest_checkpoint:{record_id:id('a'), author:'pulse', summary:'交接：' + '进展'.repeat(300), position:812},
+        current_observation:view}};
+    const text = resultText(resumed);
+    expect(text.length).toBeLessThanOrEqual(BRIEF_LIMIT);
+    expect(text).toContain('next_action: {"intent":"record_pull_request_review","reason":"review_requested","candidate_id":"'
+      + id('c') + '"}');
+    expect(text).toContain('latest checkpoint ' + id('a') + ': 交接：进展');
+    // The cut summary still points to where its full text is.
+    expect(text).toMatch(/\nparts: result\.latest_checkpoint\(\d+k?\)/);
+    // Without the checkpoint the same next_action shows the same way.
+    const plain = resultText({...resumed, result:{current_observation:view}});
+    expect(plain).toContain('next_action: {"intent":"record_pull_request_review"');
+  });
+
   it('reads the cut parts of a rejected or unknown execute from its original response', async () => {
     const reason = 'The recipient holds several active WIs; ' + 'x'.repeat(300)
       + ' Name that WI in target_work_item_id: wi_20261030_991 for session cc:feishu:aki';
@@ -395,6 +429,8 @@ describe('brief results and on-demand pages', () => {
     expect(tool.parameters.properties.view.enum).toContain('guide');
     expect(declare.description).toContain('一个会话只为一个 WI 谱系（一个 WI 及其子 WI）写代码、提 PR');
     expect(declare.description).toContain('谱系内的提交可登记在谱系任一 WI 上');
+    expect(declare.description).toContain('并行推进多个子 WI');
+    expect(declare.description).not.toContain('人类消息触发');
   });
 });
 

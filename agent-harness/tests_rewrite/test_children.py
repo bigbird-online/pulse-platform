@@ -5,7 +5,7 @@ from dataclasses import replace
 import pytest
 from types import SimpleNamespace
 
-from harness_rewrite import Command, stats
+from harness_rewrite import Command, collaboration, collaboration_inbox, stats
 from harness_rewrite.domain import INTENTS
 from harness_rewrite.model import Query, SourceInput, digest
 from tests_rewrite.test_lightweight import light as light_rig, record
@@ -527,6 +527,56 @@ def test_a_long_session_s_marked_sub_agent_follows_its_dispatching_request(tmp_p
     assert error(refused) == "domain_conflict" and "author session declared" in refused["error"]["reason"]
 
 
+def test_one_request_advances_two_children_each_by_its_marked_sub_agent(tmp_path):
+    # The main session declared the parent, then each child, in one request and
+    # dispatched `[WI: A]` and `[WI: B]`: ComputeCost leaves each sub-agent's turns
+    # to its marker (a sibling's declaration does not take them).
+    for case in ("first", "second", "first_on_parent", "second_on_parent"):
+        (tmp_path / case).mkdir()
+        rig, first = gate(tmp_path / case)
+        second = original(spawn(rig, request="child-2"))["work_item_id"]
+        served = sorted([rig.wi, first, second])
+        marker, sibling = (first, second) if case.startswith("first") else (second, first)
+        evidence = {"cost_served": {rig.wi: None, sibling: charged(rig.wi, None)["cost_child"]}}
+        context = dispatched(rig.wi, marker, served, list(served), **evidence)
+        target = rig.wi if case.endswith("on_parent") else marker
+        assert register(rig, target, context)["status"] == "local_committed", case
+
+
+def test_a_marked_sub_agent_without_matching_charge_evidence_is_refused(tmp_path):
+    # Registering on the child, the session declared a WI outside the child's
+    # lineage too; only ComputeCost's evidence can place the sub-agent.
+    other = "wi_20261015_401"
+    cases = {
+        # The sibling is not exported under the child's parent.
+        "sibling_unexported": {"cost_served": {}},
+        "sibling_other_parent": {"cost_served": {"SIBLING": {
+            **charged(None, None)["cost_child"], "parent": other}}},
+        # The child itself is not exported as an open child of the parent.
+        "child_unexported": {"cost_child": None},
+        "child_closed": {"cost_child": {**charged(None, None)["cost_child"], "status": "completed",
+                                        "closed_at": "2026-10-31T00:00:00Z"}},
+    }
+    for case, changes in cases.items():
+        (tmp_path / case).mkdir()
+        rig, first = gate(tmp_path / case)
+        second = original(spawn(rig, request="child-2"))["work_item_id"]
+        served = sorted([rig.wi, first, second])
+        session = sorted([other, rig.wi, first, second])
+        evidence = {"cost_served": {rig.wi: None, second: charged(rig.wi, None)["cost_child"]}}
+        for key, value in changes.items():
+            evidence[key] = ({second: value["SIBLING"]} if key == "cost_served" and value else value)
+        refused = register(rig, first, dispatched(rig.wi, first, served, session, **evidence))
+        assert error(refused) == "domain_conflict", case
+    # A sub-agent whose turns ran in a request declaring an unrelated WI stays refused.
+    (tmp_path / "unrelated").mkdir()
+    rig, first = gate(tmp_path / "unrelated")
+    served = sorted([rig.wi, first, other])
+    refused = register(rig, first, dispatched(rig.wi, first, served, sorted([other, rig.wi, first]),
+                                              cost_served={rig.wi: None, other: None}))
+    assert error(refused) == "domain_conflict"
+
+
 def test_a_parent_declared_dispatch_registers_on_the_child_without_a_cost_export(tmp_path):
     # Whether ComputeCost moves the turns to the child is a cost question; the
     # parent's output may be registered on its child either way.
@@ -721,3 +771,217 @@ def test_a_merge_authority_is_revocable_whatever_its_carrier_state(tmp_path, end
     original(rig.approve(ending, data))
     assert view(rig, rig.wi)["merge_authority"][0]["active"] is True
     revoked_from_another_session(rig, rig.wi, grant)
+
+
+def test_a_parent_registration_takes_a_declared_sibling_only_with_the_export_proof(tmp_path):
+    # Registering on the parent, a `[WI: A]` sub-agent whose turns were declared
+    # to sibling B belongs to A only when ComputeCost's export moves them to A.
+    from harness_rewrite.pull_requests import attribution
+
+    rig, first = gate(tmp_path)
+    second = original(spawn(rig, request="child-2"))["work_item_id"]
+    state = view(rig, rig.wi)
+    names = sorted([rig.wi, first, second])
+    unproven = {"dispatch_declared_wis": [second], "dispatch_since": "2026-10-30T00:00:00Z"}
+    assert attribution(state, rig.wi, names, first, None, unproven) != [first]
+    proven = {**charged(rig.wi, first, [second]),
+              "cost_served": {second: charged(rig.wi, None)["cost_child"]}}
+    assert attribution(state, rig.wi, names, first, None, proven) == [first]
+
+
+def test_resume_gives_the_latest_checkpoint_s_own_place_before_later_work(tmp_path):
+    # A work record after the handover checkpoint must not move its position.
+    rig = light(tmp_path)
+    handover = original(send(rig, rig.wi, "checkpoint", {"summary": "交接：下一步复核", "resources": ["repo"]}))
+    rig.contexts["work"] = replace(BASE, artifacts=(ARTIFACT,))
+    original(send(rig, rig.wi, "record_work", {
+        "summary": "Later work", "resources": ["repo"], "artifacts": [ARTIFACT.reference()]}, "work"))
+    response = rig.kernel.resume(rig.wi, "owner")
+    records = response["result"]["current_observation"]["records"]
+    latest = response["result"]["latest_checkpoint"]
+    assert [r["kind"] for r in records][-2:] == ["CheckpointRecorded", "WorkRecorded"]
+    assert (latest["record_id"], latest["summary"]) == (handover["record_id"], "交接：下一步复核")
+    assert latest["position"] == len(records) - 1
+    assert records[latest["position"] - 1]["record_id"] == handover["record_id"]
+
+
+def offer_on(rig, wi, kind="request", resources=("repo/child",)):
+    rig.contexts["offerer"] = replace(FULL, source=SourceInput("offer", "native_agent", b"Offer"))
+    offered = send(rig, wi, "offer_collaboration", {
+        "kind": kind,
+        "recipients": [{"principal": OTHER.principal(), "resources": list(resources)}],
+        "purpose": "Answer on the child", "required": True, "main_only": False}, "offerer")
+    return original(offered)["contract_id"]
+
+
+def child_offer(rig, kind="request"):
+    """A contract the parent's holder offered on its child to another Agent."""
+    child = recorded_child(rig)
+    return child, offer_on(rig, child, kind)
+
+
+def child_answer(rig, child, contract):
+    rig.contexts["answer"] = replace(
+        OTHER, allowed_intents=INTENTS, generation=view(rig, rig.wi)["generation"],
+        source=SourceInput("answer", "native_agent", b"Accept"))
+    return send(rig, child, "respond_collaboration", {
+        "contract_id": contract, "decision": "accept", "reason": "Actual recipient decision"},
+        "answer")
+
+
+def own_rollover(rig, actor="producer", session="successor-session"):
+    successor = replace(rig.contexts["owner"], actor=actor, session=session)
+    transfer = original(rig.send("rollover", {"target": successor.principal(),
+                                              "summary": "Resume"}))["transfer_id"]
+    rig.contexts["successor"] = successor
+    original(send(rig, rig.wi, "accept_transfer", {"transfer_id": transfer}, "successor"))
+    rig.contexts["owner"] = replace(successor, generation=view(rig, rig.wi)["generation"])
+
+
+def test_a_child_offer_stays_answerable_after_the_parent_holders_own_rollover(tmp_path):
+    rig = light(tmp_path)
+    child, contract = child_offer(rig)
+    own_rollover(rig)
+    own_rollover(rig, session="second-session")
+    assert view(rig, child)["generation"] == view(rig, rig.wi)["generation"] == 3
+    original(child_answer(rig, child, contract))
+
+
+def test_a_child_offer_stays_answerable_after_the_parent_continues_elsewhere(tmp_path):
+    rig = light(tmp_path)
+    child, contract = child_offer(rig)
+    here = replace(FULL, session="feishu-session")
+    original(rig.approve("continue_here", {"reason": "continue here"}, actor=here))
+    original(child_answer(rig, child, contract))
+
+
+def test_a_parent_takeover_ends_child_offers(tmp_path):
+    rig = light(tmp_path)
+    child, contract = child_offer(rig)
+    taker = replace(FULL, actor="successor", session="successor-session", generation=0)
+    original(rig.approve("assume_control", {"reason": "human takeover"}, actor=taker))
+    assert error(child_answer(rig, child, contract)) == "authority_changed"
+
+
+def test_a_parent_rollover_to_another_agent_ends_child_offers_for_good(tmp_path):
+    rig = light(tmp_path)
+    child, contract = child_offer(rig)
+    own_rollover(rig, actor="third", session="third-session")
+    assert error(child_answer(rig, child, contract)) == "authority_changed"
+    # Handing back to the offering Agent never revives the offer.
+    own_rollover(rig, actor="producer", session="returned-session")
+    assert error(child_answer(rig, child, contract)) == "authority_changed"
+
+
+def test_reopening_the_parent_ends_child_offers(tmp_path):
+    rig = light(tmp_path)
+    child, contract = child_offer(rig)
+    original(rig.approve("stop", {"reason": "Pause"}))
+    original(rig.approve("reopen_work", {"reason": "Resume", "nodes": []}))
+    assert error(child_answer(rig, child, contract)) == "authority_changed"
+
+
+def offer_refused(refused):
+    assert error(refused) == "domain_conflict"
+    assert refused["error"]["reason"] == collaboration.CHILD_TRANSFER_REFUSED
+
+
+def test_a_child_refuses_offering_full_responsibility(tmp_path):
+    rig = light(tmp_path)
+    child = recorded_child(rig)
+    rig.contexts["offerer"] = replace(FULL, source=SourceInput("offer", "native_agent", b"Offer"))
+    offer_refused(send(rig, child, "offer_collaboration", {
+        "kind": "responsibility",
+        "recipients": [{"principal": OTHER.principal(), "resources": ["repo/child"]}],
+        "purpose": "Move the child", "required": True, "main_only": False}, "offerer"))
+    assert view(rig, child)["collaborations"] == []
+
+
+def test_a_parent_responsibility_offer_still_moves_the_parent(tmp_path):
+    rig = light(tmp_path)
+    contract = offer_on(rig, rig.wi, "responsibility", resources=("repo",))
+    original(child_answer(rig, rig.wi, contract))
+    assert view(rig, rig.wi)["definition"]["owner"] == "helper"
+
+
+def old_child_transfer(rig, monkeypatch, required=True):
+    """A full responsibility offered on a child before offers of it were refused."""
+    child = recorded_child(rig)
+    with monkeypatch.context() as patch:
+        patch.setattr(collaboration, "refuse_child_transfer", lambda state, kind: None)
+        rig.contexts["offerer"] = replace(FULL, source=SourceInput("old", "native_agent", b"Old"))
+        contract = original(send(rig, child, "offer_collaboration", {
+            "kind": "responsibility",
+            "recipients": [{"principal": OTHER.principal(), "resources": ["repo/child"]}],
+            "purpose": "Move the child", "required": required, "main_only": False},
+            "offerer"))["contract_id"]
+    return child, contract
+
+
+def inbox(rig, actor):
+    storage = SimpleNamespace(connection=rig.kernel._connection)
+    return collaboration_inbox.inbox(storage, BASE.namespace, actor)["items"]
+
+
+def test_an_old_child_transfer_is_never_accepted_nor_reassigned(tmp_path, monkeypatch):
+    rig = light(tmp_path)
+    child, contract = old_child_transfer(rig, monkeypatch)
+    offer_refused(child_answer(rig, child, contract))
+    # Nor after the parent holder's own rollover, which keeps other offers answerable.
+    own_rollover(rig)
+    offer_refused(child_answer(rig, child, contract))
+    assert view(rig, child)["definition"]["owner"] == "producer"
+    # Reassigning keeps the kind, so it is refused at the same offer entry.
+    offer_refused(send(rig, child, "reassign_collaboration", {
+        "contract_id": contract, "reason": "Someone else",
+        "recipients": [{"principal": replace(OTHER, actor="third").principal(),
+                        "resources": ["repo/child"]}]}))
+
+
+def test_an_old_required_child_transfer_is_offered_only_for_withdrawal(tmp_path, monkeypatch):
+    rig = light(tmp_path)
+    child, contract = old_child_transfer(rig, monkeypatch)
+    # The recipient is not asked to accept; the requester is asked only to withdraw.
+    assert inbox(rig, "helper") == []
+    [owed] = inbox(rig, "producer")
+    assert (owed["role"], owed["contract_id"], owed["options"]) == (
+        "requester", contract, ["withdraw"])
+    watched = rig.kernel.inspect(Query(child, view="watch"), "owner")["result"]["items"]["items"]
+    row = next(i for i in watched if i["kind"] == "collaboration")
+    assert row["id"] == contract and row["detail"]["owner_attention_needed"] is True
+    refused = send(rig, child, "review_child", REVIEW)
+    assert error(refused) == "domain_conflict" and contract in refused["error"]["reason"]
+    original(send(rig, child, "withdraw_collaboration",
+                  {"contract_id": contract, "reason": "A child cannot be transferred"}))
+    assert inbox(rig, "producer") == []
+    done = send(rig, child, "review_child", REVIEW)
+    assert done["work_item"]["business_progress"] == "completed"
+
+
+def test_an_old_child_transfer_accepted_under_the_old_rule_asks_for_nothing(tmp_path, monkeypatch):
+    rig = light(tmp_path)
+    child, contract = old_child_transfer(rig, monkeypatch)
+    with monkeypatch.context() as patch:
+        patch.setattr(collaboration, "refuse_child_transfer", lambda state, kind: None)
+        original(child_answer(rig, child, contract))
+    # Settled by its acceptance then, and withdraw refuses an accepted transfer:
+    # no new item asks anyone to withdraw it.
+    assert inbox(rig, "producer") == [] and inbox(rig, "helper") == []
+    assert error(send(rig, child, "withdraw_collaboration",
+                      {"contract_id": contract, "reason": "Try"})) == "domain_conflict"
+
+
+def test_an_old_child_transfer_is_withdrawn_by_the_current_holder(tmp_path, monkeypatch):
+    rig = light(tmp_path)
+    child, contract = old_child_transfer(rig, monkeypatch)
+    own_rollover(rig, actor="third", session="third-session")
+    # The requester no longer holds the WI; the holder now, who can withdraw, is asked.
+    assert inbox(rig, "producer") == []
+    [owed] = inbox(rig, "third")
+    assert (owed["role"], owed["contract_id"], owed["options"], owed["offered_by"]) == (
+        "requester", contract, ["withdraw"], "producer")
+    # Held by the recipient itself (this inbox read names no surface).
+    assert owed["target"] == {"work_item_id": child, "holder": "recipient_elsewhere"}
+    original(send(rig, child, "withdraw_collaboration",
+                  {"contract_id": contract, "reason": "A child cannot be transferred"}))
+    assert inbox(rig, "third") == []

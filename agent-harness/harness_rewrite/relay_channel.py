@@ -37,10 +37,43 @@ def installed_relay(entry: Path, proc: Path, caller: int | None) -> tuple[Path, 
 def access_host(
     entry: Path, request: Json, *, proc: Path = Path("/proc"), caller: int | None = None
 ) -> NativeHost:
-    """Relay reads the access granted to its actual native child, before any model turn."""
-    fields(request, {"pid"})
-    policy_path, _, parent = installed_relay(entry, proc, caller)
-    return native_child(policy_path, request["pid"], parent, proc, pre_model=True)
+    """Relay reads the access granted to its actual native child, before any model turn.
+
+    agy runs no process between turns, and its next turn's permissions are fixed
+    at launch: Relay names the idle conversation by its retained record instead
+    (`retained_host`), exactly as for a slash command, and only an agy record is
+    read this way.
+    """
+    fields(request, set(), {"pid", "native_id", "tenant"})
+    require(set(request) in ({"pid"}, {"native_id", "tenant"}),
+            "Expected exactly one actual or retained native source")
+    policy_path, policy, parent = installed_relay(entry, proc, caller)
+    if "pid" in request:
+        return native_child(policy_path, request["pid"], parent, proc, pre_model=True)
+    host = retained_host(policy, request["native_id"], request["tenant"], proc)
+    require(host.runtime == "agy", "Only an idle agy conversation is read without its process")
+    return host
+
+
+def retained_host(policy: Json, native_id: object, tenant: object, proc: Path) -> NativeHost:
+    """The Host of a conversation with no live process: its original Relay observation
+    and native log identify it; no live process or execution grant is invented.
+    Ordinary tools cannot use this entry."""
+    original_source = retired_source(policy, native_id, tenant)  # type: ignore[arg-type]
+    from .policy import execution, verification_compute
+
+    verification_compute(policy)
+    host = NativeHost.__new__(NativeHost)
+    host.policy, host.execution, host.proc = policy, execution(policy), proc
+    host.profile, host.runtime = original_source.profile, original_source.runtime
+    host.entry = original_source.entry
+    host.session_file = original_source.session_file
+    host.native_header = {"type": "session", **original_source.native_header}
+    host.environment = original_source.environment
+    host.native_pid, host.native_stamp, host.relay_command_input = None, None, None
+    host.relay_agent_switch = None
+    host.bind_context(original_source.session_file.stat().st_size)
+    return host
 
 
 def standing_access(
@@ -89,23 +122,8 @@ def command_host(
         # Slash input precedes model dispatch, so a new session may have no log yet.
         host = native_child(policy_path, request["pid"], parent, proc, pre_model=True)
     else:
-        # Codex CLI has no process between turns. Its original Relay observation
-        # and native log identify the same conversation; no live process or
-        # execution grant is invented. Ordinary tools cannot use this entry.
-        original_source = retired_source(policy, request["native_id"], request["tenant"])
-        from .policy import execution, verification_compute
-
-        verification_compute(policy)
-        host = NativeHost.__new__(NativeHost)
-        host.policy, host.execution, host.proc = policy, execution(policy), proc
-        host.profile, host.runtime = original_source.profile, original_source.runtime
-        host.entry = original_source.entry
-        host.session_file = original_source.session_file
-        host.native_header = {"type": "session", **original_source.native_header}
-        host.environment = original_source.environment
-        host.native_pid, host.native_stamp, host.relay_command_input = None, None, None
-        host.relay_agent_switch = None
-        host.bind_context(original_source.session_file.stat().st_size)
+        # Codex CLI and agy have no process between turns (`retained_host`).
+        host = retained_host(policy, request["native_id"], request["tenant"], proc)
     ref = request["ref"]
     require(
         isinstance(ref, str) and re.fullmatch(r"[a-f0-9]{64}", ref) is not None,

@@ -9,6 +9,9 @@ import re
 import stat
 from zoneinfo import ZoneInfo
 
+from .adjustments import (GROUP_FIELDS as ADJUSTMENT_GROUP_FIELDS, VIEW_FIELDS as ADJUSTMENT_VIEW_FIELDS,
+                          validate_view as validate_adjustment_view)
+
 SCHEMA = 'pulse_stats_cost_dashboard/v1'
 MAX_BYTES = 512 * 1024
 # The whole App snapshot; the cost carrier travels gzip-compressed when expanded would not fit.
@@ -210,7 +213,9 @@ def usage_metrics(document, *, now=None):
 
 
 
-ATTRIBUTION_SOURCES = {'declared', 'holder_supplement', 'exploration', 'scheduled_job', 'classified', 'unattributed'}
+# undeclared: a human request that declared no WI (not an anomaly; kept apart from unattributed).
+ATTRIBUTION_SOURCES = {'declared', 'holder_supplement', 'exploration', 'scheduled_job', 'classified', 'undeclared',
+                       'unattributed'}
 
 
 def _attribution(group):
@@ -338,12 +343,26 @@ def period_window(day, period):
     return {'today':day,'week':monday,'month':day.replace(day=1)}[period], day+timedelta(days=1)
 
 
+def _validate_backlog(value):
+    """Pushed observations the publisher had not all judged: the amounts are incomplete."""
+    if (not isinstance(value, dict) or set(value) != {'status', 'reason', 'peers'} or value['status'] != 'partial'
+            or value['reason'] != 'observation_backlog' or not isinstance(value['peers'], list)
+            or not 0 < len(value['peers']) <= 8
+            or any(not isinstance(p, dict) or set(p) != {'id', 'deferred_bundles'} or not isinstance(p['id'], str)
+                   or not re.fullmatch(r'[a-z0-9_-]{1,40}', p['id']) or type(p['deferred_bundles']) is not int
+                   or p['deferred_bundles'] <= 0 for p in value['peers'])):
+        raise ValueError('invalid collection backlog')
+
+
 def _validate(document):
     fields = {'schema_version','generated_at','expires_at','source_revision','status','reason',
               'views','subscriptions','openrouter','sha256'}
     optional = set(document) - fields
-    if not fields <= set(document) or not optional <= {'work_items', 'pull_request_anomalies'} or document['schema_version']!=SCHEMA:
+    if (not fields <= set(document) or not optional <= {'work_items', 'pull_request_anomalies', 'collection_backlog'}
+            or document['schema_version']!=SCHEMA):
         raise ValueError('unsupported cost snapshot')
+    if 'collection_backlog' in document:
+        _validate_backlog(document['collection_backlog'])
     _validate_work_items(document.get('work_items', []))
     from .pull_request_view import FAMILY_FIELD, VIEW_FIELDS, validate_families, validate_pull_requests
     parents = {item['id']: item['parent'] for item in document.get('work_items', []) if 'parent' in item}
@@ -366,7 +385,7 @@ def _validate(document):
         allowed = (base_fields, base_fields | outcome_fields,
                    base_fields | outcome_fields | {'population_scope'})
         allowed += tuple(fields | {'stages'} for fields in allowed)
-        if set(view) - VIEW_FIELDS - {FAMILY_FIELD} not in allowed:
+        if set(view) - VIEW_FIELDS - {FAMILY_FIELD} - ADJUSTMENT_VIEW_FIELDS not in allowed:
             raise ValueError('invalid query view')
         pair=(view['period'],view['dimension']); q=view['query']
         if (pair in pairs or pair[0] not in {'today','week','month','last_week'}
@@ -405,7 +424,7 @@ def _validate(document):
             group_fields = ({'key','cost'}, {'key','cost','usage'}, {'key','cost','usage','outcomes','detail'})
             allowed_fields = group_fields + tuple(fields | {'tenant'} for fields in group_fields)
             allowed_fields += tuple(fields | {'attribution'} for fields in allowed_fields if 'usage' in fields)
-            if set(group) not in allowed_fields or set(group['key'])!=set(dimensions):
+            if set(group) - ADJUSTMENT_GROUP_FIELDS not in allowed_fields or set(group['key'])!=set(dimensions):
                 raise ValueError('invalid group')
             _tenant(group, dimensions)
             _attribution(group)
@@ -438,6 +457,13 @@ def _validate(document):
         for group in view.get('pull_request_only_groups', []):
             _tenant(group, dimensions)
             _usage(group['usage']); _cost(group['cost'], group['usage']['event_count'])
+        def adjustment_row(group, dimensions=dimensions):
+            if set(group['key']) != set(dimensions) or any(not isinstance(v, str) or not 1 <= len(v) <= 200
+                                                           or any(ord(c) < 32 for c in v) for v in group['key'].values()):
+                raise ValueError('invalid adjustment-only group')
+            _tenant(group, dimensions)
+            _usage(group['usage']); _cost(group['cost'], group['usage']['event_count'])
+        validate_adjustment_view(view, adjustment_row)
         if pair[1] == 'activity' and sum(g['usage']['event_count'] for g in view['groups']) != view['summary']['usage']['event_count']:
             raise ValueError('activity rows must partition all included usage')
     legacy = {(p,d) for p in ('today','week','month') for d in ('agent','wi','model')}
@@ -500,11 +526,16 @@ def load_refresh_status(path, *, now):
             state,finished,reason='failed',started+REFRESH_RUNNING_LIMIT,'cycle_interrupted'
         if state!='running' and finished is None:
             return None
-        peers=[{'id':p['id'],'status':p['status'],'reason':p.get('reason')}
+        peers=[{'id':p['id'],'status':p['status'],'reason':p.get('reason'),
+                **({'deferred_bundles':p['deferred_bundles']} if 'deferred_bundles' in p else {})}
                for p in (value.get('peers') or [])[:8]
                if isinstance(p,dict) and isinstance(p.get('id'),str) and re.fullmatch(r'[a-z0-9_-]{1,40}',p['id'])
-               and p.get('status') in {'read','unreachable_or_invalid','paused'}
-               and (p.get('reason') is None or isinstance(p['reason'],str) and re.fullmatch(r'[a-z_]{1,64}',p['reason']))]
+               and p.get('status') in {'read','partial','unreachable_or_invalid','paused'}
+               and (p.get('reason') is None or isinstance(p['reason'],str) and re.fullmatch(r'[a-z_]{1,64}',p['reason']))
+               # A partly read peer names how many of its spooled bundles wait; an unread one may too.
+               and (p['status']!='partial' or 'deferred_bundles' in p)
+               and ('deferred_bundles' not in p or p['status']!='paused'
+                    and type(p['deferred_bundles']) is int and p['deferred_bundles']>0)]
         return {'state':state,'started_at':started.isoformat(),
                 'finished_at':finished.isoformat() if finished else None,'reason':reason if state=='failed' else None,
                 'peers':peers}

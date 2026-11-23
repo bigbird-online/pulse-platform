@@ -70,10 +70,26 @@ class PushResultTests(PushedPeerTests):
                 self.assertEqual(self.run_refresh()[1][0], {'id': 'ownermac', 'status': 'unreachable_or_invalid',
                                                             'reason': 'peer_push_mode_mismatch'})
 
+    def test_an_observe_run_that_left_sessions_unread_is_not_a_complete_reading(self):
+        self.PEER = {'id': 'ownermac', 'transport': 'shared_ledger_push', 'observe_sources': OWNERMAC_SOURCES}
+        self.write_config(peers=[self.PEER])
+        refresh.receive_shared_collection(self.config, 'ownermac', refresh.canonical(
+            {'schema': refresh.OBSERVE_RECEIPT_SCHEMA, 'bundles': 3, 'pushed': 3, 'remaining': 120}))
+        args, peers = self.run_refresh()
+        self.assertEqual(peers, [{'id': 'ownermac', 'status': 'unreachable_or_invalid',
+                                  'reason': 'peer_observe_incomplete'}])
+        # Its bundles are still judged from the spool.
+        selected = json.loads(Path(args[args.index('--source-registry') + 1]).read_bytes())
+        self.assertEqual(selected['sources'][-1]['kind'], 'native_push')
+        refresh.receive_shared_collection(self.config, 'ownermac', OBSERVED)
+        self.assertEqual(self.run_refresh()[1][0]['status'], 'read')
+
     def test_push_results_are_closed(self):
         self.write_config(peers=[self.PEER])
         for bad in ({'schema': refresh.OBSERVE_RECEIPT_SCHEMA, 'bundles': 2, 'pushed': 1},
                     {'schema': refresh.OBSERVE_RECEIPT_SCHEMA, 'bundles': 1, 'pushed': 1, 'extra': 0},
+                    {'schema': refresh.OBSERVE_RECEIPT_SCHEMA, 'bundles': 1, 'pushed': 1, 'remaining': 0},
+                    {'schema': refresh.OBSERVE_RECEIPT_SCHEMA, 'bundles': 1, 'pushed': 1, 'remaining': True},
                     {'schema': refresh.COLLECTION_FAILED_SCHEMA, 'reason': 'Traceback /home/x'},
                     {'schema': 'other/v1'}):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
@@ -127,8 +143,10 @@ class FullModeFailureTests(Fixture):
             os.environ.pop(refresh.SCHEDULE_VARIABLE, None)
             with self.assertRaisesRegex(RuntimeError, 'local collection failed'):
                 refresh.collect_local(self.config)
-        self.assertEqual(pushed[0], ('receive-shared-collection',
-                                     {'schema': refresh.COLLECTION_FAILED_SCHEMA, 'reason': 'out_of_memory'}))
+        # The cycle pulls nothing itself (the pull job does); the failure goes first.
+        self.assertEqual(pushed[:1], [('receive-shared-collection',
+                                      {'schema': refresh.COLLECTION_FAILED_SCHEMA, 'reason': 'out_of_memory'})])
+        self.assertNotIn('fetch-publication', [command for command, _ in pushed])
 
 
 class ObservePushTests(Fixture):
@@ -138,13 +156,15 @@ class ObservePushTests(Fixture):
         self.write_config(**{**self.CONFIG, **config})
         commands, observed = [], []
 
-        def observe(registry, *, peer, index_path, outbox, read_at, backfill=False, force_recompute=False):
+        def observe(registry, *, peer, index_path, outbox, read_at, backfill=False, force_recompute=False,
+                    deadline=None, deliver=None):
             observed.append((peer, backfill))
             if observe_error is not None:
                 raise observe_error
             outbox.mkdir(mode=0o700, parents=True, exist_ok=True)
             bundle = outbox / '00000000000000000001.json.gz'
             bundle.write_bytes(b'bundle')
+            deliver(bundle)
             return [bundle]
 
         def transport(peer, command, data=None):

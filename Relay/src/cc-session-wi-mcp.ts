@@ -2,8 +2,9 @@
  * ComputeCost session WI MCP for CC sessions.
  *
  * Relay registers the same `declare_session_wi` server Codex uses, started in
- * CC host mode. The resident rule is read from the server's actual initialize
- * response, as the Codex installer does for `developer_instructions`. The
+ * CC host mode. Its rule reaches the model once, as the server's MCP
+ * instructions, which CC shows in every session; the probe only checks the
+ * server answers with that rule and the one tool. The
  * collector reads the declaration from the CC transcript; Relay never classifies
  * purpose. Agents with `sessionWiGuard` are reminded and write-guarded from that
  * same transcript (session-wi-guard.ts). Missing resources skip registration only.
@@ -21,8 +22,6 @@ export const CC_SESSION_WI_TOOL = `mcp__${CC_SESSION_WI_SERVER}__${TOOL}`;
 
 export interface CcSessionWiMcp {
   server: { type: 'stdio'; command: string; args: string[] };
-  /** Resident rule taken from the server's own initialize response. */
-  instructions: string;
 }
 
 type Runner = (command: string, args: string[], input: string) => { status: number | null; stdout: string };
@@ -58,7 +57,7 @@ export function resolveCcSessionWiMcp(
       || !Array.isArray(tools) || tools.length !== 1 || tools[0]?.name !== TOOL) {
       throw new Error('session WI MCP probe returned an unexpected contract');
     }
-    return { server: { type: 'stdio', command: host.python, args }, instructions };
+    return { server: { type: 'stdio', command: host.python, args } };
   } catch (error) {
     console.warn({
       ts: new Date().toISOString(), level: 'warn',

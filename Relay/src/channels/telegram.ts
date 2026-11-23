@@ -76,6 +76,8 @@ import { traceInboundRequest } from '../relay-request-trace.js';
 import { acquireConversation } from '../conversation-acquisition.js';
 import { resolveCoevolutionRoot } from '../config-paths.js';
 import { internalDeliveryPrompt } from '../collaboration-capture.js';
+import { namesConversation, type NativeIdSource } from '../session-identity.js';
+import { fencedInternalTurn } from '../internal-turn-fence.js';
 import { collabTurnHeadline, telegramTurnNoticeHtml, type CollabTurnNotice } from '../collab-progress-notice.js';
 import { replayTelegramIntake, telegramIntakeMiddleware } from './telegram-intake.js';
 import { createChannelIntakeJournal, intakeAwareRuntime } from './intake-journal.js';
@@ -977,7 +979,7 @@ export interface TelegramBotInstance {
   notifyResumed(): Promise<void>;
   /** Start one internal turn in an existing conversation this bot owns
    * (collaboration delivery). False when not owned or its native session changed. */
-  deliverInternalTurn(poolKey: string, prompt: string, expectNativeIds: string[], notice?: CollabTurnNotice): Promise<boolean>;
+  deliverInternalTurn(poolKey: string, prompt: string, expectNativeIds: string[], notice?: CollabTurnNotice, deliveryRef?: string): Promise<boolean>;
   reload(): Promise<{ added: string[]; removed: string[]; total: number }>;
   runningAgentIds(): string[];
   getApiBot(agentId: string): Bot | null;
@@ -2643,7 +2645,7 @@ function createSingleBot(
         resumeDone();
       }
     },
-    async deliverInternalTurn(poolKey: string, prompt: string, expectNativeIds: string[], notice?: CollabTurnNotice): Promise<boolean> {
+    async deliverInternalTurn(poolKey: string, prompt: string, expectNativeIds: string[], notice?: CollabTurnNotice, deliveryRef?: string): Promise<boolean> {
       if (!active || !deps.stateManager) return false;
       for (const user of router.getAllUsers()) {
         const chatId = user.chatId;
@@ -2654,8 +2656,7 @@ function createSingleBot(
         if (router.poolKey(resolved.user.userId, routing.id) !== poolKey) continue;
         poolKeyToChatId.set(poolKey, chatId);
         const proc = await spawnForResumedSession(poolKey, resolved);
-        const ids = [proc?.sessionId, processCodexThreadId(proc)].filter((id): id is string => Boolean(id));
-        if (!ids.some(id => expectNativeIds.includes(id))) return false;
+        if (!namesConversation(proc as NativeIdSource | undefined, expectNativeIds)) return false;
         persistActiveSession(poolKey, processRuntimeId(proc, deps.stateManager.getSession(poolKey)?.runtime ?? 'cc'), processCodexThreadId(proc));
         if (notice) {
           await bot.api.sendMessage(Number(chatId), telegramTurnNoticeHtml(notice), { parse_mode: 'HTML' })
@@ -2664,8 +2665,11 @@ function createSingleBot(
           await bot.api.sendMessage(Number(chatId), '📨 收到一份协作合同，开始处理。').catch(() => {});
         }
         const codexThreadId = processCodexThreadId(proc);
-        await runtime.send(poolKey, { type: 'human',
-          content: internalDeliveryPrompt(prompt, codexThreadId ? 'codex' : 'cc', codexThreadId ?? proc?.sessionId ?? '', process.env) });
+        // Fenced: the runtime runs it only in the conversation it was routed to, checked where the
+        // turn starts (internal-turn-fence.ts); the check above only spares a notice.
+        await runtime.send(poolKey, fencedInternalTurn({ type: 'human',
+          content: internalDeliveryPrompt(prompt, codexThreadId ? 'codex' : 'cc', codexThreadId ?? proc?.sessionId ?? '', process.env) },
+          expectNativeIds, deliveryRef));
         deps.stateManager.updateSession(poolKey, { lastActivity: Date.now() });
         return true;
       }
@@ -2719,9 +2723,9 @@ export function createTelegramBots(deps: TelegramBotDeps): TelegramBotInstance {
       resumePassed = true;
       await Promise.all(Array.from(running.values()).map(inst => inst.notifyResumed()));
     },
-    async deliverInternalTurn(poolKey: string, prompt: string, expectNativeIds: string[], notice?: CollabTurnNotice): Promise<boolean> {
+    async deliverInternalTurn(poolKey: string, prompt: string, expectNativeIds: string[], notice?: CollabTurnNotice, deliveryRef?: string): Promise<boolean> {
       for (const inst of running.values()) {
-        if (await inst.deliverInternalTurn(poolKey, prompt, expectNativeIds, notice)) return true;
+        if (await inst.deliverInternalTurn(poolKey, prompt, expectNativeIds, notice, deliveryRef)) return true;
       }
       return false;
     },

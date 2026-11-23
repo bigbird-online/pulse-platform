@@ -8,9 +8,10 @@ PULSE 是一套自托管的 AI Agent（智能体）协作底座：你在飞书�
 
 ## 快速开始：只部署 Relay（飞书 + Codex + `gpt-6.1-sol`）
 
-需要：一台 Linux 服务器（已在 Ubuntu 24.04 上验证）、Node.js 22、一个 ChatGPT Plus 及以上账户（供 Codex 使用）、一个飞书自建应用。[完整说明](docs/quickstart-feishu-codex.md)（英文）逐步讲解，并附五步验收。
+需要：一台 Linux 服务器（Ubuntu 24.04 或更新，装好 Codex 沙箱所需的 `bubblewrap`）、Node.js 22、一个 ChatGPT Plus 及以上账户（供 Codex 使用）、一个飞书自建应用。[完整说明](docs/quickstart-feishu-codex.md)（英文）逐步讲解，并附五步验收。
 
 ```bash
+sudo apt-get install -y bubblewrap   # Codex 沙箱；Ubuntu 24.04 还需加载 bwrap 的 AppArmor 配置（见完整说明第 1 步）
 git clone https://github.com/bigbird-online/pulse-platform.git ~/pulse
 cd ~/pulse/Relay
 npm ci && npm run build

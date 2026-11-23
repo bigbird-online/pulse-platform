@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import {
   CC_SESSION_WI_SERVER, CC_SESSION_WI_TOOL, resolveCcSessionWiMcp, type CcSessionWiMcp,
 } from '../src/cc-session-wi-mcp.js';
 import { createPool } from '../src/pool.js';
+import { CC_BASE_PROMPT, CC_GIT_RULES, type CcPromptOptions } from '../src/cc-session-settings.js';
 import { canonicalPython } from './helpers/canonical-python.js';
 
 const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }));
@@ -16,13 +17,11 @@ vi.mock('node:child_process', async (original) => ({
   spawn: spawnMock,
 }));
 
-const RULE = '使用 declare_session_wi：登记当前原生请求的归属。要改文件、提 PR 或动生产时声明所属 WI；闲聊、只读查询、解释说明声明 none，不要为此新建 WI。每个新的人类请求或独立任务各自声明；复用会话不继承前一请求的归属。当前请求的子任务保留原始请求归属；子代理不需要声明，继承原请求的 WI 或其首行 [WI: 子WI] 指定的子 WI。一个会话只为一个 WI 谱系（一个 WI 及其子 WI）写代码、提 PR：声明过谱系外 WI 的会话，其提交登记会被拒；谱系外 WI 的写工作请人类 /new 后在新会话声明。本请求已声明 none 后不再改声明，写操作留到下一条请求。子 WI 的提交在人类消息触发的回合里由带标记的子代理做。';
 const PYTHON = canonicalPython;
 
 describe('session WI MCP resolution', () => {
-  it('reads the rule and tool from the actual CC-mode server', () => {
+  it('checks the rule and tool of the actual CC-mode server', () => {
     const resolved = resolveCcSessionWiMcp({ python: PYTHON, pythonPath: resolve('../ComputeCost') });
-    expect(resolved?.instructions).toBe(RULE);
     expect(resolved?.server).toEqual({ type: 'stdio', command: PYTHON,
       args: [resolve('../ComputeCost/runtime/codex-mcp-request-purpose.py'), '--host', 'cc'] });
   });
@@ -50,7 +49,6 @@ function child() {
 describe('CC spawn registers the session WI MCP', () => {
   const sessionWiMcp: CcSessionWiMcp = {
     server: { type: 'stdio', command: '/reviewed/python', args: ['/release/ComputeCost/runtime/codex-mcp-request-purpose.py', '--host', 'cc'] },
-    instructions: RULE,
   };
   let home: string;
   let pool: ReturnType<typeof createPool> | undefined;
@@ -65,24 +63,178 @@ describe('CC spawn registers the session WI MCP', () => {
     await pool?.killAll();
     pool?.dispose();
     vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    try { chmodSync(join(home, 'cc-prompt-sessions'), 0o700); } catch { /* absent or a file */ }
     rmSync(home, { recursive: true, force: true });
   });
 
-  async function spawnArgs(mode: 'print' | 'interactive', mcp?: CcSessionWiMcp): Promise<string[]> {
-    pool = createPool({ cleanupIntervalMs: 999999, ccMode: mode, sessionWiMcp: mcp });
-    const pending = pool.spawn({ tenantId: 'fixture', sessionId: 'cc-session', workspace: home, ccMode: mode });
+  async function spawnArgs(mode: 'print' | 'interactive', mcp?: CcSessionWiMcp, ccPrompt?: CcPromptOptions,
+    sessionId = 'cc-session'): Promise<string[]> {
+    await pool?.killAll();
+    pool?.dispose();
+    pool = createPool({ cleanupIntervalMs: 999999, ccMode: mode, sessionWiMcp: mcp, ccPromptRecordDir: join(home, 'cc-prompt-sessions') });
+    const pending = pool.spawn({ tenantId: 'fixture', sessionId, workspace: home, ccMode: mode, ccPrompt });
     spawnMock.mock.results.at(-1)!.value.stdout.write('{"type":"system","subtype":"init","content":"ready"}\n');
     await pending;
     return spawnMock.mock.calls.at(-1)![1] as string[];
   }
 
-  it.each(['print', 'interactive'] as const)('adds server, allowed tool and resident rule for %s CC', async (mode) => {
+  it.each(['print', 'interactive'] as const)('adds server and allowed tool for %s CC, the rule only as MCP instructions', async (mode) => {
     const args = await spawnArgs(mode, sessionWiMcp);
     const config = JSON.parse(args[args.indexOf('--mcp-config') + 1]);
     expect(Object.keys(config.mcpServers)).toEqual([CC_SESSION_WI_SERVER]);
     expect(config.mcpServers[CC_SESSION_WI_SERVER]).toEqual(sessionWiMcp.server);
     expect(args[args.indexOf('--allowed-tools') + 1].split(',')).toContain(CC_SESSION_WI_TOOL);
-    expect(args[args.indexOf('--append-system-prompt') + 1].endsWith('\n\n' + RULE)).toBe(true);
+    // CC shows the server's instructions itself; Relay's resident prompt does not repeat them.
+    expect(args[args.indexOf('--append-system-prompt') + 1]).not.toContain('declare_session_wi');
+  });
+
+  it.each(['print', 'interactive'] as const)('trims CC sections a Relay conversation cannot use for %s CC', async (mode) => {
+    const args = await spawnArgs(mode, sessionWiMcp);
+    expect(args).toContain('--exclude-dynamic-system-prompt-sections');
+    const settings = JSON.parse(args[args.lastIndexOf('--settings') + 1]);
+    for (const name of ['dataviz', 'claude-api', 'keybindings-help', 'loop', 'update-config']) {
+      expect(settings.skillOverrides[name]).toBe('off');
+    }
+    expect(settings.skillOverrides['code-review']).toBeUndefined();
+    expect(settings.enabledPlugins).toEqual({ 'telegram@claude-plugins-official': false });
+  });
+
+  it.each(['print', 'interactive'] as const)('keeps CC\'s default prompt and git instructions unless the Agent opts out, %s CC', async (mode) => {
+    const args = await spawnArgs(mode, sessionWiMcp);
+    expect(args).toContain('--append-system-prompt');
+    expect(args).not.toContain('--system-prompt');
+    expect(args[args.indexOf('--append-system-prompt') + 1]).not.toContain(CC_GIT_RULES);
+    expect(JSON.parse(args[args.lastIndexOf('--settings') + 1])).not.toHaveProperty('includeGitInstructions');
+  });
+
+  it.each(['print', 'interactive'] as const)('replaces CC\'s default prompt with Relay\'s base prompt for %s CC', async (mode) => {
+    const args = await spawnArgs(mode, sessionWiMcp, { systemPrompt: 'replace' });
+    expect(args).not.toContain('--append-system-prompt');
+    // CC ignores the dynamic-section flag under --system-prompt, so Relay leaves it out.
+    expect(args).not.toContain('--exclude-dynamic-system-prompt-sections');
+    const prompt = args[args.indexOf('--system-prompt') + 1];
+    expect(prompt.startsWith(CC_BASE_PROMPT)).toBe(true);
+    expect(prompt).toContain('## File Delivery');
+    expect(prompt).toContain('user\'s auto-memory');
+    expect(JSON.parse(args[args.lastIndexOf('--settings') + 1]).skillOverrides.dataviz).toBe('off');
+  });
+
+  it.each(['print', 'interactive'] as const)('drops the git snapshot and keeps Relay\'s Git rules for %s CC', async (mode) => {
+    const args = await spawnArgs(mode, sessionWiMcp, { gitStatus: false });
+    expect(JSON.parse(args[args.lastIndexOf('--settings') + 1]).includeGitInstructions).toBe(false);
+    expect(args[args.indexOf('--append-system-prompt') + 1].endsWith(CC_GIT_RULES)).toBe(true);
+    expect(args).toContain('--exclude-dynamic-system-prompt-sections');
+  });
+
+  /** A transcript on disk: the next spawn of this session resumes it. */
+  function transcript(sessionId: string): void {
+    const file = join(home, '.claude', 'projects', realpathSync(home).replace(/[^A-Za-z0-9_-]/g, '-'), `${sessionId}.jsonl`);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, JSON.stringify({ type: 'user', uuid: 'u1', parentUuid: null, sessionId,
+      message: { role: 'user', content: 'x' }, timestamp: new Date().toISOString() }) + '\n');
+  }
+
+  function promptMode(args: string[]) {
+    const settings = JSON.parse(args[args.lastIndexOf('--settings') + 1]);
+    const prompt = args[args.indexOf(args.includes('--system-prompt') ? '--system-prompt' : '--append-system-prompt') + 1];
+    return { replace: args.includes('--system-prompt'), gitInstructions: settings.includeGitInstructions !== false,
+      gitRules: prompt.includes(CC_GIT_RULES) };
+  }
+
+  it.each(['print', 'interactive'] as const)('keeps a session begun on the default there when the Agent first opts in, %s CC', async (mode) => {
+    transcript('old-session');
+    const args = await spawnArgs(mode, sessionWiMcp, { systemPrompt: 'replace', gitStatus: false }, 'old-session');
+    expect(args).toContain('--resume');
+    expect(promptMode(args)).toEqual({ replace: false, gitInstructions: true, gitRules: false });
+  });
+
+  it.each(['print', 'interactive'] as const)('resumes a session with the ccPrompt it began with, %s CC', async (mode) => {
+    await spawnArgs(mode, sessionWiMcp, { gitStatus: false }, 'trimmed-session');
+    transcript('trimmed-session');
+    const kept = await spawnArgs(mode, sessionWiMcp, { gitStatus: false }, 'trimmed-session');
+    expect(kept).toContain('--resume');
+    expect(promptMode(kept)).toEqual({ replace: false, gitInstructions: false, gitRules: true });
+    // The Agent turned it off meanwhile: the resumed session still keeps Bash's Git section and Relay's rules apart.
+    const reverted = await spawnArgs(mode, sessionWiMcp, undefined, 'trimmed-session');
+    expect(promptMode(reverted)).toEqual({ replace: false, gitInstructions: false, gitRules: true });
+  });
+
+  it.each(['print', 'interactive'] as const)('starts a new session with the Agent\'s current ccPrompt, %s CC', async (mode) => {
+    await spawnArgs(mode, sessionWiMcp, { systemPrompt: 'replace', gitStatus: false }, 'first-session');
+    transcript('first-session');
+    const args = await spawnArgs(mode, sessionWiMcp, undefined, 'next-session');
+    expect(args).toContain('--session-id');
+    expect(promptMode(args)).toEqual({ replace: false, gitInstructions: true, gitRules: false });
+    const opted = await spawnArgs(mode, sessionWiMcp, { systemPrompt: 'replace' }, 'third-session');
+    expect(promptMode(opted)).toEqual({ replace: true, gitInstructions: true, gitRules: false });
+  });
+
+  /** ccPrompt warnings the pool logged. */
+  function ccPromptWarnings(warn: ReturnType<typeof vi.spyOn>): string[] {
+    return warn.mock.calls.map(([entry]) => String((entry as { msg?: unknown })?.msg ?? ''))
+      .filter((msg) => msg.startsWith('ccPrompt'));
+  }
+  const DEFAULT = { replace: false, gitInstructions: true, gitRules: false };
+  const records = () => join(home, 'cc-prompt-sessions');
+
+  it.each(['print', 'interactive'] as const)('writes no record for a session on the default, %s CC', async (mode) => {
+    const warn = vi.spyOn(console, 'warn');
+    const args = await spawnArgs(mode, sessionWiMcp, undefined, 'plain-session');
+    expect(promptMode(args)).toEqual(DEFAULT);
+    expect(existsSync(records())).toBe(false);
+    await spawnArgs(mode, sessionWiMcp, { systemPrompt: 'append', gitStatus: true }, 'explicit-default');
+    expect(existsSync(records())).toBe(false);
+    expect(ccPromptWarnings(warn)).toEqual([]);
+  });
+
+  it.each(['print', 'interactive'] as const)('starts on the default when a file occupies the record directory, %s CC', async (mode) => {
+    writeFileSync(records(), 'not a directory');
+    const warn = vi.spyOn(console, 'warn');
+    const args = await spawnArgs(mode, sessionWiMcp, { systemPrompt: 'replace', gitStatus: false }, 'blocked-session');
+    expect(promptMode(args)).toEqual(DEFAULT);
+    expect(ccPromptWarnings(warn)).toEqual(['ccPrompt record not written; new CC session starts on the default prompt']);
+  });
+
+  it.each(['print', 'interactive'] as const)('starts on the default when the record directory is not writable, %s CC', async (mode) => {
+    mkdirSync(records());
+    chmodSync(records(), 0o500);
+    const warn = vi.spyOn(console, 'warn');
+    const args = await spawnArgs(mode, sessionWiMcp, { gitStatus: false }, 'readonly-session');
+    expect(promptMode(args)).toEqual(DEFAULT);
+    expect(ccPromptWarnings(warn)).toEqual(['ccPrompt record not written; new CC session starts on the default prompt']);
+    expect(readdirSync(records())).toEqual([]);
+  });
+
+  it.each(['print', 'interactive'] as const)('resumes on the default with a warning when the record is corrupt, %s CC', async (mode) => {
+    transcript('corrupt-session');
+    mkdirSync(records());
+    writeFileSync(join(records(), 'corrupt-session.json'), '{"ccPrompt": {"gitStatus": "no"}}');
+    writeFileSync(join(records(), 'garbled-session.json'), '{not json');
+    const warn = vi.spyOn(console, 'warn');
+    const args = await spawnArgs(mode, sessionWiMcp, { gitStatus: false }, 'corrupt-session');
+    expect(args).toContain('--resume');
+    expect(promptMode(args)).toEqual(DEFAULT);
+    transcript('garbled-session');
+    expect(promptMode(await spawnArgs(mode, sessionWiMcp, { gitStatus: false }, 'garbled-session'))).toEqual(DEFAULT);
+    writeFileSync(join(records(), 'locked-session.json'), '{"ccPrompt":{"gitStatus":false}}');
+    chmodSync(join(records(), 'locked-session.json'), 0o000);
+    transcript('locked-session');
+    expect(promptMode(await spawnArgs(mode, sessionWiMcp, { gitStatus: false }, 'locked-session'))).toEqual(DEFAULT);
+    expect(ccPromptWarnings(warn)).toEqual([
+      'ccPrompt record invalid; resumed CC session keeps CC\'s default Git section and settings',
+      'ccPrompt record invalid; resumed CC session keeps CC\'s default Git section and settings',
+      'ccPrompt record unreadable; resumed CC session keeps CC\'s default Git section and settings',
+    ]);
+  });
+
+  it.each(['print', 'interactive'] as const)('resumes on the default without a warning when the record is missing, %s CC', async (mode) => {
+    transcript('unrecorded-session');
+    const warn = vi.spyOn(console, 'warn');
+    const args = await spawnArgs(mode, sessionWiMcp, { systemPrompt: 'replace', gitStatus: false }, 'unrecorded-session');
+    expect(args).toContain('--resume');
+    expect(promptMode(args)).toEqual(DEFAULT);
+    expect(ccPromptWarnings(warn)).toEqual([]);
   });
 
   it('leaves spawn unchanged when the MCP is unavailable', async () => {

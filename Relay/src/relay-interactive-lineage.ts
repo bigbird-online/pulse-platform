@@ -2,11 +2,12 @@ import { createHash } from 'node:crypto';
 import type { ConversationRuntimeId } from './types.js';
 import { parseConversationPoolKey } from './conversation-address.js';
 
-const ROOT_REF_DOMAIN: Record<ConversationRuntimeId, 'cc_root_session' | 'codex_run' | 'pi_rpc_session'> = {
+const ROOT_REF_DOMAIN: Record<ConversationRuntimeId, 'cc_root_session' | 'codex_run' | 'pi_rpc_session' | 'agy_conversation'> = {
   cc: 'cc_root_session',
   'cc-sdk': 'cc_root_session',
   codex: 'codex_run',
   pi: 'pi_rpc_session',
+  agy: 'agy_conversation',
 };
 
 export interface RelayInteractiveLineage {

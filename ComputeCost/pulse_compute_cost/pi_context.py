@@ -23,9 +23,11 @@ from .receipts import ReceiptError, digest, reference
 # Relay appends this fixed line after the provenance reference of an undeclared
 # request (Relay/src/session-wi-guard.ts). It is a Relay instruction, not part
 # of the human utterance, and must not hide the reference.
-SESSION_WI_REMINDER = "[Relay] 本请求尚未声明归属：要改文件、提 PR 或动生产时先调用 declare_session_wi 登记所属 WI；闲聊、只读查询声明 none，不要为此新建 WI。"
-# Recorded sessions keep the wording before 2026-10-29; both stay recognised.
+SESSION_WI_REMINDER = "[Relay] 本请求尚未调用 declare_session_wi 声明归属。"
+# Recorded sessions keep the earlier wordings (before 2026-10-29, then before
+# 2026-11-19); all stay recognised.
 SESSION_WI_REMINDERS = (SESSION_WI_REMINDER,
+                        "[Relay] 本请求尚未声明归属：要改文件、提 PR 或动生产时先调用 declare_session_wi 登记所属 WI；闲聊、只读查询声明 none，不要为此新建 WI。",
                         "[Relay] 本请求尚未声明 WI：先调用 declare_session_wi 登记本请求所属 WI，再继续工作。")
 REMINDER_SUFFIX = r"(?:(?:\n\n)?(?:" + "|".join(re.escape(r) for r in SESSION_WI_REMINDERS) + r"))?$"
 _INPUT = re.compile(r"\n\n\[Host human input reference: ([a-f0-9]{64})\.[^\]\r\n]*\]" + REMINDER_SUFFIX)

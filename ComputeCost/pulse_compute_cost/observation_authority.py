@@ -279,12 +279,13 @@ def installed_store(entrypoint, *, guard=lambda: None):
         raise ReceiptError('installed observation authority is unavailable; no local fact fallback') from exc
 
 
-def registered_ledger(registry, *, guard=lambda: None):
+def registered_ledger(registry, *, guard=lambda: None, read_only=False):
     entry = registry.get('observation_core_entrypoint')
     if entry is None:
         # Historical standalone tools stay readable until their node is adopted.
-        return UsageLedger(registry['ledger_root'])
-    return UsageLedger(registry['ledger_root'], authority=installed_store(entry, guard=guard))
+        return UsageLedger(registry['ledger_root'], read_only=read_only)
+    return UsageLedger(registry['ledger_root'], authority=installed_store(entry, guard=guard),
+                       read_only=read_only)
 
 
 class _CoverageHeads:

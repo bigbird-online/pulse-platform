@@ -17,7 +17,7 @@ from typing import Callable, Iterator, TYPE_CHECKING, overload
 from .domain import advance, decide, observation, reduce, public_state
 from . import collaboration, location, measurements, migration, watch, notifications, legacy, existing_execution
 from . import children, pull_requests, self_switch
-from .workspaces import session_write
+from .workspaces import session_write, with_hosts
 from .repository_identity import semantic_identity
 from .model import (
     Authenticate,
@@ -547,7 +547,7 @@ class Kernel:
                     # A projection repair/publish cannot veto its readback.
                     return self._response(
                         wi,
-                        self._family(conn, context.namespace, wi, state),
+                        with_hosts(self._family(conn, context.namespace, wi, state), history),
                         revision,
                         context,
                         request_id=command.request_id,
@@ -555,7 +555,7 @@ class Kernel:
                         operation=operation,
                     )
                 state, revision, previous, history = self._replay(conn, context.namespace, wi)
-                state = self._family(conn, context.namespace, wi, state)
+                state = with_hosts(self._family(conn, context.namespace, wi, state), history)
                 context = replace(context, observed_revision=revision)
                 if command.intent == self_switch.INTENT:
                     # The target is read in this transaction; its journal is a dependency.
@@ -675,7 +675,8 @@ class Kernel:
                 conn.commit()
                 committed = self._response(
                     wi,
-                    new_state,
+                    # The same revision's evidence as a later read: this record included.
+                    with_hosts(new_state, [*history, entry]),
                     revision,
                     context,
                     request_id=command.request_id,
@@ -719,7 +720,7 @@ class Kernel:
                         if recovered is not None and recovered["semantics"] == semantics:
                             return self._response(
                                 wi,
-                                state,
+                                with_hosts(state, history),
                                 revision,
                                 context,
                                 request_id=command.request_id,
@@ -1237,6 +1238,7 @@ class Kernel:
                     raise Rejected("domain_conflict", "Work item does not exist")
                 if query.revision is None:
                     state = self._family(conn, context.namespace, query.work_item_id, state)
+                state = with_hosts(state, history)
                 response = self._response(query.work_item_id, state, revision, context)
                 if query.view == "request":
                     prior = next(
@@ -1438,8 +1440,24 @@ class Kernel:
             return self._error(storage_error(exc))
 
     def resume(self, work_item_id: str, host_context: object) -> Json:
-        """Observe the original request and its next decision without minting a grant."""
+        """Observe the original request and its next decision without minting a grant.
+
+        A successor (rollover, continuation, switch) resumes from the handover
+        checkpoint, so the latest one is given as `result.latest_checkpoint`
+        instead of leaving it to a search through every record."""
         response = self.inspect(Query(work_item_id), host_context)
+        records = ((response.get("result") or {}).get("current_observation") or {}).get("records")
+        found = next(((index, r) for index, r in reversed(list(enumerate(records)))
+                      if r.get("kind") == "CheckpointRecorded"), None) if isinstance(records, list) else None
+        if found is not None:
+            index, latest = found
+            response["result"]["latest_checkpoint"] = {
+                "record_id": latest.get("record_id"),
+                "author": latest.get("author"),
+                "summary": (latest.get("record") or {}).get("summary"),
+                # 1-based place among the records; later work records may follow it.
+                "position": index + 1,
+            }
         if (
             response.get("next_action", {})
             and response["next_action"]["intent"] == "resolve_business_affiliation"

@@ -43,7 +43,6 @@ vi.mock('../src/owned-process.js', async () => ({
 
 const sessionWiMcp: CcSessionWiMcp = {
   server: { type: 'stdio', command: '/reviewed/python', args: ['/release/ComputeCost/runtime/codex-mcp-request-purpose.py', '--host', 'cc'] },
-  instructions: 'declare_session_wi rule',
 };
 
 /** A child that exits once its input ends (print batch) or at once (interactive bridge). */

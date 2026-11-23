@@ -21,7 +21,7 @@ import os
 from pathlib import Path
 import re
 from uuid import uuid4
-from typing import cast
+from typing import Iterator, cast
 
 from . import channel
 from .kernel import Kernel
@@ -195,14 +195,19 @@ def run(
         require(direct or "pid" not in request, "A native tool cannot name another process")
         native = (
             retired_source(policy, request["native_id"], request["tenant"])
-            if request["stage"] == "prepare"
-            and "pid" not in request
+            if "pid" not in request
             and direct
             and "native_id" in request
             and "tenant" in request
             else native_child(
                 policy_path, request.get("pid") if direct else (caller or os.getpid()), parent, proc
             )
+        )
+        # agy has no tools to accept from inside its successor, and no process between
+        # turns: Relay accepts it by the conversation its retained record names.
+        require(
+            request["stage"] == "prepare" or isinstance(native, NativeHost) or native.runtime == "agy",
+            "Only an agy successor is accepted by its retained conversation",
         )
     human: Json | None = None
     asked: Json | None = None
@@ -349,7 +354,9 @@ def run(
             "Successor does not match the original conversation",
         )
         require(
-            native.runtime == "codex" or native.native_header["id"] == record["target_session_id"],
+            native.runtime == "codex"
+            or native.native_header["id"] == record["target_session_id"]
+            or (native.runtime == "agy" and getattr(native, "allocation_id", None) == record["target_session_id"]),
             "Actual successor differs from the one Host allocation",
         )
         target = {"native_id": native.native_header["id"], "principal": native.base.principal()}
@@ -361,6 +368,8 @@ def run(
             native.base,
             generation=original["work_item"]["generation"],
             session_handover={"source": record["source"], "transfer_id": prepared["transfer_id"]},
+            # A retained conversation was admitted for this one handover step only.
+            **({} if isinstance(native, NativeHost) else {"allowed_intents": frozenset({"accept_transfer"})}),
         )
         original = kernel.execute(
             Command(
@@ -415,6 +424,24 @@ def agent_summary(kernel: Kernel, handle: object, wi: str, asked: Json, source: 
     return str(summary)
 
 
+SOURCE_PROOF = "pulse.native-session-source/v1"
+RETAINED_SOURCE = "pulse.native-session-retained/v1"
+
+
+def relay_records(profile: Json) -> Iterator[Json]:
+    """Relay's records under the profile's proof root: process proofs, and the
+    retained records Relay keeps for agy conversations, which have no process
+    between turns (a process proof is removed when its process exits)."""
+    root = Path(profile["binding_root"])
+    for pattern, schema in (("[0-9]*.json", SOURCE_PROOF), ("retained-*.json", RETAINED_SOURCE)):
+        for path in sorted(root.glob(pattern)):
+            record = private_json(path, 4096)
+            if record.get("schema") == schema and (
+                schema == SOURCE_PROOF or record.get("runtime") == "agy"
+            ):
+                yield record
+
+
 def retired_source(policy: Json, native_id: str, tenant: str) -> SimpleNamespace:
     """Release-only identity from prior Relay observation and the original log.
 
@@ -430,26 +457,23 @@ def retired_source(policy: Json, native_id: str, tenant: str) -> SimpleNamespace
         and bool(tenant),
         "Invalid retained native identity",
     )
-    matches: list[tuple[Json, Path, str]] = []
+    matches: list[tuple[Json, Path, str, object]] = []
     for profile in policy["profiles"]:
-        if profile.get("runtime") not in {"cc", "codex"} or not profile.get("binding_root"):
+        if profile.get("runtime") not in {"cc", "codex", "agy"} or not profile.get("binding_root"):
             continue
         if profile.get("relay_tenants") and tenant not in profile["relay_tenants"]:
             continue
         if not Path(profile["session_root"]).is_dir():
             continue
-        roots = Path(profile["binding_root"])
-        for path in roots.glob("[0-9]*.json"):
-            proof = private_json(path, 4096)
+        for proof in relay_records(profile):
             if (
-                proof.get("schema") != "pulse.native-session-source/v1"
-                or proof.get("runtime") != profile["runtime"]
+                proof.get("runtime") != profile["runtime"]
                 or proof.get("session_id") != native_id
                 or proof.get("tenant") != tenant
             ):
                 continue
             for source_file in source_files(profile, native_id):
-                match = (profile, source_file, proof.get("entry", "relay"))
+                match = (profile, source_file, proof.get("entry", "relay"), proof.get("allocation_id"))
                 if not any(
                     old[0]["actor"] == profile["actor"] and old[1] == source_file for old in matches
                 ):
@@ -458,7 +482,7 @@ def retired_source(policy: Json, native_id: str, tenant: str) -> SimpleNamespace
         len(matches) == 1,
         "No unique original native session observation; original conversation is preserved",
     )
-    profile, session_file, entry = matches[0]
+    profile, session_file, entry, allocation = matches[0]
     require(profile["role"] == "producer", "A verifier cannot become a producer by handover")
     base = HostContext(
         policy["namespace"],
@@ -475,6 +499,7 @@ def retired_source(policy: Json, native_id: str, tenant: str) -> SimpleNamespace
         runtime=profile["runtime"],
         entry=entry,
         native_header={"id": native_id},
+        allocation_id=allocation,
         session_file=session_file,
         environment={"PULSE_PI_TENANT_ID": tenant},
     )
@@ -493,16 +518,16 @@ def target_presence(policy: Json, record: Json) -> Json:
         ):
             continue
         native_ids = [record["target_session_id"]]
-        if record["runtime"] == "codex":
+        if record["runtime"] in {"codex", "agy"}:
+            # These runtimes name their own conversation; Relay's record maps it to the allocation.
             native_ids = []
             if profile.get("binding_root"):
-                for path in Path(profile["binding_root"]).glob("[0-9]*.json"):
-                    proof = private_json(path, 4096)
+                for proof in relay_records(profile):
                     if (
-                        proof.get("schema") == "pulse.native-session-source/v1"
-                        and proof.get("runtime") == "codex"
+                        proof.get("runtime") == record["runtime"]
                         and proof.get("tenant") == record["tenant"]
                         and proof.get("allocation_id") == record["target_session_id"]
+                        and proof.get("session_id") not in native_ids
                     ):
                         native_ids.append(proof["session_id"])
         for native_id in native_ids:

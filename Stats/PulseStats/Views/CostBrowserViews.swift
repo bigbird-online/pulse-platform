@@ -26,7 +26,8 @@ struct CostCompactPreview: View {
     let rows: [CostQueryGroup]
     @Bindable var browser: CostBrowserState
     var onOpenDetails: (() -> Void)?
-    private var filtered: [CostQueryGroup] { browser.selection.rows(rows) }
+    private var available: [CostTableColumn] { CostTableColumn.available(in: rows) }
+    private var filtered: [CostQueryGroup] { browser.selection.limited(to: available).rows(rows) }
     private let columns: [CostTableColumn] = [.agent, .wi, .outcome, .amount]
     private func width(_ column: CostTableColumn) -> CGFloat? {
         switch column { case .agent: return 68; case .outcome: return 52; case .amount: return 72; default: return nil }
@@ -35,7 +36,7 @@ struct CostCompactPreview: View {
         VStack(alignment: .leading, spacing: 0) {
             if browser.filtersVisible {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 6) {
-                    ForEach(CostTableColumn.allCases) { column in
+                    ForEach(available) { column in
                         HStack(spacing: 4) {
                             Text(column.title).font(.caption2).frame(width: 44, alignment: .leading)
                             TextField(column == .amount ? ">=1 / 未计价" : "筛选", text: Binding(
@@ -70,7 +71,9 @@ struct CostCompactPreview: View {
                                         Image(systemName: browser.selectedRowID == row.id ? "chevron.down" : "chevron.right").font(.system(size: 8))
                                         VStack(alignment: .leading, spacing: 1) {
                                             Text(column.text(row))
-                                            Text(row.tenantText).font(.system(size: 9)).foregroundStyle(.secondary)
+                                            if available.contains(.tenant) {
+                                                Text(row.tenantText).font(.system(size: 9)).foregroundStyle(.secondary)
+                                            }
                                         }
                                     }.frame(maxWidth: .infinity, alignment: .leading)
                                 } else {
@@ -139,15 +142,26 @@ struct CostDetailsView: View {
                 Text(notice.text).font(.caption).foregroundStyle(.orange)
                     .browserAnchor("cost-full-notice")
             }
+            if let backlog = document?.collectionBacklog, activity != nil {
+                CostIncompleteBanner(backlog: backlog).browserAnchor("cost-full-incomplete")
+            }
             if let activity {
                 HStack {
                     Text("\(activity.query.fromDate) — \(activity.query.toDate)（结束日不含）")
                     Spacer()
-                    Text(activity.summary.cost.machineCashUsd != nil || activity.totalCostAmount == nil
-                        ? "标准成本 \(StatsFormat.usdDecimal(activity.summary.cost.amount))"
-                        : activity.summary.cost.hasAnomaly
-                        ? "已计价部分 \(StatsFormat.usdDecimal(activity.totalCostAmount)) · 完整成本未知"
-                        : "标准成本 \(StatsFormat.usdDecimal(activity.totalCostAmount)) · 完整性未证明")
+                    if document?.collectionBacklog != nil {
+                        Text("未收齐 · 已收部分 \(StatsFormat.usdDecimal(activity.adjustedTotalAmount))")
+                            .fontWeight(.semibold).foregroundStyle(.orange)
+                    } else {
+                        Text(activity.summary.cost.machineCashUsd != nil || activity.totalCostAmount == nil
+                            ? "标准成本 \(StatsFormat.usdDecimal(activity.summary.cost.amount))"
+                            : activity.summary.cost.hasAnomaly
+                            ? "已计价部分 \(StatsFormat.usdDecimal(activity.totalCostAmount)) · 完整成本未知"
+                            : "标准成本 \(StatsFormat.usdDecimal(activity.totalCostAmount)) · 完整性未证明")
+                    }
+                    if let note = activity.adjustmentNote {
+                        Text("合计 \(StatsFormat.usdDecimal(activity.adjustedTotalAmount)) · \(note)")
+                    }
                     Text("筛选不改变统计范围")
                 }.font(.caption).foregroundStyle(.secondary)
                 CostActivityTable(rows: activity.presentationRows,

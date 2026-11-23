@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 from .model import Decision, HostContext, Json, Rejected, digest, fields
-from .workspaces import ready
+from .workspaces import ready, retiring
 
 INTENTS = frozenset({"capture_source", "declare_source_publication"})
 EFFECT_KINDS = frozenset({"publish_source", "adopt_source"})
@@ -43,7 +43,7 @@ def decide(
             raise Rejected("authority_denied", "Current owned Git workspace required")
         if (
             resource.get("superseded_by")
-            or resource.get("retirement")
+            or retiring(state, resource)
             or not ready(state, resource)
         ):
             raise Rejected("domain_conflict", "Workspace must be physically ready")

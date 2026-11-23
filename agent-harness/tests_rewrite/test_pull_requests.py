@@ -766,12 +766,12 @@ class FakeGitHub:
                 "merged_at": "2026-10-26T10:00:00Z", "merged_by": {"login": "example-owner"}}
 
 
-def drain(rig, github, fault=None):
+def drain(rig, github, fault=None, clock=None):
     def host(artifacts):
         rig.contexts["worker"] = replace(WORKER, artifacts=artifacts)
         return "worker"
     adapter = PullRequestMerge(GATE_POLICY, "/fixture/python", api=github, fault=fault,
-                               markers=rig.markers)
+                               markers=rig.markers, clock=clock)
     return Effects(rig.kernel, adapter, host).drain(rig.wi)
 
 
@@ -915,6 +915,110 @@ def test_pending_checks_wait_and_retry_without_a_review_round(tmp_path):
     drain(rig, github)
     assert pr(rig)["status"] == "merged" and github.puts() == 1
     assert pr(rig)["reviewed_rounds"] == 1
+
+
+def move_clock(rig, seconds):
+    """Set the kernel and adapter clock `seconds` after the last one."""
+    from datetime import timedelta
+    rig.now = rig.now + timedelta(seconds=seconds)
+    rig.kernel._clock = lambda now=rig.now: now.isoformat()
+
+
+@pytest.mark.parametrize("waiting", ["queued", "in_progress"])
+def test_a_merge_confirmed_while_checks_wait_merges_once_they_turn_green(tmp_path, waiting):
+    """2026-11-21, every Agent: confirmed while a check was still queued (Hestia's
+    workstation-manager-ci) or running (wi_20261120_666). Each later visit while it
+    waits must neither spend the retry budget nor leave the merge to a human."""
+    rig, candidate = rig_with_pr(tmp_path)
+    original(review(rig, candidate, 92))
+    github = FakeGitHub(runs=[("harness", waiting, None), ("relay", "completed", "success")])
+
+    def clock():
+        return rig.now.timestamp()
+    advance(rig)
+    drain(rig, github, clock=clock)
+    assert merge_effect(rig)["observations"][-1]["details"]["reason"] == "checks_pending"
+    attempts = len(merge_effect(rig)["attempts"])
+    waited = []
+    for _ in range(12):  # Over an hour of visits while the check still waits.
+        advance(rig)
+        waited += [r["status"] for r in drain(rig, github, clock=clock)]
+    github.runs = GREEN
+    advance(rig)
+    drain(rig, github, clock=clock)
+    assert pr(rig)["status"] == "merged" and github.puts() == 1
+    assert waited == ["deferred"] * 12
+    assert len(merge_effect(rig)["attempts"]) == attempts + 1
+
+
+def test_a_check_that_never_finishes_still_spends_one_attempt_per_wait(tmp_path):
+    from harness_rewrite.github_merge import PENDING_WAIT
+
+    rig, candidate = rig_with_pr(tmp_path)
+    original(review(rig, candidate, 92))
+    github = FakeGitHub(runs=[("harness", "queued", None)])
+
+    def clock():
+        return rig.now.timestamp()
+    advance(rig)
+    drain(rig, github, clock=clock)
+    attempts = len(merge_effect(rig)["attempts"])
+    move_clock(rig, PENDING_WAIT - 60)
+    assert [r["status"] for r in drain(rig, github, clock=clock)] == ["deferred"]
+    move_clock(rig, 120)
+    assert [r["status"] for r in drain(rig, github, clock=clock)] == ["local_committed"]
+    assert len(merge_effect(rig)["attempts"]) == attempts + 1
+    assert merge_effect(rig)["observations"][-1]["details"]["reason"] == "checks_pending"
+    # Another check still pending is progress; a failed one is a new verdict.
+    github.runs = [("harness", "completed", "success"), ("relay", "queued", None, "Relay CI")]
+    advance(rig)
+    assert [r["status"] for r in drain(rig, github, clock=clock)] == ["deferred"]
+    github.runs = [("harness", "completed", "failure"), ("relay", "queued", None, "Relay CI")]
+    advance(rig)
+    drain(rig, github, clock=clock)
+    assert pr(rig)["status"] == "checks_failed" and github.puts() == 0
+
+
+def test_checks_finishing_one_by_one_never_spend_the_retry_budget(tmp_path):
+    """Eight checks pending at confirmation, one finishing every three minutes."""
+    rig, candidate = rig_with_pr(tmp_path)
+    original(review(rig, candidate, 92))
+    github = FakeGitHub(runs=GREEN + [(f"job{i}", "in_progress", None, f"CI {i}") for i in range(8)])
+
+    def clock():
+        return rig.now.timestamp()
+    advance(rig)
+    drain(rig, github, clock=clock)
+    attempts = len(merge_effect(rig)["attempts"])
+    waited = []
+    for done in range(1, 8):
+        github.runs = GREEN + [(f"job{i}", "completed", "success", f"CI {i}") if i < done
+                               else (f"job{i}", "in_progress", None, f"CI {i}") for i in range(8)]
+        move_clock(rig, 180)
+        waited += [r["status"] for r in drain(rig, github, clock=clock)]
+    github.runs = GREEN + [(f"job{i}", "completed", "success", f"CI {i}") for i in range(8)]
+    move_clock(rig, 180)
+    drain(rig, github, clock=clock)
+    assert pr(rig)["status"] == "merged" and github.puts() == 1
+    assert waited == ["deferred"] * 7
+    assert len(merge_effect(rig)["attempts"]) == attempts + 1
+
+
+def test_a_pr_closed_while_its_checks_wait_is_read_back_not_deferred(tmp_path):
+    rig, candidate = rig_with_pr(tmp_path)
+    original(review(rig, candidate, 92))
+    github = FakeGitHub(runs=[("harness", "queued", None)])
+
+    def clock():
+        return rig.now.timestamp()
+    advance(rig)
+    drain(rig, github, clock=clock)
+    assert merge_effect(rig)["observations"][-1]["details"]["reason"] == "checks_pending"
+    github.state = "closed"  # The old head's check is still queued.
+    advance(rig)
+    assert [r["status"] for r in drain(rig, github, clock=clock)] == ["local_committed"]
+    assert merge_effect(rig)["observations"][-1]["details"]["reason"] == "pull_request_closed"
+    assert pr(rig)["status"] == "merge_failed" and github.puts() == 0
 
 
 @pytest.mark.parametrize("runs,statuses,named", [
@@ -1929,3 +2033,39 @@ def test_an_explicit_human_confirmation_keeps_its_holder_agent_rule(tmp_path):
                                      actor=other_session))
     assert "merge_authority" not in pr(rig)["rounds"][-1]["confirmation"]
     assert confirmed["override_checks"] is False
+
+
+def test_a_merge_of_terminated_work_is_never_begun_nor_kept_due(tmp_path):
+    """Review of #1820: a passed review's merge stays `requested` with its whole budget
+    after the WI is terminated; `can_begin` refuses it for good, without spending the
+    budget. The effect view says so (`startable`), so drains neither probe nor begin
+    it and the effect service neither keeps it due nor counts it unsettled. An open
+    attempt is still read back whatever the WI's state."""
+    from harness_rewrite.effect_service import (
+        MERGE_KIND, advanceable, due, effect_observation, settled)
+
+    rig, candidate = rig_with_pr(tmp_path)
+    original(review(rig, candidate, 92))
+    assert merge_effect(rig)["startable"] is True
+    original(rig.approve("terminate_work", {"reason": "Stop", "kind": "cancelled"},
+                         actor=replace(GATE, allowed_intents=GATE.allowed_intents | {"terminate_work"})))
+    effect = merge_effect(rig)
+    assert effect["status"] == "requested" and effect["startable"] is False
+    assert effect["retry"]["attempts_remaining"] == 8
+    github = FakeGitHub(runs=[("harness", "in_progress", None)])
+    for _ in range(3):
+        assert drain(rig, github) == []
+    assert github.calls == [] and merge_effect(rig)["status"] == "requested"
+    kinds = frozenset({MERGE_KIND})
+    current = {"terminal": True, "disk_quota": {"level": "ok"}, "resources": [],
+               "effects": [effect_observation(e) for e in view(rig)["effects"]]}
+    assert advanceable(current, kinds) == [] and settled(current)
+    refused = {"status": "rejected", "request_id": f"send.{effect['effect_id']}.0",
+               "error": {"code": "domain_conflict", "retryable": False}}
+    assert not due(current, kinds, None, [refused])
+    # A begin refused for good this visit, before the view knew: not due either.
+    shown = {**current, "effects": [{**e, "startable": True} for e in current["effects"]]}
+    assert not due(shown, kinds, None, [refused])
+    # An attempt left unknown is still read back, so it stays due.
+    unknown = {**current, "effects": [{**e, "status": "unknown"} for e in current["effects"]]}
+    assert due(unknown, kinds, {"progress": "same"}, [])

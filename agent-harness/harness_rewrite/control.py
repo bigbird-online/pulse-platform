@@ -124,9 +124,13 @@ def decide(
                 )
             ]
         )
+    from .workspaces import SETTLED_STATUSES
+
+    # A failed retirement is settled too: it acted for the last time, kept the
+    # workspace, and the holder may request the retirement again.
     if any(
         e["effect_kind"] == "workspace_retire"
-        and e["status"] not in {"observed_success", "cancelled"}
+        and e["status"] not in SETTLED_STATUSES
         for e in state["effects"].values()
     ):
         raise Rejected(

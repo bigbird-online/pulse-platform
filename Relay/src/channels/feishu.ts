@@ -167,6 +167,8 @@ import { traceInboundRequest, traceDeliveryReceipt } from '../relay-request-trac
 import { recordFeishuOutboundText, lookupFeishuOutboundText } from '../feishu-outbound-cache.js';
 import { transcribeAudio } from '../stt.js';
 import { internalDeliveryPrompt } from '../collaboration-capture.js';
+import { namesConversation, type NativeIdSource } from '../session-identity.js';
+import { fencedInternalTurn } from '../internal-turn-fence.js';
 import { collabTurnHeadline, feishuTurnNoticeCard, type CollabTurnNotice } from '../collab-progress-notice.js';
 import {
   FeishuStreamingCardSession,
@@ -766,7 +768,7 @@ export interface FeishuBotInstance {
   notifyResumed(): Promise<void>;
   /** Start one internal turn in an existing conversation this bot owns
    * (collaboration delivery). False when not owned or its native session changed. */
-  deliverInternalTurn(poolKey: string, prompt: string, expectNativeIds: string[], notice?: CollabTurnNotice): Promise<boolean>;
+  deliverInternalTurn(poolKey: string, prompt: string, expectNativeIds: string[], notice?: CollabTurnNotice, deliveryRef?: string): Promise<boolean>;
 }
 
 export interface ReconcileClient {
@@ -3820,9 +3822,9 @@ export function createFeishuBots(deps: FeishuBotDeps): FeishuBotInstance {
       resumePassed = true;
       await Promise.all(Array.from(running.values()).map(inst => inst.notifyResumed()));
     },
-    async deliverInternalTurn(poolKey: string, prompt: string, expectNativeIds: string[], notice?: CollabTurnNotice): Promise<boolean> {
+    async deliverInternalTurn(poolKey: string, prompt: string, expectNativeIds: string[], notice?: CollabTurnNotice, deliveryRef?: string): Promise<boolean> {
       for (const inst of running.values()) {
-        if (await inst.deliverInternalTurn(poolKey, prompt, expectNativeIds, notice)) return true;
+        if (await inst.deliverInternalTurn(poolKey, prompt, expectNativeIds, notice, deliveryRef)) return true;
       }
       return false;
     },
@@ -3847,7 +3849,7 @@ export function createFeishuBots(deps: FeishuBotDeps): FeishuBotInstance {
 
 // --- Internal: Single Feishu Bot (Lark SDK wiring) ---
 
-interface SingleBotInstance { start(): Promise<void>; stop(): void; messageClient(): FeishuMessageClient; sendText(openId:string,text:string):Promise<void>; notifyShutdown(excludePoolKeys?: Set<string>): Promise<void>; notifyResumed(): Promise<void>; deliverInternalTurn(poolKey: string, prompt: string, expectNativeIds: string[], notice?: CollabTurnNotice): Promise<boolean>; }
+interface SingleBotInstance { start(): Promise<void>; stop(): void; messageClient(): FeishuMessageClient; sendText(openId:string,text:string):Promise<void>; notifyShutdown(excludePoolKeys?: Set<string>): Promise<void>; notifyResumed(): Promise<void>; deliverInternalTurn(poolKey: string, prompt: string, expectNativeIds: string[], notice?: CollabTurnNotice, deliveryRef?: string): Promise<boolean>; }
 
 /** Announce a delivered collaboration contract: a card with folded details,
  * its headline as text when the card fails, a generic line without a notice. */
@@ -4185,7 +4187,7 @@ function createSingleFeishuBot(agent: AgentConfig, _authorizedOpenIds: Set<strin
         await sendTextMessage(openId, `⚩／ Relay 正在重启，几秒后恢复。`).catch(() => {});
       }
     },
-    async deliverInternalTurn(poolKey: string, prompt: string, expectNativeIds: string[], notice?: CollabTurnNotice): Promise<boolean> {
+    async deliverInternalTurn(poolKey: string, prompt: string, expectNativeIds: string[], notice?: CollabTurnNotice, deliveryRef?: string): Promise<boolean> {
       const openId = poolKeyToOpenId.get(poolKey);
       const session = deps.stateManager?.getSession(poolKey);
       if (!openId || !session || !isFeishuDeliveryPoolKey(agent, poolKey)) return false;
@@ -4199,14 +4201,16 @@ function createSingleFeishuBot(agent: AgentConfig, _authorizedOpenIds: Set<strin
         assertAdoptedConversationRuntime(deps.stateManager?.getSession(poolKey), proc);
       }
       const codexThreadId = 'codexThreadId' in proc ? (proc as { codexThreadId?: string }).codexThreadId : undefined;
-      const ids = [proc.sessionId, codexThreadId].filter((id): id is string => Boolean(id));
-      if (!ids.some(id => expectNativeIds.includes(id))) return false;
+      if (!namesConversation(proc as NativeIdSource, expectNativeIds)) return false;
       await sendCollabTurnNotice({
         card: card => sendCardMessage(openId, card),
         text: text => sendTextMessage(openId, text),
       }, notice);
       const content = internalDeliveryPrompt(prompt, codexThreadId ? 'codex' : 'cc', codexThreadId ?? proc.sessionId, process.env);
-      return captureFeishuBusinessDispatch(deps, poolKey, boundary)({ type: 'human', content });
+      // Fenced: the runtime runs it only in the conversation it was routed to, checked where the
+      // turn starts (internal-turn-fence.ts); the check above only spares a notice.
+      return captureFeishuBusinessDispatch(deps, poolKey, boundary)(
+        fencedInternalTurn({ type: 'human', content }, expectNativeIds, deliveryRef));
     },
     async notifyResumed(): Promise<void> {
       // Active wake-up ONLY for sessions that were busy when Relay shut down,

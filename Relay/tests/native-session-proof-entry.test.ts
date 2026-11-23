@@ -23,5 +23,8 @@ describe('native session proof entry', () => {
     expect(proof()).toMatchObject({ tenant: 'owner:pulse:feishu', entry: 'feishu' });
     observeNativeSession(process.pid, 'session-c', 'cron-job-key', 'cc');
     expect(proof()).toMatchObject({ tenant: 'cron-job-key', entry: 'relay' });
+    observeNativeSession(process.pid, '8f0067ec-b62d-4ecf-bd95-04cae57649ac', 'owner:asobi', 'agy', 'relay-session');
+    expect(proof()).toMatchObject({ runtime: 'agy', session_id: '8f0067ec-b62d-4ecf-bd95-04cae57649ac',
+      allocation_id: 'relay-session', tenant: 'owner:asobi', entry: 'telegram' });
   });
 });

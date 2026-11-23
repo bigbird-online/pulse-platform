@@ -226,6 +226,83 @@ describe('ensureClaudeProjectRegistered', () => {
     expect(written.projects[cwd].hasTrustDialogAccepted).toBe(true);
   });
 
+  it('approves external includes on the entry of the repository holding the workspace, and nothing else there', () => {
+    // CC reads the @-import approval from the git repository's entry, which it
+    // first writes with the approval false (PULSE/local-pulse-space, 11-20).
+    const repo = join(tmpHome, 'PULSE');
+    const workspace = join(repo, 'local-pulse-space');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    mkdirSync(workspace, { recursive: true });
+    writeFileSync(claudeJsonPath, JSON.stringify({ projects: { [repo]: {
+      hasTrustDialogAccepted: false, hasClaudeMdExternalIncludesApproved: false,
+      hasClaudeMdExternalIncludesWarningShown: false, allowedTools: [] } } }), { mode: 0o600 });
+
+    expect(ensureClaudeProjectRegistered(tmpHome, workspace, [repo]).changed).toBe(true);
+    const written = JSON.parse(readFileSync(claudeJsonPath, 'utf-8'));
+    expect(written.projects[repo]).toEqual({ hasTrustDialogAccepted: false, hasClaudeMdExternalIncludesApproved: true,
+      hasClaudeMdExternalIncludesWarningShown: true, allowedTools: [] });
+    expect(written.projects[workspace].hasClaudeMdExternalIncludesApproved).toBeUndefined();
+    expect(ensureClaudeProjectRegistered(tmpHome, workspace, [repo]).changed).toBe(false);
+  });
+
+  it('approves a shared checkout that is itself the working directory, on its one entry', () => {
+    const repo = join(tmpHome, 'PULSE');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+
+    ensureClaudeProjectRegistered(tmpHome, repo, [repo]);
+    const written = JSON.parse(readFileSync(claudeJsonPath, 'utf-8'));
+    expect(Object.keys(written.projects)).toEqual([repo]);
+    expect(written.projects[repo].hasClaudeMdExternalIncludesApproved).toBe(true);
+  });
+
+  it('approves no separate repository inside a shared checkout, as cwd or holding it', () => {
+    // Coevolution holds PULSE and Oikos; a repository nested in the tree is not one of the roots.
+    const shared = join(tmpHome, 'Coevolution');
+    const nested = join(shared, 'Bigbird', 'own');
+    const workspace = join(nested, 'ws');
+    mkdirSync(join(shared, '.git'), { recursive: true });
+    mkdirSync(join(nested, '.git'), { recursive: true });
+    mkdirSync(workspace, { recursive: true });
+
+    ensureClaudeProjectRegistered(tmpHome, workspace, [shared]);
+    ensureClaudeProjectRegistered(tmpHome, nested, [shared]);
+    const written = JSON.parse(readFileSync(claudeJsonPath, 'utf-8'));
+    expect(written.projects[shared]).toBeUndefined();
+    for (const entry of [written.projects[workspace], written.projects[nested]]) {
+      expect(entry.hasTrustDialogAccepted).toBe(true);
+      expect(entry.hasClaudeMdExternalIncludesApproved).toBeUndefined();
+    }
+  });
+
+  it('keeps a refusal given in the dialog on the repository entry', () => {
+    const repo = join(tmpHome, 'PULSE');
+    const workspace = join(repo, 'local-pulse-space');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    mkdirSync(workspace, { recursive: true });
+    const refused = { hasClaudeMdExternalIncludesApproved: false, hasClaudeMdExternalIncludesWarningShown: true };
+    writeFileSync(claudeJsonPath, JSON.stringify({ projects: { [repo]: refused } }), { mode: 0o600 });
+
+    ensureClaudeProjectRegistered(tmpHome, workspace, [repo]);
+    expect(JSON.parse(readFileSync(claudeJsonPath, 'utf-8')).projects[repo]).toEqual(refused);
+  });
+
+  it('approves no repository outside the approved roots', () => {
+    const repo = join(tmpHome, 'elsewhere');
+    const workspace = join(repo, 'ws');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    mkdirSync(workspace, { recursive: true });
+    const seeded = { hasClaudeMdExternalIncludesApproved: false, hasClaudeMdExternalIncludesWarningShown: false };
+    writeFileSync(claudeJsonPath, JSON.stringify({ projects: { [repo]: seeded } }), { mode: 0o600 });
+
+    ensureClaudeProjectRegistered(tmpHome, workspace, [join(tmpHome, 'PULSE')]);
+    ensureClaudeProjectRegistered(tmpHome, workspace);
+    const written = JSON.parse(readFileSync(claudeJsonPath, 'utf-8'));
+    expect(written.projects[repo]).toEqual(seeded);
+    // A root that merely holds the repository is not it.
+    ensureClaudeProjectRegistered(tmpHome, workspace, [tmpHome]);
+    expect(JSON.parse(readFileSync(claudeJsonPath, 'utf-8')).projects[repo]).toEqual(seeded);
+  });
+
   it('adds projects[cwd] without touching existing projects entries', () => {
     writeFileSync(
       claudeJsonPath,

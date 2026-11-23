@@ -7,11 +7,12 @@ import {join} from 'node:path';
 export const STATS_TOOL_NAME = 'pulse_stats';
 export const STATS_TIMEOUT_MS = 60_000;
 export const STATS_MAX_BYTES = 2 * 1024 * 1024;
-const QUERIES = ['overview','cost','wi','quotas','health','board','automation','metric','snapshot','agent_day'];
+const QUERIES = ['overview','cost','wi','quotas','health','board','automation','metric','snapshot','agent_day','compactions'];
 const NAME = '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$';
 const DAY = '^[0-9]{4}-[0-9]{2}-[0-9]{2}$';
 const FLAGS = {period:'--period', group:'--group', work_item_id:'--work-item-id', agent:'--agent',
-  runtime:'--runtime', metric_id:'--metric-id', date:'--date', end_date:'--end-date', ws:'--ws'};
+  runtime:'--runtime', metric_id:'--metric-id', date:'--date', end_date:'--end-date', ws:'--ws',
+  session_id:'--session-id'};
 
 export const statsParameters = {type:'object', properties:{
   query:{type:'string', enum:QUERIES},
@@ -24,15 +25,20 @@ export const statsParameters = {type:'object', properties:{
   date:{type:'string', pattern:DAY},
   end_date:{type:'string', pattern:DAY},
   ws:{type:'string', pattern:'^(?:[A-Za-z0-9_-][A-Za-z0-9._-]*/)*[A-Za-z0-9._-]*/?$', maxLength:200},
+  session_id:{type:'string', pattern:'^[A-Za-z0-9-]{8,64}$'},
 }, required:['query'], additionalProperties:false};
 
 export const statsDescription = 'Read-only PULSE Stats query: the same published data the PulseStats App shows '
-  +'(产出与成本 cost by period and agent/WI/runtime; period last_week is the previous complete Monday..Sunday; '
-  +'one WI\'s cost/outcomes/board state, quotas, health, '
+  +'(产出与成本 cost by period and agent/WI/runtime; period last_week is the previous complete Monday..Sunday, with closed_week once closed; '
+  +'rows and summary may add adjustment (entries against closed weeks) and total (own plus adjustment, the figure to show); '
+  +'one WI\'s cost/outcomes/board state with its session rollovers and CC compactions, quotas, health, '
   +'在办 board and 要你出手, automation tasks, any App metric, or the whole App snapshot). '
   +'agent_day (agent and date required; optional end_date and ws, a Coevolution-relative workspace path) lists one '
   +'Agent\'s commits, PRs and WI events for a UTC+8 day from the synced Git checkouts and kernel ledger, or one '
   +'count row per day for a date range; its sections say complete/incomplete/unavailable. '
+  +'compactions lists CC context compactions per native session, optionally of one work_item_id or one session_id, '
+  +'(CC print mode only), counted as of observed_at, with the record\'s coverage and a status: a WI total is partial '
+  +'unless the record spans the WI\'s life; no matching session means unknown, not zero. '
   +'Returns pulse_stats_query/v1 JSON with each source\'s generated_at and stale flag; '
   +'treat stale or unavailable sources as unknown, never as zero.';
 

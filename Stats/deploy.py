@@ -33,7 +33,8 @@ LABEL = 'io.coevolution.pulse.stats.cost-refresh'
 PUBLISHER_POLICY = 'publisher-exclusive/v1'
 EXECUTING_INSTALLER_SHA256 = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 PEER_PYTHON = '/home/pulse/.local/share/coevolution/python-env/bin/python'
-COMPONENTS = ('Stats', 'ComputeCost', 'Scripts/pulse-stats-cost-refresh.py', 'config/scl-surfaces.yaml')
+COMPONENTS = ('Stats', 'ComputeCost', 'Scripts/pulse-stats-cost-refresh.py', 'Scripts/pulse-meter.py',
+              'config/scl-surfaces.yaml')
 # The Stats reader runs on ownermac. Oracle joins the original observation ledger.
 ORACLE_SITE = 'oracle-node-1'
 ORACLE_HOME = Path('/home/pulse')
@@ -55,6 +56,17 @@ SITES = ('ownermac', 'tcloud', ORACLE_SITE)
 # cycles take 15-25 minutes (refresh_completed 894/1452/1476 s). Waiting for the
 # current publisher covers one full cycle plus margin instead of stopping it.
 PUBLISHER_WAIT_SECONDS = 40 * 60
+# The Oracle publisher's cycle takes 38-51 minutes and its unit ends one after
+# TimeoutStartSec=100min; the timer starts the next 120 s after one ends. The
+# publisher installation (install-oracle-publisher, observe-mode) waits there
+# until the current cycle ends, so a waiter polling the lock takes it in that gap.
+ORACLE_CYCLE_LIMIT_SECONDS = 100 * 60
+ORACLE_CYCLE_WAIT_SECONDS = ORACLE_CYCLE_LIMIT_SECONDS + 5 * 60
+# The reader's publication pull (pull-publication) holds this lock from reading
+# refresh.json to its last write and ends by SIGALRM within four minutes;
+# switch-publisher changes `publisher` under it, after the cycle lock.
+PUBLICATION_PULL_LOCK = 'publication-pull.lock'
+PUBLICATION_PULL_WAIT_SECONDS = 5 * 60
 # The launchd job runs the full publisher, or collect-local when refresh.json
 # names a remote publisher (Scripts/pulse-stats-cost-refresh.py).
 PUBLISHER_MODES = ('refresh', 'collect-local')
@@ -68,14 +80,19 @@ PUSHING_PEER = 'ownermac'
 OBSERVING_PEER = 'tcloud'
 # ownermac's refresh.json `collect_local_mode` (only `observe-mode` changes it):
 # under observe, the Oracle publisher registers ownermac with every source ID of
-# its registry as `observe_sources` and judges its bundles (native_push).
-COLLECT_LOCAL_MODES = ('full', 'observe')
+# its registry as `observe_sources` and judges its bundles (native_push); under
+# full and incremental (WI754) ownermac appends itself and pushes its position.
+COLLECT_LOCAL_MODES = ('full', 'observe', 'incremental')
 OBSERVE_SOURCE_ID = re.compile(r'[A-Za-z0-9_.-]{1,80}')
 PUBLISHER_SWITCH_RECEIPT = 'publisher-switch.json'
 # observe-mode's transaction on ownermac; refresh script reads the same name and statuses.
 OBSERVE_MODE_RECEIPT = 'observe-mode.json'
 OBSERVE_MODE_SCHEMA = 'pulse_stats_observe_mode/v1'
 OBSERVE_MODE_SETTLED = ('completed', 'restored')
+# incremental-mode's transaction on ownermac: refresh.json `incremental`, which
+# the Oracle publisher's configuration carries (WI754).
+INCREMENTAL_MODE_RECEIPT = 'incremental-mode.json'
+INCREMENTAL_MODE_SCHEMA = 'pulse_stats_incremental_mode/v1'
 TENANT_REGISTRY_MAX_BYTES = 1024 * 1024
 PUBLISHER_WAIT_PROGRESS_SECONDS = 60
 
@@ -1148,6 +1165,7 @@ def enroll_oracle_peer(args):
         raise ValueError('Oracle Stats candidate has no successful exact-main verification')
     with writer_lock(state / 'deployment.lock', timeout=0):
         require_settled_observe_mode(state)
+        require_settled_incremental_mode(state)
         previous = retention_bytes(config_path, private=True)
         config = json.loads(previous)
         if config['source_revision'] != args.expected:
@@ -1407,13 +1425,14 @@ def select_without_attempt(home, revision, expected):
         return {'previous': select_runtime(home, revision, expected), 'selected': revision}
 
 
-def publisher_cycle(home):
+def publisher_cycle(home, timeout=None):
     """On Oracle, the publisher's cycle lock: a running cycle ends before the
     reader selector or its configuration changes, and none starts meanwhile.
     Taken after deployment.lock, as every publisher writer here does."""
     if home != ORACLE_HOME:
         return nullcontext()
-    return writer_lock(home/'.local/state/pulse/stats/cost-refresh.lock', timeout=PUBLISHER_WAIT_SECONDS)
+    return writer_lock(home/'.local/state/pulse/stats/cost-refresh.lock',
+                       timeout=PUBLISHER_WAIT_SECONDS if timeout is None else timeout)
 
 
 def checked_observe_sources(ids):
@@ -1427,13 +1446,13 @@ def checked_observe_sources(ids):
 def collect_local_mode(config):
     mode = config.get('collect_local_mode', 'full')
     if mode not in COLLECT_LOCAL_MODES:
-        raise ValueError('collect_local_mode must be full or observe')
+        raise ValueError('collect_local_mode must be full, observe or incremental')
     return mode
 
 
 def pushing_peer_observe_sources(config, registry):
-    """ownermac's registration as an observing pusher: None in full mode, else its source IDs."""
-    if collect_local_mode(config) == 'full':
+    """ownermac's registration as an observing pusher: its source IDs in observe mode, else None."""
+    if collect_local_mode(config) != 'observe':
         return None
     return checked_observe_sources([s.get('id') for s in registry.get('sources', [])])
 
@@ -1466,7 +1485,27 @@ def oracle_publisher_config(payload, revision, state):
                                'path': str(state/'wi-facts-v1.json'), 'label': ORACLE_SITE+'.harness_core'}]}}
     if payload.get('kernel_merge_enforced_since'):
         config['kernel_merge_enforced_since'] = str(payload['kernel_merge_enforced_since'])
+    if payload.get('incremental') is not None:
+        section = incremental_section({'incremental': payload['incremental']})
+        if section is not None:
+            config['incremental'] = section
     return peer_scripts(config, revision)
+
+
+def incremental_modes(config):
+    """refresh.json `incremental` as ComputeCost of this release parses it (every switch)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'ComputeCost'))
+    from pulse_compute_cost.incremental_modes import incremental_modes as parse
+    return parse(config)
+
+
+def incremental_section(config):
+    """The section an Oracle configuration carries: None when every switch is off."""
+    modes = incremental_modes(config)
+    if set(modes.values()) == {'off'}:
+        return None
+    # An Oracle release before the week close rejects the key: carry it only when on.
+    return {k: v for k, v in modes.items() if k != 'close' or v != 'off'}
 
 
 def oracle_publisher_units(runtime, home):
@@ -1489,7 +1528,7 @@ def receive_oracle_publisher(home, revision, data):
     state = home/'.local/state/pulse/stats'
     config = oracle_publisher_config(payload, revision, state)
     unit_dir = home/'.config/systemd/user'
-    with writer_lock(state/'deployment.lock', timeout=0), publisher_cycle(home):
+    with writer_lock(state/'deployment.lock', timeout=0), publisher_cycle(home, ORACLE_CYCLE_WAIT_SECONDS):
         # A reader switch holds these same locks, so the selector stays this release.
         unfinished_runtime_switch(state)
         if current_revision(home) != revision:
@@ -1515,7 +1554,7 @@ def receive_oracle_publisher(home, revision, data):
     observing = observing_registration(config['peers'], config['paused_peers'])
     return {'revision': revision, 'files': written, 'timer_started': False,
             'paused_peers': config['paused_peers'], 'observing_peers': sorted(observing),
-            'observe_sources': observing}
+            'observe_sources': observing, **({'incremental': config['incremental']} if 'incremental' in config else {})}
 
 
 def canonical_json(value):
@@ -1528,17 +1567,179 @@ def install_oracle_publisher(home, revision):
     deployment.lock is held from reading refresh.json to the readback, so an
     install never lands after an observe-mode or peer-collection change that
     it did not read; while either holds it the install refuses.
+    It installs only the reader Oracle selected, and leaves refresh.json's
+    Oracle entry on that reader: an install after a reader switch there
+    retargets this node's pulls and pushes too.
     """
     state = home/'.local/state/pulse/stats'
+    config_path = state/'refresh.json'
     with writer_lock(state/'deployment.lock', timeout=0):
         require_settled_observe_mode(state)
-        return install_oracle_publisher_locked(
-            home, revision, json.loads(retention_bytes(state/'refresh.json', private=True)))
+        require_settled_incremental_mode(state)
+        before = retention_bytes(config_path, private=True)
+        config = json.loads(before)
+        if oracle_publisher_revision(config) != revision:
+            raise ValueError('Oracle installs only the Stats reader it selected')
+        result = install_oracle_publisher_locked(home, revision, config)
+        updated = oracle_peer_entry(config, revision)
+        if updated != config:
+            # deployment.lock excludes every other refresh.json writer; readers see one whole file.
+            if retention_bytes(config_path, private=True) != before:
+                raise ValueError('refresh.json changed by another writer')
+            atomic(config_path, json.dumps(updated, indent=2).encode())
+        return result
+
+
+# Read-only, over SSH as the Oracle account: the Stats reader stats/current
+# selects there, whether that reader carries the publisher installer and the
+# cost-refresh entry ownermac runs there (fetch-publication, the observation
+# pushes), and the release the installed publisher configuration names. Plain
+# Python, so it answers whatever reader Oracle runs.
+ORACLE_SELECTION_PROBE = """import json, pathlib, re
+home = pathlib.Path(%r)
+current = home/'.local/share/pulse/stats/current'
+answer = {'selected': None, 'installer': False, 'publisher_revision': None}
+try:
+    runtime = current.resolve(strict=True)
+    revision = (runtime/'.stats-source-revision').read_text().strip()
+    if current.is_symlink() and re.fullmatch('[0-9a-f]{40}', revision) \\
+            and runtime == (current.parent/'releases'/revision).resolve(strict=True):
+        answer.update(selected=revision, installer=(runtime/'Stats/deploy.py').is_file()
+                      and (runtime/'Scripts/pulse-stats-cost-refresh.py').is_file())
+except OSError:
+    pass
+try:
+    answer['publisher_revision'] = json.loads((home/'.local/state/pulse/stats/refresh.json').read_text()).get('source_revision')
+except (OSError, ValueError, AttributeError):
+    pass
+print(json.dumps(answer))
+""" % str(ORACLE_HOME)
+
+
+# The refresh script's record of the highest bundle sequence Oracle acknowledged (observe mode).
+OBSERVE_PUSHED = 'publisher-acknowledged.json'
+# Oracle's spool of one observing peer: bundles not yet ingested and the highest ingested sequence.
+ORACLE_SPOOL_PROBE = """import hashlib, json, pathlib, re
+spool = pathlib.Path(%r)/'.local/state/pulse/stats/imports'/(%r + '.observations')
+answer = {'pending': 0, 'consumed': 0}
+digests = {}
+try:
+    record = json.loads((spool/'.consumed.json').read_bytes())
+    answer['consumed'], digests = int(record['last']), dict(record['digests'])
+except FileNotFoundError:
+    pass
+for path in sorted(spool.glob('*.json.gz')) if spool.is_dir() else []:
+    name = re.fullmatch(r'(\\d{20})\\.json\\.gz', path.name)
+    if name and digests.get(str(int(name.group(1)))) != hashlib.sha256(path.read_bytes()).hexdigest():
+        answer['pending'] += 1
+print(json.dumps(answer))
+"""
+
+
+def oracle_observation_backlog(config, peer_id):
+    """{'pending', 'consumed'} of the Oracle publisher's spool for ``peer_id`` (read only)."""
+    oracle = [p for p in config['peers'] if p.get('id') == ORACLE_SITE]
+    if len(oracle) != 1:
+        raise ValueError('Oracle must be a registered peer')
+    probe = ORACLE_SPOOL_PROBE % (str(ORACLE_HOME), peer_id)
+    answer = json.loads(run(peer_command(oracle[0], [PEER_PYTHON, '-I', '-B', '-c', probe]), timeout=60))
+    if (not isinstance(answer, dict) or any(type(answer.get(k)) is not int or answer[k] < 0
+                                            for k in ('pending', 'consumed'))):
+        raise ValueError('Oracle observation spool unreadable')
+    return answer
+
+
+def require_observations_ingested(home, config, started_in, mode):
+    """Before a switch changes who judges ownermac's bundles: none is left without a consumer.
+
+    Leaving observe, every bundle Oracle acknowledged (OBSERVE_PUSHED) is
+    ingested there and its spool holds none waiting; leaving
+    incremental, the local spool holds none waiting. Collect-local cannot run
+    meanwhile (the caller holds the cycle lock), so nothing new arrives.
+    """
+    if started_in == mode:
+        return
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'ComputeCost'))
+    if started_in == 'observe':
+        # The publisher's acknowledgements only: incremental mode moves the observe index locally.
+        observe = home/'.local/state/pulse/stats/observe'
+        pushed = observe/OBSERVE_PUSHED
+        if pushed.exists():
+            cursor = json.loads(retention_bytes(pushed, private=True)).get('sequence', 0)
+        else:
+            # A node upgraded from before the acknowledgement file: there only
+            # the publisher's acknowledgements moved the observe index.
+            from pulse_compute_cost.native_observe import load_index
+            cursor = load_index(observe/'index.json')['sequence']
+        backlog = oracle_observation_backlog(config, PUSHING_PEER)
+        if backlog['pending'] or backlog['consumed'] < cursor:
+            raise ValueError('Oracle has not yet ingested every acknowledged bundle of ownermac '
+                             f"(pending {backlog['pending']}, ingested to {backlog['consumed']}, sent to {cursor}); "
+                             'run observe-mode again after its next cycle')
+    if started_in == 'incremental':
+        from pulse_compute_cost.fact_index import index_path
+        from pulse_compute_cost.native_observations import consumed
+        from pulse_compute_cost.observation_authority import registered_ledger
+        import hashlib as _hashlib
+        registry = json.loads(retention_bytes(home/'.local/state/pulse/compute-cost/sources.json', private=True))
+        spool = index_path(registered_ledger(registry, read_only=True)).parent/'local-spool'
+        done = consumed(spool)['digests'] if spool.is_dir() else {}
+        waiting = [p for p in sorted(spool.glob('*.json.gz')) if spool.is_dir()
+                   and done.get(str(int(p.name[:20]))) != _hashlib.sha256(p.read_bytes()).hexdigest()]
+        if waiting:
+            raise ValueError(f'{len(waiting)} local observation bundles wait to be judged; '
+                             'run collect-local in incremental mode first')
+
+
+def oracle_publisher_revision(config, *, installed=False):
+    """The Stats reader Oracle selected: the release its publisher runs and installs from.
+
+    Oracle's publisher follows its own reader selection (a reader switch there
+    retargets it), which need not be ownermac's native release. Refuses unless
+    Oracle has selected a reader carrying the installer and the cost-refresh
+    entry; ``installed`` also requires the publisher configuration there to
+    name that reader.
+    """
+    oracle = [p for p in config['peers'] if p.get('id') == ORACLE_SITE]
+    if len(oracle) != 1:
+        raise ValueError('Oracle must be a registered peer')
+    answer = json.loads(run(peer_command(oracle[0], [PEER_PYTHON, '-I', '-B', '-c', ORACLE_SELECTION_PROBE]),
+                            timeout=60))
+    selected = answer.get('selected') if isinstance(answer, dict) else None
+    if not isinstance(selected, str) or not SHA.fullmatch(selected) or answer.get('installer') is not True:
+        raise ValueError('Oracle has no selected Stats reader with the publisher installer and entry')
+    if installed and answer.get('publisher_revision') != selected:
+        raise ValueError('Oracle publisher is not installed on its selected Stats reader')
+    return selected
+
+
+def oracle_entry(revision):
+    """The cost-refresh entry of one Stats reader release on Oracle."""
+    return '/home/pulse/.local/share/pulse/stats/releases/'+revision+'/Scripts/pulse-stats-cost-refresh.py'
+
+
+def oracle_peer_entry(config, revision):
+    """``config`` with its Oracle peer running ``revision``, the reader Oracle selected.
+
+    Every ownermac step that reaches Oracle (fetch-publication, the observation
+    pushes) runs this entry; an entry on any other release may already be gone there.
+    """
+    result = deepcopy(config)
+    oracle = [p for p in result['peers'] if p.get('id') == ORACLE_SITE]
+    if len(oracle) != 1:
+        raise ValueError('Oracle must be a registered peer')
+    if not isinstance(oracle[0].get('script'), str) or not re.fullmatch(
+            r'/home/pulse/\.local/share/pulse/stats/releases/[0-9a-f]{40}/Scripts/pulse-stats-cost-refresh\.py',
+            oracle[0]['script']):
+        raise ValueError('unexpected peer execution path')
+    oracle[0]['script'] = oracle_entry(revision)
+    return result
 
 
 def install_oracle_publisher_locked(home, revision, config):
     """The install for a caller holding ownermac's deployment.lock; ``config``
-    stands for refresh.json (observe-mode passes the image it settles)."""
+    stands for refresh.json (observe-mode passes the image it settles).
+    ``revision`` is the Stats reader Oracle selected (oracle_publisher_revision)."""
     registry = json.loads(retention_bytes(home/'.local/state/pulse/compute-cost/sources.json', private=True))
     oracle = [p for p in config['peers'] if p.get('id') == ORACLE_SITE]
     if len(oracle) != 1:
@@ -1550,16 +1751,21 @@ def install_oracle_publisher_locked(home, revision, config):
     observed = pushing_peer_observe_sources(config, registry)
     if observed is not None:
         payload['observe_sources'] = observed
+    incremental = incremental_section(config)
+    if incremental is not None:
+        payload['incremental'] = incremental
     installer = '/home/pulse/.local/share/pulse/stats/releases/'+revision+'/Stats/deploy.py'
     result = json.loads(run(peer_command(oracle[0], [PEER_PYTHON, '-I', '-B', installer, 'receive-oracle-publisher',
                                                      '--revision', revision]), data=canonical_json(payload),
-                            timeout=PUBLISHER_WAIT_SECONDS+300))
+                            timeout=ORACLE_CYCLE_WAIT_SECONDS+300))
     # peer-collection changes only this refresh.json; Oracle collects (and judges an
     # observing TCloud) by the table it holds, so the install fails unless it took this one.
     pushers = [p for p in config['peers'] if p.get('id') != PUSHING_PEER]
     if observed is not None:
         pushers.append({'id': PUSHING_PEER, 'observe_sources': observed})
     observing = observing_registration(pushers, payload['paused_peers'])
+    if result.get('incremental') != incremental:
+        raise ValueError('Oracle publisher readback differs from this incremental setting')
     if (result.get('paused_peers') != payload['paused_peers'] or result.get('observing_peers') != sorted(observing)
             or (PUSHING_PEER in observing
                 and result.get('observe_sources', {}).get(PUSHING_PEER) != observing[PUSHING_PEER])):
@@ -1581,7 +1787,9 @@ def publisher_job_loaded(domain):
 def switch_publisher(home, revision, target):
     """On ownermac, between cycles: run collect-local under the Oracle publisher, or the full refresh again.
 
-    deployment.lock is held throughout, recovery included. A failure restores
+    deployment.lock is held throughout, recovery included; refresh.json changes
+    under the cycle lock and publication-pull.lock, so neither a cycle nor a
+    publication pull that read the other publisher writes after it. A failure restores
     the before-image: configuration, job file, and the job loaded in launchd
     if it was. A recovery that fails leaves publisher-switch.json unresolved;
     the next run, to either publisher, continues that switch from the state it
@@ -1592,17 +1800,25 @@ def switch_publisher(home, revision, target):
     job_path = home/'Library/LaunchAgents'/f'{LABEL}.plist'
     receipt_path = state/PUBLISHER_SWITCH_RECEIPT
     domain = f'gui/{os.getuid()}'
+    pull_lock = state/PUBLICATION_PULL_LOCK
     with writer_lock(state/'deployment.lock', timeout=0):
-        with writer_lock(state/'cost-refresh.lock'):
+        # A pull in flight finishes before `publisher` changes, and none starts meanwhile.
+        with writer_lock(state/'cost-refresh.lock'), writer_lock(pull_lock, timeout=PUBLICATION_PULL_WAIT_SECONDS):
             require_settled_observe_mode(state)
+            require_settled_incremental_mode(state)
             current_config = json.loads(retention_bytes(config_path, private=True))
             current_job = plistlib.loads(retention_bytes(job_path))
             if (current_config.get('source_revision') != revision
                     or native_publisher(home, revision, current_job.get('ProgramArguments')) is None):
                 raise ValueError('publisher must be the selected native release')
             if target != ORACLE_SITE and collect_local_mode(current_config) != 'full':
-                # Oracle still judges ownermac's bundles; observe-mode full ends that first.
-                raise ValueError('ownermac observes for the Oracle publisher; run observe-mode --mode full first')
+                # Only a full collection moves with the publisher; observe-mode full comes first.
+                raise ValueError('ownermac does not collect in full for the Oracle publisher; '
+                                 'run observe-mode --mode full first')
+            if target == ORACLE_SITE:
+                # Before any write: Oracle publishes from the reader it selected,
+                # and this node's pulls and pushes run that reader's entry there.
+                oracle_revision = oracle_publisher_revision(current_config, installed=True)
             prior = json.loads(retention_bytes(receipt_path, private=True)) if os.path.lexists(receipt_path) else None
             continued = prior is not None and (prior.get('status') == 'switching' or bool(prior.get('rollback_pending')))
             loaded = publisher_job_loaded(domain)
@@ -1628,9 +1844,8 @@ def switch_publisher(home, revision, target):
                 raise ValueError('publisher must be the selected native release')
             updated = {k: v for k, v in config.items() if k not in ('publisher', 'peer_id')}
             if target == ORACLE_SITE:
+                updated = oracle_peer_entry(updated, oracle_revision)
                 updated.update(publisher=ORACLE_SITE, peer_id=PUSHING_PEER)
-                if len([p for p in config['peers'] if p.get('id') == ORACLE_SITE]) != 1:
-                    raise ValueError('Oracle must be a registered peer')
             mode = 'collect-local' if target == ORACLE_SITE else 'refresh'
             job['ProgramArguments'] = native_publisher_arguments(home, revision, mode)
             if loaded:
@@ -1684,7 +1899,8 @@ def switch_publisher(home, revision, target):
             require_publisher_arguments(domain, job['ProgramArguments'])
         except Exception as exc:
             def locked_restore():
-                with writer_lock(state/'cost-refresh.lock', timeout=0):
+                with writer_lock(state/'cost-refresh.lock', timeout=0), \
+                        writer_lock(pull_lock, timeout=PUBLICATION_PULL_WAIT_SECONDS):
                     restore()
             recover(exc, locked_restore)
         record(status='switched', completed_at=datetime.now(timezone.utc).isoformat())
@@ -1704,6 +1920,7 @@ def set_peer_collection(home, peer_id, collection):
     config_path = state/'refresh.json'
     with writer_lock(state/'deployment.lock', timeout=0), writer_lock(state/'cost-refresh.lock'):
         require_settled_observe_mode(state)
+        require_settled_incremental_mode(state)
         original = retention_bytes(config_path, private=True)
         config = json.loads(original)
         paused = paused_peers(config)
@@ -1722,6 +1939,13 @@ def set_peer_collection(home, peer_id, collection):
     return {'peer': peer_id, 'collection': collection, 'paused_peers': paused}
 
 
+def require_settled_incremental_mode(state):
+    """Refuse while incremental-mode.json is unresolved: refresh.json may still be its image to restore."""
+    path = state/INCREMENTAL_MODE_RECEIPT
+    if os.path.lexists(path) and json.loads(retention_bytes(path, private=True)).get('status') not in OBSERVE_MODE_SETTLED:
+        raise ValueError('an unresolved incremental-mode switch must finish first; run incremental-mode again')
+
+
 def require_settled_observe_mode(state):
     """Refuse while observe-mode.json is unresolved: the two nodes may disagree on ownermac's mode."""
     path = state/OBSERVE_MODE_RECEIPT
@@ -1729,8 +1953,35 @@ def require_settled_observe_mode(state):
         raise ValueError('an unresolved observe-mode switch must finish first; run observe-mode again')
 
 
+def require_incremental_collection_ready(home):
+    """Before ownermac judges its own sources (WI754): its fact index is built and a
+    prefix of the ledger (caught up here), and no observation bundle waits unacknowledged
+    in the observe outbox (the local spool continues from the observe index)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'ComputeCost'))
+    from pulse_compute_cost.fact_index import FactIndex, IndexMismatch, index_path, stream_identity
+    from pulse_compute_cost.native_observe import pending_bundles
+    from pulse_compute_cost.observation_authority import registered_ledger
+    registry = json.loads(retention_bytes(home/'.local/state/pulse/compute-cost/sources.json', private=True))
+    ledger = registered_ledger(registry, read_only=True)
+    path = index_path(ledger)
+    if not path.is_file():
+        raise ValueError('incremental mode needs the fact index; run pulse-compute-cost fact-index first')
+    index = FactIndex.open(path, stream_identity(ledger))
+    try:
+        if index.binding().sequence == 0:
+            raise ValueError('incremental mode needs the fact index; run pulse-compute-cost fact-index first')
+        try:
+            index.catch_up(ledger)
+        except IndexMismatch as exc:
+            raise ValueError('the fact index is not a prefix of the ledger; rebuild it') from exc
+    finally:
+        index.close()
+    if pending_bundles(home/'.local/state/pulse/stats/observe/outbox'):
+        raise ValueError('observation bundles wait unacknowledged; run collect-local in observe mode first')
+
+
 def set_observe_mode(home, peer_id, mode):
-    """On ownermac, between cycles: collect-local as a full collection or observe-only.
+    """On ownermac, between cycles: collect-local as a full collection, observe-only or incremental.
 
     ownermac's sources have exactly one writer: towards observe the Oracle
     publisher registers ownermac's native_push source first, then ownermac stops
@@ -1745,7 +1996,7 @@ def set_observe_mode(home, peer_id, mode):
     its before-image. A refresh.json another writer changed is never replaced.
     """
     if mode not in COLLECT_LOCAL_MODES:
-        raise ValueError('collect_local_mode must be full or observe')
+        raise ValueError('collect_local_mode must be full, observe or incremental')
     if peer_id != PUSHING_PEER:
         raise ValueError('only the pushing peer ownermac switches its collection mode')
     state = home/'.local/state/pulse/stats'
@@ -1753,6 +2004,7 @@ def set_observe_mode(home, peer_id, mode):
     receipt_path = state/OBSERVE_MODE_RECEIPT
     with writer_lock(state/'deployment.lock', timeout=0), \
             writer_lock(state/'cost-refresh.lock', timeout=PUBLISHER_WAIT_SECONDS):
+        require_settled_incremental_mode(state)
         prior = json.loads(retention_bytes(receipt_path, private=True)) if os.path.lexists(receipt_path) else None
         if prior is not None and prior.get('status') not in OBSERVE_MODE_SETTLED:
             # Continue that switch from its own images, whatever the file holds now.
@@ -1760,6 +2012,11 @@ def set_observe_mode(home, peer_id, mode):
             if (hashlib.sha256(before).hexdigest() != prior['before_sha256']
                     or hashlib.sha256(target).hexdigest() != prior['target_sha256']):
                 raise ValueError('observe-mode receipt differs')
+            oracle_revision = oracle_publisher_revision(json.loads(before))
+            if mode == prior['to'] and oracle_peer_entry(json.loads(target), oracle_revision) != json.loads(target):
+                # Oracle selected another reader since; the target would name an entry it left.
+                raise ValueError('Oracle selected another Stats reader during this observe-mode switch; '
+                                 'run observe-mode --mode '+prior['from']+' first')
             receipt = {k: v for k, v in prior.items() if k not in ('error_type', 'rollback_error_type', 'completed_at')}
             receipt['continued'] = True
         else:
@@ -1774,8 +2031,15 @@ def set_observe_mode(home, peer_id, mode):
                 raise ValueError('observe mode needs the Oracle publisher')
             if not isinstance(config.get('source_revision'), str) or not SHA.fullmatch(config['source_revision']):
                 raise ValueError('exact publisher revision required')
+            # Before anything is written: Oracle installs from the reader it selected,
+            # which need not be this node's release; without one nothing changes.
+            oracle_revision = oracle_publisher_revision(config)
             started_in = collect_local_mode(config)
-            target = json.dumps({**config, 'collect_local_mode': mode}, indent=2).encode()
+            require_observations_ingested(home, config, started_in, mode)
+            if mode == 'incremental' and started_in != 'incremental':
+                require_incremental_collection_ready(home)
+            target = json.dumps({**oracle_peer_entry(config, oracle_revision), 'collect_local_mode': mode},
+                                indent=2).encode()
             atomic(state/('refresh-before-observe-mode-'+hashlib.sha256(before).hexdigest()[:16]+'.json'), before)
             receipt = {'schema': OBSERVE_MODE_SCHEMA, 'peer': peer_id, 'revision': config['source_revision'],
                        'from': started_in, 'to': mode, 'continued': False,
@@ -1790,7 +2054,7 @@ def set_observe_mode(home, peer_id, mode):
 
         def settle(image):
             """Oracle first, then this node: each end reads back the image's mode."""
-            result = install_oracle_publisher_locked(home, receipt['revision'], json.loads(image))
+            result = install_oracle_publisher_locked(home, oracle_revision, json.loads(image))
             current = retention_bytes(config_path, private=True)
             if current != image:
                 if current not in (before, target):
@@ -1804,7 +2068,7 @@ def set_observe_mode(home, peer_id, mode):
             return result
 
         # The intent is durable before either node changes.
-        record(status='switching', rollback_pending=False)
+        record(status='switching', rollback_pending=False, oracle_revision=oracle_revision)
         try:
             oracle = settle(goal)
         except Exception as exc:
@@ -1822,6 +2086,84 @@ def set_observe_mode(home, peer_id, mode):
         record(status='completed' if goal == target else 'restored', rollback_pending=False,
                completed_at=datetime.now(timezone.utc).isoformat())
     return {'peer': peer_id, 'collect_local_mode': mode, 'observing_peers': oracle['observing_peers']}
+
+
+def set_incremental_mode(home, ingest, views, collection, close=None):
+    """On ownermac, between cycles: set refresh.json `incremental` and install it on the Oracle publisher.
+
+    Unset switches keep their current value; all off removes the section, so
+    the Oracle configuration is the one it was before. The same locks as
+    observe-mode are held throughout; incremental-mode.json records the
+    before-image and the target first. A failed install restores the
+    before-image on both nodes; a restore that fails too leaves the receipt
+    unresolved and the deployment writers refuse until a later run settles it.
+    """
+    state = home/'.local/state/pulse/stats'
+    config_path = state/'refresh.json'
+    receipt_path = state/INCREMENTAL_MODE_RECEIPT
+    with writer_lock(state/'deployment.lock', timeout=0), \
+            writer_lock(state/'cost-refresh.lock', timeout=PUBLISHER_WAIT_SECONDS):
+        require_settled_observe_mode(state)
+        prior = json.loads(retention_bytes(receipt_path, private=True)) if os.path.lexists(receipt_path) else None
+        if prior is not None and prior.get('status') not in OBSERVE_MODE_SETTLED:
+            # An unresolved switch first returns to its before-image, but only over
+            # one of its own images: any other content came from another writer.
+            before = prior['before_config'].encode()
+            if hashlib.sha256(before).hexdigest() != prior['before_sha256']:
+                raise ValueError('incremental-mode receipt differs')
+            current = hashlib.sha256(retention_bytes(config_path, private=True)).hexdigest()
+            if current not in (prior['before_sha256'], prior['target_sha256']):
+                raise ValueError('refresh.json changed outside the unresolved incremental-mode switch; '
+                                 'reconcile it by hand before running incremental-mode again')
+            atomic(config_path, before)
+        before = retention_bytes(config_path, private=True)
+        config = json.loads(before)
+        if config.get('publisher') != ORACLE_SITE:
+            raise ValueError('incremental views run on the Oracle publisher')
+        current = incremental_modes(config)
+        wanted = {**current, **{k: v for k, v in (('ingest', ingest), ('views', views),
+                                                  ('collection', collection), ('close', close)) if v is not None}}
+        if wanted['close'] == 'on' and wanted['views'] == 'off':
+            raise ValueError('closing weeks reads the resolved store: views must be shadow or on')
+        section = incremental_section({'incremental': wanted})
+        target_config = {k: v for k, v in config.items() if k != 'incremental'}
+        if section is not None:
+            target_config['incremental'] = section
+        target = before if target_config == config else json.dumps(target_config, indent=2).encode()
+        oracle_revision = oracle_publisher_revision(config)
+        receipt = {'schema': INCREMENTAL_MODE_SCHEMA, 'from': current, 'to': wanted,
+                   'started_at': datetime.now(timezone.utc).isoformat(),
+                   'before_sha256': hashlib.sha256(before).hexdigest(), 'before_config': before.decode(),
+                   'target_sha256': hashlib.sha256(target).hexdigest(), 'status': 'switching'}
+        atomic(receipt_path, json.dumps(receipt, sort_keys=True).encode())
+
+        def settle(image):
+            result = install_oracle_publisher_locked(home, oracle_revision, json.loads(image))
+            if retention_bytes(config_path, private=True) != image:
+                atomic(config_path, image)
+                if retention_bytes(config_path, private=True) != image:
+                    raise ValueError('refresh.json readback differs')
+            return result
+
+        try:
+            result = settle(target)
+        except Exception as exc:
+            try:
+                settle(before)
+            except Exception as rollback_exc:
+                receipt.update(status='failed', error_type=type(exc).__name__,
+                               rollback_error_type=type(rollback_exc).__name__)
+                atomic(receipt_path, json.dumps(receipt, sort_keys=True).encode())
+                raise RuntimeError('incremental-mode failed and the Oracle configuration is unconfirmed; '
+                                   'run incremental-mode again') from exc
+            receipt.update(status='restored', error_type=type(exc).__name__,
+                           completed_at=datetime.now(timezone.utc).isoformat())
+            atomic(receipt_path, json.dumps(receipt, sort_keys=True).encode())
+            raise
+        receipt.update(status='completed', completed_at=datetime.now(timezone.utc).isoformat())
+        atomic(receipt_path, json.dumps(receipt, sort_keys=True).encode())
+    return {'incremental': {k: v for k, v in wanted.items() if k != 'close' or v != 'off'},
+            'oracle_incremental': result.get('incremental')}
 
 
 def require_reconciled_deployment(state, receipt, local_previous, peer_previous):
@@ -1988,6 +2330,7 @@ def deploy_refresh_local(args, *, home=None):
             locks.enter_context(writer['operation_lock'](home/'.local/state/pulse-release-writer'))
         locks.enter_context(writer_lock(state/'deployment.lock',timeout=0))
         require_settled_observe_mode(state)
+        require_settled_incremental_mode(state)
         original = config_path.read_bytes(); old_job = job_path.read_bytes()
         registry = registry_path.read_bytes()
         old_config, original_job = json.loads(original), plistlib.loads(old_job)
@@ -2122,6 +2465,7 @@ def _deploy_locked(args, home):
     prior = json.loads(prior_bytes) if prior_bytes else None
     config_path = state/'refresh.json'
     require_settled_observe_mode(state)
+    require_settled_incremental_mode(state)
     if config_path.is_symlink() or config_path.stat().st_mode & 0o077:
         raise ValueError('private regular deployment config required')
     source = args.source.resolve(); revision = args.revision
@@ -2138,6 +2482,10 @@ def _deploy_locked(args, home):
         raise ValueError('original publisher identity differs')
     verify_reader_features(old_publisher,json.loads((home/'.local/state/pulse/compute-cost/sources.json').read_bytes()))
     target_config = peer_scripts(original, revision) if native else refresh_config(original, revision, args.codex_command, args.codex_home, cc_quota_source(home))
+    if target_config.get('publisher') == ORACLE_SITE:
+        # This deployment selects ``revision`` on Oracle, paused or not; the entry
+        # ownermac pulls and pushes through follows it, and the rollback restores both.
+        target_config = oracle_peer_entry(target_config, revision)
     verify_reader_features(source, json.loads((home/'.local/state/pulse/compute-cost/sources.json').read_bytes()))
     identity = validate_app(args.app, revision)
     # A release SHA identifies immutable code, not a deployment's live inputs.
@@ -2514,7 +2862,7 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('mode', choices=['plan-retention','deploy','deploy-refresh-local','select','preflight','restore-runtime','prepare-sources','select-sources','restore-sources','enroll-native-purpose','enroll-session-wi','enroll-core-outcomes','enroll-holder-supplement','select-first-oracle-runtime','enroll-oracle-peer',
                                   'install-oracle-publisher','receive-oracle-publisher','switch-publisher','peer-collection',
-                                  'observe-mode'])
+                                  'observe-mode','incremental-mode'])
     p.add_argument('--revision');p.add_argument('--expected')
     p.add_argument('--source',type=Path);p.add_argument('--app',type=Path)
     p.add_argument('--codex-home',type=Path);p.add_argument('--codex-command',nargs='+')
@@ -2535,8 +2883,13 @@ def main():
     p.add_argument('--publisher', choices=[ORACLE_SITE, 'ownermac'], help='switch-publisher: where the cost publication is computed')
     p.add_argument('--peer', help='peer-collection, observe-mode: the registered peer ID')
     p.add_argument('--mode', dest='collect_local_mode', choices=list(COLLECT_LOCAL_MODES),
-                   help='observe-mode: ownermac collect-local as a full collection or observe-only')
+                   help='observe-mode: ownermac collect-local as a full collection, observe-only or incremental')
     p.add_argument('--collection', choices=['paused', 'active'], help='peer-collection: pause or resume its Stats collection')
+    p.add_argument('--ingest', choices=['off', 'on'], help='incremental-mode: ingestion by fact index lookups')
+    p.add_argument('--views', choices=['off', 'shadow', 'on'], help='incremental-mode: publisher views from the resolved store')
+    p.add_argument('--incremental-collection', dest='incremental_collection', choices=['off', 'shadow', 'on'],
+                   help='incremental-mode: collection of changed session packages only')
+    p.add_argument('--close', choices=['off', 'on'], help='incremental-mode: close weeks and publish adjustment entries')
     a=p.parse_args()
     if a.native_publisher_only and a.mode != 'deploy-refresh-local':
         p.error('--native-publisher-only requires deploy-refresh-local')
@@ -2547,6 +2900,11 @@ def main():
     if a.mode=='peer-collection':
         if a.peer is None or a.collection is None:p.error('--peer and --collection required')
         print(json.dumps(set_peer_collection(PUBLISHER_HOME, a.peer, a.collection)));return
+    if a.mode=='incremental-mode':
+        if a.ingest is None and a.views is None and a.incremental_collection is None and a.close is None:
+            p.error('--ingest, --views, --incremental-collection or --close required')
+        print(json.dumps(set_incremental_mode(PUBLISHER_HOME, a.ingest, a.views, a.incremental_collection,
+                                              a.close)));return
     if a.mode=='observe-mode':
         if a.peer is None or a.collect_local_mode is None:p.error('--peer and --mode required')
         print(json.dumps(set_observe_mode(PUBLISHER_HOME, a.peer, a.collect_local_mode)));return

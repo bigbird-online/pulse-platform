@@ -3,11 +3,13 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import {
+  AGY_MIXED_PREFERENCE_REFUSAL,
   createBatchRuntimeOrchestrator,
   createCcBatchRuntimeAdapter,
   createCcInteractiveBatchRuntimeAdapter,
   createCodexBatchRuntimeAdapter,
   extractInteractiveRunOutcome,
+  failoverRuntimes,
   type BatchRuntimeAdapter,
   type BatchRunResult,
 } from '../src/runtime.js';
@@ -35,6 +37,28 @@ function makeAdapter(
 }
 
 describe('batch runtime orchestrator', () => {
+  it('refuses a preference mixing agy with other runtimes, so agy is never a fallback target', async () => {
+    const codexRun = vi.fn().mockResolvedValue(makeResult('codex', { exitCode: 1, stderr: 'quota exceeded' }));
+    const agyRun = vi.fn().mockResolvedValue(makeResult('agy', { stdout: 'should not run' }));
+    const orchestrator = createBatchRuntimeOrchestrator({ primary: 'codex', fallbacks: [], adapters: [
+      makeAdapter('codex', codexRun, () => ({ reason: 'quota', message: 'quota', cooldownMs: 60_000 })),
+      makeAdapter('agy', agyRun, () => null)] });
+    for (const preference of [['codex', 'agy'], ['agy', 'codex']] as RuntimeId[][]) {
+      const result = await orchestrator.run({ workspace: '/tmp', prompt: 'p', timeoutMs: 1000 }, preference);
+      expect(result).toMatchObject({ exitCode: 1, failureReason: AGY_MIXED_PREFERENCE_REFUSAL, attemptedRuntimes: [] });
+    }
+    // Also while codex cools down after a quota failure.
+    await orchestrator.run({ workspace: '/tmp', prompt: 'p', timeoutMs: 1000 }, ['codex']);
+    const cooled = await orchestrator.run({ workspace: '/tmp', prompt: 'p', timeoutMs: 1000 }, ['codex', 'agy']);
+    expect(cooled.failureReason).toBe(AGY_MIXED_PREFERENCE_REFUSAL);
+    expect(agyRun).not.toHaveBeenCalled();
+  });
+
+  it('gives a job that names agy no failover', () => {
+    expect(failoverRuntimes(['agy'], false)).toEqual(['agy']);
+    expect(failoverRuntimes(['codex'], false)).toContain('cc');
+  });
+
   it('falls back when primary runtime is unavailable', async () => {
     const ccRun = vi.fn().mockResolvedValue(makeResult('cc', {
       exitCode: 1,
@@ -766,6 +790,17 @@ describe('cc-interactive jsonl outcome extraction', () => {
     const complete = extractInteractiveRunOutcome(jsonlPath, after);
     expect(complete.stdout).toBe('Checking marker.\nDone.');
     expect(complete.terminal).toBe(true);
+    // The last reply alone, without the earlier turn's text.
+    // A turn that stops for a tool call is not a final reply.
+    expect(incomplete.finalText).toBeUndefined();
+    // A failed result and CC's no-response placeholder are not replies either.
+    const failed = join(dir, 'failed.jsonl');
+    writeFileSync(failed, `${JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true, result: 'boom', timestamp: '2026-04-25T00:00:05.000Z' })}\n`);
+    expect(extractInteractiveRunOutcome(failed, after).finalText).toBeUndefined();
+    const placeholder = join(dir, 'placeholder.jsonl');
+    writeFileSync(placeholder, `${JSON.stringify({ type: 'assistant', timestamp: '2026-04-25T00:00:05.000Z', message: { role: 'assistant', stop_reason: 'end_turn', content: [{ type: 'text', text: 'No response requested.' }] } })}\n`);
+    expect(extractInteractiveRunOutcome(placeholder, after).finalText).toBeUndefined();
+    expect(complete.finalText).toBe('Done.');
 
     rmSync(dir, { recursive: true, force: true });
   });

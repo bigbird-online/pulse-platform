@@ -4,6 +4,9 @@ import {
   deliverFeishuText,
   deliverTelegramDocument,
   deliverTelegramText,
+  FEISHU_TEXT_MAX,
+  splitPlainText,
+  TELEGRAM_TEXT_MAX,
 } from '../src/delivery.js';
 import type { DeliveryRequest } from '../src/types.js';
 
@@ -136,6 +139,67 @@ describe('delivery dispatcher', () => {
 
     expect(receipt.status).toBe('failed');
     expect(receipt.error).toContain('feishu down');
+  });
+
+  it('splits long text at blank lines, then line breaks, then spaces, never inside a surrogate pair', () => {
+    expect(splitPlainText('short', 10)).toEqual(['short']);
+    expect(splitPlainText('aaaa\n\nbbbb\ncccc', 10)).toEqual(['aaaa', 'bbbb\ncccc']);
+    expect(splitPlainText('aaaa\nbbbb\ncccc', 10)).toEqual(['aaaa\nbbbb', 'cccc']);
+    expect(splitPlainText('aaa bbb ccc ddd', 10)).toEqual(['aaa bbb', 'ccc ddd']);
+    const emoji = `${'x'.repeat(9)}😀tail`;
+    const parts = splitPlainText(emoji, 10);
+    expect(parts).toEqual(['x'.repeat(9), '😀tail']);
+    expect(parts.join('')).toBe(emoji);
+  });
+
+  it('sends a Telegram text longer than one message as ordered parts within the limit', async () => {
+    const bot = { api: { sendMessage: vi.fn(async () => ({ message_id: bot.api.sendMessage.mock.calls.length })) } };
+    const lines = Array.from({ length: 300 }, (_, i) => `第${i}行 ${'数据'.repeat(10)}`);
+    const request = { ...tgTextRequest(), payload: { kind: 'text' as const, text: lines.join('\n') } };
+
+    const receipt = await deliverTelegramText(request, bot as any, 0);
+
+    const sent = bot.api.sendMessage.mock.calls.map(([, text]) => text as string);
+    expect(sent.length).toBeGreaterThan(1);
+    expect(sent.every(text => text.length <= TELEGRAM_TEXT_MAX)).toBe(true);
+    expect(sent.join('\n')).toBe(lines.join('\n'));
+    expect(receipt).toMatchObject({ status: 'sent', externalMessageId: '1', attempts: sent.length });
+  });
+
+  it('fails the whole Telegram text when any part fails and sends nothing after it', async () => {
+    const bot = { api: { sendMessage: vi.fn()
+      .mockResolvedValueOnce({ message_id: 1 })
+      .mockRejectedValueOnce(new Error('400: Bad Request'))
+      .mockResolvedValue({ message_id: 3 }) } };
+    const request = { ...tgTextRequest(), payload: { kind: 'text' as const, text: `${'a'.repeat(3000)}\n${'b'.repeat(3000)}\n${'c'.repeat(3000)}` } };
+
+    const receipt = await deliverTelegramText(request, bot as any, 0);
+
+    expect(bot.api.sendMessage).toHaveBeenCalledTimes(2);
+    expect(receipt.status).toBe('failed');
+    expect(receipt.error).toBe('part 2/3 (1 sent before it): Error: 400: Bad Request');
+  });
+
+  it('splits a Feishu text over its body limit and fails when a part fails', async () => {
+    const create = vi.fn().mockResolvedValueOnce({ data: { message_id: 'om_1' } }).mockRejectedValueOnce(new Error('feishu 400'));
+    const text = `${'甲'.repeat(FEISHU_TEXT_MAX - 10)}\n${'乙'.repeat(100)}`;
+    const receipt = await deliverFeishuText({ ...feishuTextRequest(), payload: { kind: 'text', text } }, { im: { message: { create } } });
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(create.mock.calls[1]![0].data.content).text).toBe('乙'.repeat(100));
+    expect(receipt.status).toBe('failed');
+    expect(receipt.error).toContain('part 2/2');
+  });
+
+  it('keeps every Feishu request body under 150 KB, even for text of control characters', async () => {
+    const create = vi.fn(async () => ({ data: { message_id: 'om_x' } }));
+    const text = '\u0001'.repeat(50_000);
+    const receipt = await deliverFeishuText({ ...feishuTextRequest(), payload: { kind: 'text', text } }, { im: { message: { create } } });
+    expect(receipt.status).toBe('sent');
+    expect(create.mock.calls.length).toBeGreaterThan(1);
+    for (const [request] of create.mock.calls as any[]) {
+      expect(Buffer.byteLength(JSON.stringify(request.data), 'utf8')).toBeLessThan(150_000);
+    }
+    expect(create.mock.calls.map(([request]: any) => JSON.parse(request.data.content).text).join('')).toBe(text);
   });
 
   it('sends existing Feishu interactive card shape unchanged', async () => {

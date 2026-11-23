@@ -130,3 +130,60 @@ def test_continue_here_accepts_the_host_attested_switch_of_the_same_agent_only(r
     assert entered["work_item"]["generation"] == 2
     # The left WI is still held by the session that asked.
     assert kernel.execute(checkpoint(wi, "back"), "owner")["status"] == "local_committed"
+
+
+def test_an_entered_switch_ends_the_asking_session_for_its_pull_request_results(rig):
+    # The inbox reads the same journal facts the switch writes: the asking
+    # session's request on the left WI and the target's continue_here entry.
+    from harness_rewrite import collaboration_inbox
+    from harness_rewrite.kernel import Kernel
+
+    kernel, host, wi, other = rig
+    assert kernel.execute(checkpoint(wi), "owner")["status"] == "local_committed"
+
+    def ended():
+        with kernel._connection(write=False, collection="list") as conn:
+            index = {w: collaboration_inbox.handoffs(Kernel._replay(conn, OWNER.namespace, w)[3])
+                     for w in (wi, other)}
+        return collaboration_inbox.session_ended(index, [wi], OWNER.principal(), "2000-01-01T00:00:00Z")
+
+    assert ask(kernel, wi, other)["status"] == "local_committed"
+    assert ended() is False  # Asked only: the Host has not moved the conversation.
+    proof = {"source": OWNER.principal(), "source_wi": wi, "request_id": "ask", "target": other}
+    host.contexts["fresh"] = replace(host.contexts["owner"], session="private-session-fresh",
+                                     session_switch=proof)
+    entered = kernel.execute(Command("e4", "continue_here", {"reason": "Agent switch"}, other), "fresh")
+    assert entered["status"] == "local_committed", entered
+    assert ended() is True
+
+
+def test_a_switch_entered_without_an_event_ends_the_session_once_another_holds_its_wi(rig):
+    # Entering a target the resumed session already holds commits no event; the
+    # left WI later held by another session is the kernel's record instead.
+    from harness_rewrite import collaboration_inbox
+    from harness_rewrite.kernel import Kernel
+
+    kernel, host, wi, other = rig
+    assert kernel.execute(checkpoint(wi), "owner")["status"] == "local_committed"
+    assert ask(kernel, wi, other)["status"] == "local_committed"
+    proof = {"source": OWNER.principal(), "source_wi": wi, "request_id": "ask", "target": other}
+    host.contexts["resumed"] = replace(host.contexts["sibling"], session_switch=proof)
+    entered = kernel.execute(Command("e5", "continue_here", {"reason": "Agent switch"}, other), "resumed")
+    assert entered["status"] == "local_committed", entered
+
+    def ended():
+        with kernel._connection(write=False, collection="list") as conn:
+            index = {w: collaboration_inbox.handoffs(Kernel._replay(conn, OWNER.namespace, w)[3])
+                     for w in (wi, other)}
+            holder = Kernel._replay(conn, OWNER.namespace, wi)[0]["holder"]
+        return collaboration_inbox.session_ended(index, [wi], OWNER.principal(),
+                                                 "2000-01-01T00:00:00Z", holder=holder)
+
+    assert ended() is False  # The left WI is still parked with the asking session.
+    moved = {"reason": "continue here"}
+    host.contexts["human"] = replace(host.contexts["sibling"], source=SourceInput(
+        "human-continue", "native_human", b"/wi continue", "continue_here",
+        digest({"intent": "continue_here", "work_item_id": wi, "input": moved})))
+    taken = kernel.execute(Command("take", "continue_here", moved, wi), "human")
+    assert taken["status"] == "local_committed", taken
+    assert ended() is True

@@ -343,3 +343,265 @@ def test_a_human_reference_on_child_creation_names_the_fix(native):
     assert refused.value.code == "authority_denied"
     assert "takes no human_input_ref; omit it" in refused.value.reason
     assert "inherits its parent" in refused.value.reason
+
+
+def dispatched_under_producer(native, monkeypatch, source, forged=False, attempt=None,
+                              legacy=False):
+    """A verifier the kernel dispatched from inside a producer's command (pid 101),
+    still the child of the producer's session process (pid 102): a Pi CLI, a
+    Relay-proven session, or a source made by `as_source`.
+
+    The verifier is the SDK runner with the launch configuration PiDispatch writes
+    (`attempt` set: a continuation under attempts/<attempt>). `legacy` is an older
+    Pi CLI dispatch: title pi and no launch configuration."""
+    from harness_rewrite.native_compute import RUNNER, TITLE, checksum, runner_bytes, sdk_entries
+    from tests_rewrite.test_compute_selection import sdk_fixture
+
+    policy, proc, producer_session, inputs = native
+    data = json.loads(policy.read_text())
+    binary = policy.parent / "pi"
+    dispatch = policy.parent / "dispatch"
+    run = dispatch / "effect.fixture"
+    dispatch.mkdir()
+    data.update(node=str(binary), dispatch_root=str(dispatch))
+    if legacy:
+        (run / "session").mkdir(parents=True)
+        (run / "session" / "2026_assigned-session.jsonl").write_text(
+            json.dumps({"type": "session", "id": "assigned-session"}) + "\n")
+    else:
+        config = sdk_fixture(run)
+        config.update(argv=[str(binary), config["argv"][1]],
+                      sdk_entry=str(sdk_entries(binary)[0]), http_entry=str(sdk_entries(binary)[1]))
+        (run / "launch-config.json").write_text(json.dumps(config))
+        selected = config["selection"]
+        rows = [
+            {"type": "session", "id": config["native_session_id"]},
+            {"type": "model_change", "provider": selected["provider"],
+             "modelId": selected["model"]},
+            {"type": "thinking_level_change", "thinkingLevel": selected["thinking"]},
+            {"type": "custom", "customType": "harness.verification-compute/v1",
+             "data": {"selection": selected, "runner_sha256": config["runner_sha256"],
+                      "config_sha256": checksum((run / "launch-config.json").read_bytes())}},
+        ]
+        session = run / "session/fixture_assigned-session.jsonl"
+        session.write_text("\n".join(map(json.dumps, rows)) + "\n")
+        data["agent_config_dir"] = config["agent_dir"]
+    data["profiles"].append({"role": "verifier", "actor": "independent",
+                             "session_root": str(dispatch), "artifact_roots": [str(dispatch)]})
+    producer = proc / "102"
+    producer.mkdir()
+    for name in ("status", "cmdline", "environ"):
+        producer.joinpath(name).write_bytes((proc / "101" / name).read_bytes())
+    if source not in {"pi_cli", "relay_session"}:
+        as_source(data, policy.parent, producer, source, inputs)
+    policy.write_text(json.dumps(data))
+    title = "pi" if legacy else TITLE
+    child = proc / "101"
+    child.joinpath("status").write_text(f"Uid:\t{os.getuid()}\nPPid:\t102\n")
+    child.joinpath("cmdline").write_bytes(title.encode() + b"\0")
+    child.joinpath("comm").write_text(title + "\n")
+    child.joinpath("exe").symlink_to(binary)
+    environment = b"HARNESS_REWRITE_DISPATCH=effect.fixture\0SCL_SESSION_REF=inherited\0"
+    child.joinpath("stat").write_text(f"101 ({title}) S " + "0 " * 18 + "1234\n")
+    boot = proc / "sys/kernel/random/boot_id"
+    boot.parent.mkdir(parents=True)
+    boot.write_text("boot-fixture\n")
+    stamp = process_stamp(101, proc)
+    receipt = json.dumps({
+        "effect_id": "effect.fixture", "native_session_id": "assigned-session",
+        "process": {**stamp, "started": "another process"} if forged else stamp})
+    target = run
+    if attempt:
+        target = run / "attempts" / attempt
+        target.mkdir(parents=True)
+        (target / RUNNER).write_bytes(runner_bytes())
+        (target / "launch-config.json").write_text(json.dumps({
+            **config, "argv": [config["argv"][0], str(target / RUNNER)], "attempt": attempt,
+            "session_file": str(session),
+            "original_config_sha256": checksum((run / "launch-config.json").read_bytes())}))
+        (target / "launch.json").write_bytes((run / "launch.json").read_bytes())
+        (run / "spawn.json").write_text(json.dumps({
+            "effect_id": "effect.fixture", "native_session_id": "assigned-session",
+            "process": {"pid": 42, "start_ticks": "123", "boot": "old-boot"}}))
+        environment += f"HARNESS_REWRITE_ATTEMPT={attempt}\0".encode()
+    (target / "spawn.json").write_text(receipt)
+    child.joinpath("environ").write_bytes(environment)
+    if source == "relay_session":
+        # A Relay-proven Agent session (telegram) located above the verifier.
+        from harness_rewrite import session_sources
+
+        def relay(policy_data, chain, proc_root, nearer_than=None, **kwargs):
+            row = next((r for r in chain[:nearer_than] if r["pid"] == 102), None)
+            return row and {"runtime": "pi", "entry": "telegram", "process": row,
+                            "path": producer_session, "profile": policy_data["profiles"][0],
+                            "header": {"type": "session", "id": "test-session"},
+                            "environment": {}}
+        monkeypatch.setattr(session_sources, "locate", relay)
+    return policy, proc
+
+
+def as_source(data, directory, process, kind, inputs):
+    """Make `process` an Agent session source whose own check fails or passes:
+    `external_entry` a confirmed entry launcher, `external_revoked` one whose binding
+    the owner revoked after the dispatch, `cc_missing_root` a CC session whose log
+    root is not available (resolve(strict=True) raises FileNotFoundError)."""
+    if kind == "cc_missing_root":
+        cc = directory / "claude"
+        cc.write_text("fixture cc executable")
+        data["profiles"].append({
+            "runtime": "cc", "executable": str(cc), "role": "producer", "actor": "producer",
+            "session_root": str(directory / "cc-sessions-unavailable"),
+            "artifact_roots": [str(directory)]})
+        process.joinpath("cmdline").write_bytes(
+            b"\0".join(a.encode() for a in [str(cc), "--session-id", "cc-session"]))
+        return
+    from tests_rewrite.test_external_entry import OWNER, bind
+
+    python, entry = directory / "python", directory / "harness.pyz"
+    python.write_text("fixture interpreter")
+    entry.write_text("fixture bundle")
+    data.update(python=str(python), external_entries={
+        "root": str(directory / "entries"), "owner": OWNER, "entries": ["chatgpt_web"]})
+    binding_id, binding = bind(data, inputs)
+    process.joinpath("cmdline").write_bytes(b"\0".join(a.encode() for a in [
+        str(python), "-I", "-B", str(entry), "entry", binding_id, "--", "execute"]))
+    process.joinpath("environ").write_bytes(b"")
+    if kind == "external_revoked":
+        binding.write_text(json.dumps(
+            {**json.loads(binding.read_text()), "revoked_at": "2026-11-21T01:00:00Z"}))
+
+
+LAUNCHES = [None, "000001"]  # First launch and continuation.
+
+
+@pytest.mark.parametrize("attempt", LAUNCHES)
+@pytest.mark.parametrize("source", ["pi_cli", "relay_session", "external_entry"])
+def test_a_verifier_dispatched_inside_an_agent_session_is_the_verifier(
+    native, monkeypatch, source, attempt
+):
+    """wi_20261120_666 (2026-11-21): the verifier ran `identity` while the producer's
+    record_task_result was still running, so the producer's session source above it
+    named the principal (actor pulse, entry telegram) and acknowledge was refused."""
+    policy, proc = dispatched_under_producer(native, monkeypatch, source, attempt=attempt)
+    host = NativeHost(policy, proc=proc, pid=101)
+    assert host.base.actor == "independent" and host.entry == "cli"
+    assert host.base.allowed_intents == {
+        "acknowledge_verification", "record_verification", "record_quality"}
+    # The producer's own invocation in the same tree stays the producer.
+    assert NativeHost(policy, proc=proc, pid=102).base.actor == "producer"
+
+
+@pytest.mark.parametrize("attempt", LAUNCHES)
+@pytest.mark.parametrize(
+    "source", ["pi_cli", "relay_session", "external_entry", "external_revoked"])
+def test_a_producer_cannot_become_the_verifier_by_dispatch_environment(
+    native, monkeypatch, source, attempt
+):
+    """A process below the producer naming a dispatch without its exact launch proof is
+    refused, never admitted as the verifier."""
+    policy, proc = dispatched_under_producer(
+        native, monkeypatch, source, forged=True, attempt=attempt)
+    with pytest.raises(Rejected, match="original launch"):
+        NativeHost(policy, proc=proc, pid=101)
+
+
+@pytest.mark.parametrize("source", ["pi_cli", "relay_session", "external_entry"])
+def test_an_older_pi_dispatch_without_launch_configuration_does_not_replace_the_producer(
+    native, monkeypatch, source
+):
+    """Only the SDK runner's full proof outranks the session source above it; an older
+    Pi CLI process naming a dispatch, with no launch configuration, does not."""
+    policy, proc = dispatched_under_producer(native, monkeypatch, source, legacy=True)
+    assert NativeHost(policy, proc=proc, pid=101).base.actor == "producer"
+
+
+OUTER_FAILURES = {"external_revoked": (Rejected, "revoked"),
+                  "cc_missing_root": (FileNotFoundError, "cc-sessions-unavailable")}
+
+
+@pytest.mark.parametrize("attempt", LAUNCHES)
+@pytest.mark.parametrize("source", sorted(OUTER_FAILURES))
+def test_a_source_failing_above_the_verifier_does_not_hide_its_dispatch(
+    native, monkeypatch, source, attempt
+):
+    """Sources above the runner are never read: an entry binding revoked after the
+    dispatch, or an Agent session whose log root is unavailable, still refuses its own
+    process, never the dispatched verifier below it."""
+    policy, proc = dispatched_under_producer(native, monkeypatch, source, attempt=attempt)
+    host = NativeHost(policy, proc=proc, pid=101)
+    assert host.base.actor == "independent" and host.entry == "cli"
+    assert "acknowledge_verification" in host.base.allowed_intents
+    error, match = OUTER_FAILURES[source]
+    with pytest.raises(error, match=match):
+        NativeHost(policy, proc=proc, pid=102)
+
+
+@pytest.mark.parametrize("attempt", LAUNCHES)
+@pytest.mark.parametrize("source", sorted(OUTER_FAILURES))
+def test_a_source_failing_nearer_than_the_verifier_still_refuses(
+    native, monkeypatch, source, attempt
+):
+    """A source nearer than the runner (pid 100, the verifier's own child) is read and
+    proven; when its check fails, the invocation is refused, not handed to the runner."""
+    policy, proc = dispatched_under_producer(native, monkeypatch, "pi_cli", attempt=attempt)
+    data = json.loads(policy.read_text())
+    nearer = proc / "100"
+    nearer.mkdir()
+    nearer.joinpath("status").write_text(f"Uid:\t{os.getuid()}\nPPid:\t101\n")
+    nearer.joinpath("environ").write_bytes(b"")
+    as_source(data, policy.parent, nearer, source, native[3])
+    policy.write_text(json.dumps(data))
+    assert NativeHost(policy, proc=proc, pid=101).base.actor == "independent"
+    error, match = OUTER_FAILURES[source]
+    with pytest.raises(error, match=match):
+        NativeHost(policy, proc=proc, pid=100)
+
+
+@pytest.mark.parametrize("attempt", LAUNCHES)
+@pytest.mark.parametrize("source", ["pi_cli", "relay_session", "external_entry"])
+def test_a_missing_producer_log_root_does_not_refuse_the_dispatched_verifier(
+    native, monkeypatch, source, attempt
+):
+    """A proven dispatch session matches only verifier profiles in the dispatch root:
+    another Pi producer whose log directory is missing is not read for it, and a
+    root that does not exist never refuses the producer's own session either."""
+    policy, proc = dispatched_under_producer(native, monkeypatch, source, attempt=attempt)
+    data = json.loads(policy.read_text())
+    data["profiles"].append({
+        "role": "producer", "actor": "elsewhere",
+        "session_root": str(policy.parent / "pi-producer-sessions-missing"),
+        "artifact_roots": [str(policy.parent)]})
+    policy.write_text(json.dumps(data))
+    host = NativeHost(policy, proc=proc, pid=101)
+    assert host.base.actor == "independent" and host.profile["role"] == "verifier"
+    assert NativeHost(policy, proc=proc, pid=102).base.actor == "producer"
+
+
+def test_a_dispatch_session_needs_exactly_one_verifier_profile_holding_it(
+    native, monkeypatch
+):
+    """The verifier profile still has to hold the dispatch session, and exactly one."""
+    policy, proc = dispatched_under_producer(native, monkeypatch, "pi_cli")
+    data = json.loads(policy.read_text())
+    data["profiles"].append({**data["profiles"][-1], "actor": "second"})
+    policy.write_text(json.dumps(data))
+    with pytest.raises(Rejected, match="no unique admitted profile"):
+        NativeHost(policy, proc=proc, pid=101)
+    data["profiles"].pop()
+    data["profiles"][-1]["session_root"] = str(policy.parent / "sessions")
+    policy.write_text(json.dumps(data))
+    with pytest.raises(Rejected, match="no unique admitted profile"):
+        NativeHost(policy, proc=proc, pid=101)
+
+
+def test_a_dispatched_verifier_does_not_inherit_the_dispatcher_session_proofs(monkeypatch):
+    from harness_rewrite.pi_dispatch import dispatch_environment
+
+    for key in ("PULSE_PI_TENANT_ID", "SCL_RELAY_HOST_CONTEXT", "SCL_SESSION_REF",
+                "HARNESS_REWRITE_ATTEMPT"):
+        monkeypatch.setenv(key, "dispatcher")
+    monkeypatch.setenv("PATH", "/usr/bin")
+    environment = dispatch_environment()
+    assert environment["PATH"] == "/usr/bin"
+    assert not {"PULSE_PI_TENANT_ID", "SCL_RELAY_HOST_CONTEXT", "SCL_SESSION_REF",
+                "HARNESS_REWRITE_ATTEMPT"} & set(environment)

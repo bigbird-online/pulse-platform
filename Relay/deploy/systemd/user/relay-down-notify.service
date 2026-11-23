@@ -1,0 +1,20 @@
+# 2026-08-07（Duke b2-relay-selfref-alert-20260807）：Relay 反复起不来时告知大鸟。
+#
+# 由 relay.service 的 OnFailure= 触发。relay.service 以 RestartMode=direct 跳过
+# 自动重启中间态的 OnFailure；自动恢复成功不会走到这里，触发启动限额
+# 后的终态 failed 才会走到这里。脚本仍会实查当前状态，防陈旧触发误报。
+#
+# 关键：本 unit 绝不能依赖 Relay。它直连 Telegram Bot API，因为它存在的前提
+# 就是 Relay 挂了（自指死结，见 0806 审查 B2）。
+[Unit]
+Description=Pulse — Relay 反复起不来时直连 TG 告警（不经 Relay）
+
+[Service]
+ReadOnlyPaths=/Users/owner/Coevolution
+UMask=0077
+Type=oneshot
+EnvironmentFile=-/home/pulse/.relay/relay.env
+Environment=PATH=/home/pulse/.local/share/coevolution/python-env/bin:/home/pulse/.local/share/coevolution/tools/agent-harness/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/bash /Users/owner/Coevolution/Bigbird/PULSE/Relay/deploy/relay-down-notify.sh
+StandardOutput=journal
+StandardError=journal

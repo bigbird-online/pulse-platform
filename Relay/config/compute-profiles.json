@@ -3,7 +3,7 @@
   "profiles": {
     "platform_default": {
       "cc": {
-        "model": "claude-fable-5"
+        "model_alias": "claude-fable-latest"
       },
       "codex": {
         "model_alias": "codex-sol-latest",

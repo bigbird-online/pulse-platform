@@ -20,7 +20,16 @@ The node never reads or writes the observation stream. Each run:
 
 The index changes only when the judging collector acknowledges a bundle
 (``acknowledge``); an unacknowledged or refused bundle leaves its sessions
-changed, so the next run reads them again.
+changed, so the next run reads them again. A caller that delivers each bundle
+as it is written (``deliver``) keeps what was acknowledged when a run ends
+early: before each CC session is read, what is already read goes out as a
+bundle and is acknowledged, so a run ended at any moment loses at most the
+session it was reading. With a ``deadline`` a run stops starting new CC
+sessions once it passes and reports how many changed sessions it left
+(``Observed.remaining``); those
+sources carry ``partial`` coverage (``observe_incomplete``) and the next run
+continues with them. A backfill (``backfill`` token) spans runs the same way:
+a session read under the token is not read again for it.
 """
 from __future__ import annotations
 
@@ -32,7 +41,7 @@ import stat
 import time
 from collections import Counter
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from .native_observations import SCHEMA, bundle_config, encode
 from .receipts import Receipt, ReceiptError, canonical, digest
@@ -40,7 +49,14 @@ from .receipts import Receipt, ReceiptError, canonical, digest
 INDEX_SCHEMA = "pulse_native_observe_index/v1"
 OUTBOX_SCHEMA = "pulse_native_observe_outbox/v1"
 CHUNK_BYTES = 32 * 1024 * 1024
-SMALL_KINDS = {"relay_host", "pi", "codex", "receipts", "harness_bundle", "harness_root", "harness_core"}
+SMALL_KINDS = {"relay_host", "pi", "codex", "agy", "receipts", "harness_bundle", "harness_root", "harness_core"}
+# Coverage reason of a CC source a run stopped reading before its changed sessions were all read.
+INCOMPLETE_REASON = "observe_incomplete"
+
+
+class Observed(list):
+    """The run's bundles in sequence order, and the changed CC sessions it left for the next run."""
+    remaining = 0
 
 
 def _private_write(path: Path, data: bytes) -> None:
@@ -76,9 +92,19 @@ def save_index(path: Path, index: Mapping[str, Any]) -> None:
 
 
 def cc_groups(source: Mapping[str, Any]) -> dict[str, list[Path]]:
-    """CC files by native session: a main transcript with its subagent transcripts."""
+    """CC files by native session: a main transcript with its subagent transcripts.
+
+    Raises OSError when any directory under the root cannot be listed: an
+    unlisted directory is not an empty one (``rglob`` would skip it silently).
+    """
     root = Path(source["path"])
-    files = sorted(root.rglob("*.jsonl")) if root.is_dir() else [root]
+    if root.is_dir():
+        def unlisted(error: OSError) -> None:
+            raise error
+        files = sorted(Path(directory) / name for directory, _, names in os.walk(root, onerror=unlisted)
+                       for name in names if name.endswith(".jsonl"))
+    else:
+        files = [root]
     groups: dict[str, list[Path]] = {}
     for f in files:
         if f.parent.name == "subagents":
@@ -301,8 +327,9 @@ class _Outbox:
     immutable row once.
     """
 
-    def __init__(self, path: Path, peer: str, index: dict[str, Any], read_at: str):
-        self.path, self.peer, self.index, self.read_at = path, peer, index, read_at
+    def __init__(self, path: Path, peer: str, index: dict[str, Any], read_at: str,
+                 deliver: Callable[[Path], None] | None = None):
+        self.path, self.peer, self.index, self.read_at, self.deliver = path, peer, index, read_at, deliver
         self.written: list[Path] = []
         # Queued in this run (any chunk), so one run never sends a row or value twice.
         self.queued: dict[str, set[str]] = {}
@@ -327,7 +354,7 @@ class _Outbox:
 
     def _put(self, entry, coverage, field: str, row: Receipt, *, tracked: bool) -> None:
         size = len(canonical(row.to_dict())) + 1
-        if self.size + size > CHUNK_BYTES and (self.sources or self.inputs):
+        if self.size + size > CHUNK_BYTES and self.pending():
             self.flush()
         source = self._source(entry, coverage)
         (self.inputs if field == "inputs" else source[field]).append(row)
@@ -366,8 +393,11 @@ class _Outbox:
         self._source(entry, coverage)["coverage"] = dict(coverage)
         self.groups.update({f"{source_id}\0{k}": v for k, v in (groups or {}).items()})
 
+    def pending(self) -> bool:
+        return bool(self.sources or self.inputs)
+
     def flush(self) -> None:
-        if not self.sources and not self.inputs:
+        if not self.pending():
             return
         sequence = max(self.index["sequence"] + 1, time.time_ns() // 1000)
         self.index["sequence"] = sequence
@@ -383,6 +413,8 @@ class _Outbox:
             "sent": {k: sorted(v) for k, v in self.sent.items()}, "snapshots": self.snapshots}))
         self.written.append(bundle)
         self._reset()
+        if self.deliver is not None:
+            self.deliver(bundle)  # Pushed and acknowledged before the next session is read.
 
 
 def pending_bundles(outbox: Path) -> list[Path]:
@@ -417,11 +449,19 @@ def discard(bundle: Path) -> None:
 
 
 def observe(registry: Mapping[str, Any], *, peer: str, index_path: Path, outbox: Path, read_at: str,
-            backfill: bool = False, force_recompute: bool = False) -> list[Path]:
+            backfill: bool | str = False, force_recompute: bool = False, deadline: float | None = None,
+            deliver: Callable[[Path], None] | None = None) -> Observed:
     """Write this run's bundles to the outbox; return them in sequence order.
 
     ``backfill`` reads every CC session again, once, so that inputs of
-    sessions that no longer change are recorded too.
+    sessions that no longer change are recorded too; as a string it names a
+    backfill that spans runs, and a session already read under it is not read
+    again for it; a CC source unreachable during a backfill counts its known
+    sessions (at least one) in ``remaining``, so the backfill continues once
+    the source is back. ``deadline`` (``time.monotonic()``) stops reading further
+    changed sessions once passed; each run still reads at least one.
+    ``deliver`` receives each bundle as soon as it is written; with it, every
+    CC session starts with nothing unacknowledged.
     """
     from .receipt_sources import observe_registered_sources
     from .source_retirement import load_retirements
@@ -431,7 +471,9 @@ def observe(registry: Mapping[str, Any], *, peer: str, index_path: Path, outbox:
     retirements = load_retirements()
     cache_root = Path(registry["ledger_root"])
     sources = [s for s in registry["sources"] if s.get("id") not in retirements]
-    box = _Outbox(outbox, peer, index, read_at)
+    box = _Outbox(outbox, peer, index, read_at, deliver)
+    token = backfill if isinstance(backfill, str) else None
+    result, read = Observed(), 0
     small = observe_registered_sources(registry, cache_root=cache_root, retirements=retirements,
                                        run={s["id"] for s in sources if s.get("kind") in SMALL_KINDS},
                                        force_recompute=force_recompute)
@@ -441,24 +483,33 @@ def observe(registry: Mapping[str, Any], *, peer: str, index_path: Path, outbox:
     for source in sources:
         if source.get("kind") != "cc":
             continue
-        groups = cc_groups(source)
         known = {k.split("\0", 1)[1]: v for k, v in index["groups"].items() if k.split("\0", 1)[0] == source["id"]}
+        root = Path(source["path"])
+        try:
+            groups = None if root.is_symlink() or not root.exists() else cc_groups(source)
+        except OSError:
+            groups = None  # Present but not listable (permissions): unknown, never empty.
+        if groups is None:
+            # A full collection refuses the whole source; nothing is read, nothing advances,
+            # and no known session is taken as removed.
+            box.add({"config": bundle_config(source), "inventories": []},
+                    {**_source_coverage(source, {}), "status": "unreachable",
+                     "reason": "source_unreadable_or_invalid"}, [], [], filtered=False)
+            if backfill:
+                # Its sessions are still owed to the backfill: the run is incomplete until the source is back.
+                result.remaining += max(1, len(known))
+            continue
         records = {k: v for k, v in known.items() if k in groups}
         removed = {k: None for k in known if k not in groups}
         base = _base_dependencies(registry, source)
         snapshot_cache: dict = {}
-        root = Path(source["path"])
-        if root.is_symlink() or not root.exists():
-            # A full collection refuses the whole source; nothing is read, nothing advances.
-            box.add({"config": bundle_config(source), "inventories": []},
-                    {**_source_coverage(source, records), "status": "unreachable",
-                     "reason": "source_unreadable_or_invalid"}, [], [], filtered=False)
-            continue
 
         def stale(key: str) -> bool:
             record = known.get(key)
             try:
-                if backfill or record is None or record.get("files") != _signature(groups[key]):
+                if token is not None and record is not None and record.get("backfill") != token:
+                    return True
+                if (backfill and token is None) or record is None or record.get("files") != _signature(groups[key]):
                     return True
                 # Unchanged bytes still need a new reading when what they were read against changed.
                 return record.get("dependencies") != _dependencies(base, scope_facts, sources, key,
@@ -471,7 +522,19 @@ def observe(registry: Mapping[str, Any], *, peer: str, index_path: Path, outbox:
             box.add({"config": config, "inventories": []}, _source_coverage(source, records), [], [], removed,
                     filtered=False)
             continue
-        for key in changed:
+        for position, key in enumerate(changed):
+            if deadline is not None and read and time.monotonic() >= deadline:
+                # Out of time: what was read is delivered; the rest stays changed for the next run.
+                result.remaining += len(changed) - position
+                coverage = _source_coverage(source, records)
+                if coverage["status"] != "unreachable":
+                    coverage.update(status="partial", reason=INCOMPLETE_REASON)
+                box.add({"config": config, "inventories": []}, coverage, [], [], removed, filtered=False)
+                break
+            if box.deliver is not None:
+                # A confirmation point before work that may outlast the run: what was read is acknowledged.
+                box.flush()
+            read += 1
             try:
                 signature = _signature(groups[key])
             except OSError:
@@ -486,6 +549,8 @@ def observe(registry: Mapping[str, Any], *, peer: str, index_path: Path, outbox:
             except OSError:
                 tokens, dependencies = [], None
             records[key] = _group_record(signature, entry, tokens=tokens, dependencies=dependencies)
+            if token is not None:
+                records[key]["backfill"] = token
             if dependencies is None or None in signature.values():
                 # One session's unreadable file fails that session only; it is kept failed and retried.
                 records[key].update(files=None, status="unreachable", reason="source_unreadable_or_invalid")
@@ -493,4 +558,5 @@ def observe(registry: Mapping[str, Any], *, peer: str, index_path: Path, outbox:
                     {key: records[key], **removed}, filtered=False)
             removed = {}
     box.flush()
-    return box.written
+    result.extend(box.written)
+    return result

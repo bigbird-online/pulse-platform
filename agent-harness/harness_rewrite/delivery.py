@@ -206,7 +206,7 @@ def decide(
         workflow.nonempty(data["reason"])
         human_decision(context, intent, data, wi)
         effect = get(state, data["effect_id"])
-        if terminal and effect["effect_kind"] == "workspace_retire":
+        if effect["effect_kind"] == "workspace_retire":
             # A retirement keeps its original effect; cancelling it would leave
             # the resource permanently unretirable.
             raise Rejected(
@@ -261,6 +261,8 @@ def decide(
             or not effect["attempts"]
             or effect["status"]
             in {"requested", "observed_absence", "cancelled", "observed_success"}
+            # A failed retirement is settled: never read back into a new round.
+            or effect["status"] == "observed_failure" and effect["effect_kind"] == "workspace_retire"
             or effect["attempts"][-1]["executor"] != context.actor
         ):
             raise Rejected(
@@ -426,6 +428,11 @@ def decide(
         return Decision([event("EffectLateObserved", effect_id=data["effect_id"],
                                observation={**data, "id": operation})],
                         {"effect_id": data["effect_id"], "status": "cancelled"})
+    if effect["status"] == "observed_failure" and effect["effect_kind"] == "workspace_retire":
+        # A failed retirement is settled: a late readback is kept as evidence only.
+        return Decision([event("EffectLateObserved", effect_id=data["effect_id"],
+                               observation={**data, "id": operation})],
+                        {"effect_id": data["effect_id"], "status": "observed_failure"})
     if effect["status"] == "observed_success":
         if data["outcome"] != "success":
             raise Rejected(
@@ -530,7 +537,7 @@ def apply_event(state: Json, kind: str, data: Json) -> bool:
     elif kind == "EffectLateObserved":
         item = state["effects"][data["effect_id"]]
         item.setdefault("late_observations", []).append(data["observation"])
-        if data["observation"]["outcome"] != "absence":
+        if data["observation"]["outcome"] != "absence" and item["status"] == "cancelled":
             item["attention"] = "late_result_after_cancel"
     else:
         return False

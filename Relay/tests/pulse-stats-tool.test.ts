@@ -22,6 +22,8 @@ describe('pulse_stats arguments',()=>{
       .toEqual(['cost','--group','runtime','--agent','pulse','--runtime','cc','--json']);
     expect(statsArguments({query:'metric',metric_id:'relay.cc.used_percent'}))
       .toEqual(['metric','--metric-id','relay.cc.used_percent','--json']);
+    expect(statsArguments({query:'compactions',work_item_id:'wi_20261118_988',session_id:'5f4add7e-4eff-4878-9c67-5c09e94f17f2'}))
+      .toEqual(['compactions','--work-item-id','wi_20261118_988','--session-id','5f4add7e-4eff-4878-9c67-5c09e94f17f2','--json']);
     expect(statsArguments({query:'agent_day',agent:'emi',date:'2026-11-08'}))
       .toEqual(['agent_day','--agent','emi','--date','2026-11-08','--json']);
     expect(statsArguments({query:'agent_day',agent:'pulse',date:'2026-08-20',end_date:'2026-11-08',ws:'Bigbird/PULSE/'}))
@@ -31,7 +33,7 @@ describe('pulse_stats arguments',()=>{
     for (const bad of [undefined,[],{},{query:'drop'},{query:'cost',period:'year'},{query:'cost',group:'x'},
       {query:'wi'},{query:'wi',work_item_id:'wi_x'},{query:'cost',agent:'--snapshot=/etc/passwd'},
       {query:'cost',agent:'../x'},{query:'cost',snapshot:'/tmp/x'},{query:'cost',period:1},
-      {query:'metric',metric_id:'A;rm'},{query:'agent_day',agent:'emi'},{query:'agent_day',date:'2026-11-08'},
+      {query:'metric',metric_id:'A;rm'},{query:'compactions',session_id:'../x'},{query:'agent_day',agent:'emi'},{query:'agent_day',date:'2026-11-08'},
       {query:'agent_day',agent:'emi',date:'11/08/2026'},{query:'agent_day',agent:'emi',date:'2026-11-08',ws:'../etc/'},
       {query:'agent_day',agent:'emi',date:'2026-11-08',ws:'/etc/'},{query:'agent_day',agent:'emi',date:'2026-11-08',ws:'a/../b'}])
       expect(()=>statsArguments(bad as any)).toThrow();

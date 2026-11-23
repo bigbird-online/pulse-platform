@@ -214,3 +214,28 @@ def test_facts_export_only_pull_requests_the_core_merged(tmp_path):
     drain(outside, FakeGitHub(merged=True))
     assert merged(outside) == []
 
+
+
+def test_rollovers_count_accepted_transfers_and_who_asked_for_them():
+    reserved = {"kind": "TransferReserved", "payload": {"transfer_id": "a", "target": None, "summary": "s",
+                                                         "agent_request": "r"}}
+    history = [
+        {"at": "t1", "events": [{"kind": "WorkItemCreated"}]},
+        {"at": "t2", "events": [reserved]},
+        {"at": "t3", "events": [{"kind": "TransferAccepted", "payload": {"generation": 2}}]},
+        {"at": "t4", "events": [{"kind": "TransferReserved", "payload": {"transfer_id": "b", "target": None,
+                                                                          "summary": "s"}}]},
+        {"at": "t5", "events": [{"kind": "TransferAccepted", "payload": {"generation": 3}}]},
+        {"at": "t6", "events": [reserved]},
+    ]
+    assert stats.rollovers(history) == [
+        {"at": "t3", "generation": 2, "requested_by": "agent"},
+        {"at": "t5", "generation": 3, "requested_by": "host"},
+    ]
+
+
+def test_facts_carry_the_rollovers_of_each_work_item(rig):
+    _, _, kernel, original, wi, _ = rig
+    storage = SimpleNamespace(connection=kernel._connection)
+    [item] = [r for r in stats.facts(storage, original.policy["namespace"], "t")["items"] if r["id"] == wi]
+    assert item["rollovers"] == []

@@ -1,6 +1,8 @@
 import { stripRelaySecrets } from './relay-secrets.js';
+import { resolveClaudeRuntimeModel } from './model-context.js';
 import {spawn as spawnNative,type ChildProcess} from 'node:child_process';
 import {forgetNativeProofOnExit,nativeCoreRuntime,observeNativeSession} from './native-core-runtime.js';
+import { reasoningControl } from './reasoning-control.js';
 import { parseConversationPoolKey } from './conversation-address.js';
 import { ccToolUses, publicWorkEvents, toolTurnEffect } from './work-process-events.js';
 import { observeCcRateLimitEvent } from './cc-quota-observation.js';
@@ -75,6 +77,7 @@ import type {
   ConversationStatusInfo,
 } from './conversation-runtime.js';
 import { stripInheritedProviderRoutingEnv } from './provider-routing-env.js';
+import { refuseMisroutedTurn, refusedTurnResult, settleInternalTurn } from './internal-turn-fence.js';
 import type {
   CcSdkProviderMode,
   ProcessState,
@@ -96,6 +99,7 @@ export interface SdkUserMessage {
 
 export interface SdkQueryOptions {
   model?: string;
+  pathToClaudeCodeExecutable?: string;
   allowedTools?: string[];
   permissionMode?: string;
   cwd?: string;
@@ -164,6 +168,8 @@ interface CcSdkSession {
   workspace: string;
   providerMode: CcSdkProviderMode;
   model?: string;
+  /** /think level, passed as the SDK `effort` when the engine starts. */
+  effort?: import('./types.js').ConversationReasoningLevel;
   allowedTools?: string[];
   maxTurns: number;
   state: ProcessState;
@@ -254,7 +260,7 @@ export function resolveProviderEnv(
   // from a configured secret. Until then it uses the subscription env.
   void mode;
   const override = route ? { ANTHROPIC_BASE_URL: route.baseUrl, ANTHROPIC_AUTH_TOKEN: route.authToken } : undefined;
-  return { env: buildSdkEngineEnv(override), model: configModel };
+  return { env: buildSdkEngineEnv(override), model: configModel && resolveClaudeRuntimeModel(configModel) };
 }
 
 function assistantText(m: SdkMessage): string {
@@ -527,6 +533,10 @@ export function createCcSdkConversationRuntime(
       };
     }
     if (model) options.model = model;
+    if (session.effort) options.effort = session.effort;
+    // Use the same managed Claude Code as the CC pool when resolving Fable.
+    const fableExecutable = model === 'fable' ? process.env['CLAUDE_BIN']?.trim() : undefined;
+    if (fableExecutable) options.pathToClaudeCodeExecutable = fableExecutable;
     if (resume) options.resume = session.sessionId;
 
     const iterable = makeTurnIterable(session);
@@ -745,6 +755,7 @@ export function createCcSdkConversationRuntime(
   const adapter: ConversationRuntimeAdapter = {
     id: 'cc-sdk',
     admitsTurns: true,
+    fencesInternalTurns: true,
     async spawn(config: ConversationSpawnConfig): Promise<ConversationProcess> {
       const existing = sessions.get(config.tenantId);
       if (existing && existing.state !== 'dead') {
@@ -763,6 +774,8 @@ export function createCcSdkConversationRuntime(
         workspace: config.workspace,
         providerMode: resolveProviderMode(config),
         model: config.ccModel,
+        effort: config.reasoningLevel && (reasoningControl('cc-sdk').levels() as string[]).includes(config.reasoningLevel)
+          ? config.reasoningLevel : undefined,
         allowedTools: config.allowedTools,
         maxTurns: config.maxTurns ?? DEFAULT_MAX_TURNS,
         state: 'starting',
@@ -824,6 +837,12 @@ export function createCcSdkConversationRuntime(
           log('debug', tenantId, 'cc-sdk send held behind the turn in flight', { held: session.heldSends.length, notificationTurn: !!session.notificationTurn });
         });
       }
+      // An internal delivery starts only in the session it was routed to: a turn in flight while it
+      // was held may have moved this conversation to another session (its init updates sessionId).
+      if (refuseMisroutedTurn(message, session, tenantId)) {
+        emitter.emit('response', tenantId, refusedTurnResult(turn?.hostAttemptRef, turn?.correlationId));
+        return;
+      }
       session.busy = true;
       session.lastActivity = Date.now();
       // A genuinely new user turn gets a fresh self-heal budget.
@@ -841,7 +860,12 @@ export function createCcSdkConversationRuntime(
       // catch) can surface them instead of hanging the turn.
       if (!session.resident) {
         log('debug', tenantId, 'cc-sdk send: engine not resident, starting', { resume: session.hasRunOnce });
-        await ensureEngineStarted(session, session.hasRunOnce);
+        try {
+          await ensureEngineStarted(session, session.hasRunOnce);
+        } catch (error) {
+          settleInternalTurn(message, 'refused');
+          throw error;
+        }
       }
       // Mark the session as replying so the external restart-safe guard chain
       // (getStatus → /internal/cc-status → pulse-relay-restart-safe.sh) counts
@@ -864,12 +888,16 @@ export function createCcSdkConversationRuntime(
       // (Guarding on the boolean, not state === 'dead': TS narrows session.state
       // to non-'dead' after the throw above and cannot model the async
       // engine-loop mutation, flagging a direct comparison as a dead branch.)
-      if (!session.busy) return;
+      if (!session.busy) {
+        settleInternalTurn(message, 'refused');
+        return;
+      }
       session.state = 'busy';
       emitter.emit('turn-accepted', tenantId);
       // In the engine: the shutdown records the session as interrupted.
       turn?.arrival?.accepted();
       pushTurn(session, {message: toSdkUserMessage(message), turn});
+      settleInternalTurn(message, 'consumed');
     },
     async kill(tenantId: string): Promise<void> {
       const session = sessions.get(tenantId);

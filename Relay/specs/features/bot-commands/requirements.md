@@ -296,15 +296,17 @@ changelog:
 - **实现**：`src/channels/feishu.ts` text/post 消息处理中，`handleCommand` 调用前检查 `cmd === 'compact' || cmd === 'context'` 时跳过拦截
 - **适用渠道**：飞书（TG 天然支持透传）
 
-**FR-P2-007：四 Runtime 统一命令控制面** [x]
+**FR-P2-007：五 Runtime 统一命令控制面** [x]
 - **描述**：Relay 是 `/命令` 的统一控制面，不能把 `/model`、`/stop` 等命令定义成某个 runtime 的附属功能。命令先解析当前 live/persisted/configured runtime，再按能力执行 Relay 生命周期操作、runtime-native RPC 或原生命令透传。
-- **Runtime 范围**：`cc`、`codex`、`cc-sdk`、`pi`。
-- **模型交互**：`/model` 依次选择 `runtime → 接入方式（订阅/OpenRouter API）→ model`；不得把 provider 的完整模型目录平铺为一张卡片。跨 runtime 必须先显式切换并告知 session 会被清理。
+- **Runtime 范围**：`cc`、`codex`、`cc-sdk`、`pi`、`agy`。
+- **模型交互**：`/model` 依次选择 `runtime → 接入方式（订阅/OpenRouter API）→ model`；不得把 provider 的完整模型目录平铺为一张卡片。跨 runtime 必须先显式切换并告知 session 会被清理。agy 只有一种接入方式，当前为 agy 时 `/model` 卡片直接按模型族列出实测目录（`agy models` 1.5.13），档位交给 `/think`。
 - **规模约束**：模型 scope 卡片最多展示 8 个模型；`/models [关键词]` 最多返回 30 条并提示继续筛选。
 - **能力真实性**：未实现的组合必须显示“尚未接入”，不得生成可点击的假选项。例如当前 `cc-sdk + OpenRouter API` 尚未实现。
 - **失败语义**：所有飞书命令卡片统一执行元素预算检查；Card Kit 发送失败必须自动回退文字反馈，不能让用户收到零响应。
 - **通用生命周期**：`/new`、`/stop`、`/kill`、`/restart` 面向当前 runtime；`/stop` 只中断 active turn 并保留 session，`/new` 生成新 session，`/restart` 恢复 exact persisted binding。
-- **Runtime 专属能力**：`/think` 当前仅 Pi 原生支持；`/yolo` 仅 Codex；`/compact`、`/context` 对 CC 系走原生命令透传、对 Pi 走原生 RPC。
+- **推理档位**：`/think` 在五个 runtime 都可用，档位存在会话状态，下一轮生效，`/new` 后回到默认：cc、cc-sdk 映射为 effort（空闲进程重启续接同一 session），codex 映射为 reasoning effort，agy 映射为同一模型族的变体（该族没有的档位明确拒绝），Pi 用原生档位。
+- **Runtime 专属能力**：`/yolo` 仅 Codex；`/compact`、`/context` 对 CC 系走原生命令透传、对 Pi 走原生 RPC。
+- **agy 的 /wi**：agy 会话可执行 `/wi continue`、`/wi switch`、`/wi rollover`；Relay 以 agy 的 conversation_id 向内核指认会话（空闲时靠 Relay 的保留记录），WI 交给会话后以 runtime usage binding 把之后每轮用量记到该 WI；绑定只对内核认出的那个 agy 对话有效，agy 换了对话即撤下，之后的用量记为未关联，直到再用 /wi 命令绑定。agy 没有内核工具，接手提示如实说明不能调用 pulse_work_item。
 
 ---
 

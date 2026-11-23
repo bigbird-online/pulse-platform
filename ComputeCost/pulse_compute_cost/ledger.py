@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 import fcntl
 import json
 import os
 from pathlib import Path
-from typing import Iterable, Callable, Any
+from typing import Iterable, Iterator, Callable, Any
 from datetime import datetime, timezone, timedelta
 import tempfile
 from hashlib import sha256, file_digest
@@ -17,7 +17,9 @@ from .receipts import Receipt, canonical, digest, _ReceiptReadPool
 from .events import parse_timestamp, utc_text
 
 from .events import UsageEvent, UsageEventError
-from .observation_checkpoint import Checkpoint, CheckpointMiss, SegmentWriter, logic_version, receipt_from_canonical
+from .ingest_lookup import IndexLookup, TableLookup, assertion
+from .observation_checkpoint import (Checkpoint, CheckpointMiss, SegmentWriter, batch_digest, logic_version,
+                                     receipt_from_canonical)
 
 
 class LedgerError(RuntimeError):
@@ -150,6 +152,78 @@ class _ReceiptFold:
         self._append(meta, lines, [receipt_from_canonical(line, pool) for line in lines], instant)
 
 
+def _decide_ingest(candidates: list[Receipt], lookup: TableLookup | IndexLookup
+                   ) -> tuple[list[Receipt], int, dict[str, str]]:
+    """The rows one ingest appends, how many candidates were already stored, and
+    which stored or appended fact each candidate ref resolved to."""
+    pending, duplicates = [], 0
+    rewritten: dict[str, str] = {}
+
+    def evidence_successor(ref: str) -> str:
+        # An assertion revision based on P must follow P's pure
+        # evidence refinements P->P', without following a genuinely
+        # different assertion Q or selecting among conflicting heads.
+        visited: set[str] = set()
+        while (fact := lookup.get(ref)) is not None and ref not in visited:
+            visited.add(ref)
+            successors = [r for r in lookup.children(ref) if assertion(fact) == assertion(r)]
+            if len(successors) != 1:
+                break
+            ref = successors[0].fact_ref
+        return ref
+
+    for row in candidates:
+        original_ref = row.fact_ref
+        # An exact source fact may already be in this ledger. Do
+        # not rebase it onto its own evidence successor on replay.
+        if lookup.get(row.fact_ref) is None and row.supersedes:
+            predecessor = evidence_successor(rewritten.get(row.supersedes, row.supersedes))
+            if predecessor != row.supersedes:
+                row = Receipt.make(row.kind, None, row.payload, occurred_at=row.occurred_at,
+                    observed_at=row.observed_at, producer=row.producer, evidence=row.evidence,
+                    entity_ref=row.entity_ref, supersedes=predecessor)
+        prior = lookup.get(row.fact_ref)
+        if prior is not None:
+            if prior.semantic() != row.semantic():
+                raise LedgerError("immutable receipt identity conflict")
+            if set(row.evidence) <= set(prior.evidence):
+                # This exact fact and all supplied provenance are
+                # already stored. A replay of history must not copy
+                # an old branch's evidence onto another current head.
+                rewritten[original_ref] = evidence_successor(row.fact_ref)
+                duplicates += 1
+                continue
+            # Evidence is a revision chain of the current assertion,
+            # never a fork from its historical first observation.
+            # Recompute against pending rows too: P->Q->R must make
+            # R supersede Q, not create two children of P.
+            active = lookup.active(row)
+            if not active:
+                # A duplicate of a superseded historical assertion
+                # cannot revive it or attach a fresh snapshot head.
+                rewritten[original_ref] = evidence_successor(row.fact_ref)
+                duplicates += 1
+                continue
+            current = active[-1]
+            evidence = tuple(sorted(set(current.evidence) | set(row.evidence)))
+            if evidence == current.evidence:
+                rewritten[original_ref] = current.fact_ref
+                duplicates += 1
+                continue
+            row = Receipt.make(row.kind, None, row.payload, occurred_at=row.occurred_at,
+                               observed_at=row.observed_at, producer=row.producer,
+                               evidence=evidence, entity_ref=row.entity_ref,
+                               supersedes=current.fact_ref)
+        if row.supersedes:
+            prior_revision = lookup.get(row.supersedes)
+            if prior_revision is None or (prior_revision.kind, prior_revision.entity_ref) != (row.kind, row.entity_ref):
+                raise LedgerError("receipt revision has no matching predecessor")
+        rewritten[original_ref] = row.fact_ref
+        lookup.add(row)
+        pending.append(row)
+    return pending, duplicates, rewritten
+
+
 class UsageLedger:
     """A local store; late cross-month evidence is appended as a correction."""
 
@@ -158,10 +232,21 @@ class UsageLedger:
     # the class to mark this short critical section, e.g. so a deployment
     # waits for it but not for the whole collection cycle.
     append_section: Callable[[], Any] | None = None
+    # Process-wide hook: an optional factory `(ledger) -> FactIndex` a host
+    # process sets on the class to have ingest point-read a fact index instead
+    # of building whole-ledger tables (refresh.json `incremental.ingest`).
+    # Unset, no index file is opened or created.
+    index_provider: Callable[["UsageLedger"], Any] | None = None
 
     def __init__(self, root: str | Path, *, clock: Callable[[], datetime] | None = None, authority=None,
-                 checkpoint: bool = True):
+                 checkpoint: bool = True, read_only: bool = False, index: Any = None):
         self.root = Path(root)
+        # A fact index bound to this ledger (see `fact_index`). Derived and
+        # disposable: any doubt means this ingest uses the tables instead.
+        self._index = index
+        # How the last ingest looked facts up: table, index, index_unavailable
+        # or index_stale (the index was emptied for a rebuild).
+        self.last_ingest_lookup: str | None = None
         self.authority = authority
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         # Process-local acceleration only. Transaction files remain the source
@@ -174,6 +259,9 @@ class UsageLedger:
         # Private verified-prefix checkpoint shared across processes; a miss or
         # any doubt means the complete stream is read and verified as before.
         self.checkpoint = checkpoint
+        # Offline readers: use a valid checkpoint but never write one, and never
+        # create the lock file; nothing under the ledger root changes.
+        self.read_only = read_only
         self._checkpoint_store: Checkpoint | None = None
         self._checkpoint_manifest: dict[str, Any] | None = None
 
@@ -199,6 +287,23 @@ class UsageLedger:
                            info.st_uid, info.st_gid, info.st_nlink, info.st_size,
                            info.st_mtime_ns, info.st_ctime_ns, content_digest))
         return tuple(result)
+
+    @contextmanager
+    def _shared_lock(self) -> Iterator[None]:
+        """The local ledger's reader lock; a read-only reader only takes an existing one."""
+        path = self.root / ".usage-ledger.lock"
+        if self.read_only:
+            try:
+                fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            except FileNotFoundError:
+                yield  # No writer ever ran here.
+                return
+            stream = os.fdopen(fd, "rb")
+        else:
+            stream = path.open("a+")
+        with stream:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_SH)
+            yield
 
     def _checkpoint(self) -> Checkpoint | None:
         """The private verified-prefix checkpoint for this authority, if supported."""
@@ -240,14 +345,15 @@ class UsageLedger:
         if (signature == self._receipt_cache_signature and self._receipt_cache_batches is not None
                 and self._receipt_cache_rows is not None):
             return self._receipt_cache_batches
-        fold = _ReceiptFold(checkpoint)
+        sink = None if self.read_only else checkpoint
+        fold = _ReceiptFold(sink)
         if accepted:
             # Verified prefix rows first; the core then reads only later batches.
             try:
                 checkpoint.load(manifest, fold.add_verified)  # type: ignore[union-attr, arg-type]
             except CheckpointMiss:
                 accepted = False
-                fold = _ReceiptFold(checkpoint)
+                fold = _ReceiptFold(sink)
                 revision, authoritative = self.authority.scan()  # type: ignore[union-attr]
         if authoritative is None:
             paths = sorted(directory.glob("*.json"))
@@ -265,7 +371,7 @@ class UsageLedger:
                     if accepted and batch["sequence"] == 1:
                         # The core no longer recognised the prefix and reads it all.
                         accepted = False
-                        fold = _ReceiptFold(checkpoint)
+                        fold = _ReceiptFold(sink)
                     fold.add(batch)
                 if accepted and not self.authority.resume_confirmed(manifest["prefix"]["sequence"]):  # type: ignore[union-attr, index]
                     # The core did not continue after the loaded prefix (e.g. no head):
@@ -278,7 +384,7 @@ class UsageLedger:
                 # Any doubt about the checkpoint: the complete read decides.
                 fold.discard()
                 accepted = False
-                fold = _ReceiptFold(checkpoint)
+                fold = _ReceiptFold(sink)
                 revision, authoritative = self.authority.scan()  # type: ignore[union-attr]
                 try:
                     for batch in authoritative:
@@ -309,7 +415,7 @@ class UsageLedger:
     def _commit_checkpoint(self, fold: "_ReceiptFold", base: dict[str, Any] | None, *,
                            rejected: str | None = None) -> dict[str, Any] | None:
         """Persist the prefix this process verified; failure only slows the next read."""
-        checkpoint = self._checkpoint()
+        checkpoint = None if self.read_only else self._checkpoint()
         identity = getattr(self.authority, "checkpoint_prefix", None)
         if checkpoint is None or identity is None or not fold.result:
             return None
@@ -359,7 +465,7 @@ class UsageLedger:
         self._receipt_cache_rows = [*self._receipt_cache_rows, parsed]
         self._receipt_cache_digest_states = [*self._receipt_cache_digest_states, prefix_digest]
         self._receipt_cache_signature = ("production_git", signature)
-        checkpoint = self._checkpoint()
+        checkpoint = None if self.read_only else self._checkpoint()
         if checkpoint is not None and (not batches if base is None
                                        else base["prefix"]["sequence"] == len(batches)):
             fold = _ReceiptFold(checkpoint)
@@ -367,6 +473,101 @@ class UsageLedger:
             fold.sink(meta, lines)
             self._checkpoint_manifest = self._commit_checkpoint(fold, base)
             fold.discard()
+
+    def stream_batches(self, *, after: int = 0) -> Iterator[tuple[dict[str, Any], list[bytes]]]:
+        """Yield each verified batch after `after` as (metadata, canonical fact lines).
+
+        Reads the verified checkpoint prefix, then the authority after it (or
+        the whole stream), and keeps no rows: memory is one batch. Every batch
+        is checked against the chain; a source that restarts the stream must
+        repeat the digests already yielded. Writes no checkpoint and no cache.
+        """
+        if type(after) is not int or after < 0:
+            raise LedgerError("invalid stream position")
+        digests: list[str] = []
+        previous_at: list[datetime] = []
+
+        def verified(meta: dict[str, Any], lines: list[bytes]) -> bool:
+            sequence = meta["sequence"]
+            if type(sequence) is int and 1 <= sequence <= len(digests):
+                if digests[sequence - 1] != meta["sha256"]:
+                    raise LedgerError("observation stream changed during the read")
+                return False
+            instant = parse_timestamp(meta["recorded_at"], "recorded_at")
+            if (meta["schema"] != "computecost_ledger_transaction/v1" or sequence != len(digests) + 1
+                    or meta["previous"] != (digests[-1] if digests else None) or not lines
+                    or (previous_at and instant <= previous_at[0])
+                    or batch_digest(meta, lines) != meta["sha256"]):
+                raise LedgerError("receipt transaction digest/order mismatch")
+            digests.append(meta["sha256"])
+            previous_at[:] = [instant]
+            return sequence > after
+
+        def split(batch: dict[str, Any]) -> tuple[dict[str, Any], list[bytes]]:
+            if set(batch) != {"schema", "sequence", "recorded_at", "previous", "facts", "sha256"} \
+                    or not isinstance(batch["facts"], list):
+                raise LedgerError("receipt transaction fields are invalid")
+            return {k: v for k, v in batch.items() if k != "facts"}, [canonical(raw) for raw in batch["facts"]]
+
+        if self.authority is None:
+            directory = self.root / "receipts"
+            if not directory.exists():
+                return
+            if directory.is_symlink():
+                raise LedgerError("receipt directory must not be a symlink")
+            with self._shared_lock():
+                for expected, path in enumerate(sorted(directory.glob("*.json")), 1):
+                    if path.is_symlink() or path.name != f"{expected:020d}.json":
+                        raise LedgerError("receipt transaction sequence is incomplete")
+                    try:
+                        meta, lines = split(json.loads(path.read_bytes()))
+                    except (OSError, ValueError) as exc:
+                        raise LedgerError("invalid receipt transaction") from exc
+                    if verified(meta, lines):
+                        yield meta, lines
+            return
+        if not hasattr(self.authority, "scan"):
+            for batch in self.authority.read():
+                meta, lines = split(batch)
+                if verified(meta, lines):
+                    yield meta, lines
+            return
+        checkpoint = self._checkpoint()
+        manifest = checkpoint.manifest() if checkpoint is not None else None
+        resumed = False
+        if manifest is not None and hasattr(self.authority, "scan_after"):
+            # The core first confirms it still holds this exact prefix and a head
+            # reaching it; only then may a consumer that stops early see its rows.
+            _, authoritative, resumed = self.authority.scan_after(manifest["prefix"])
+        if resumed:
+            try:
+                for meta, lines in checkpoint.iter_load(manifest):  # type: ignore[union-attr]
+                    if verified(meta, lines):
+                        yield meta, lines
+            except CheckpointMiss:
+                resumed = False
+        if not resumed:
+            _, authoritative = self.authority.scan()
+        loaded = len(digests)
+        reached = [0]
+
+        def read(source: Iterable[dict[str, Any]]) -> Iterator[tuple[dict[str, Any], list[bytes]]]:
+            for batch in source:
+                meta, lines = split(batch)
+                reached[0] = meta["sequence"]
+                if verified(meta, lines):
+                    yield meta, lines
+
+        yield from read(authoritative)
+        if resumed and self.authority.resume_confirmed(manifest["prefix"]["sequence"]):  # type: ignore[index]
+            return
+        if resumed:
+            # The core did not continue after the prefix: the complete read decides.
+            reached[0] = 0
+            _, authoritative = self.authority.scan()
+            yield from read(authoritative)
+        if reached[0] < loaded:
+            raise LedgerError("observation stream no longer holds the checkpoint prefix")
 
     def receipt_snapshot(self, *, as_of: str | None = None,
                          watermark: int | None = None) -> dict[str, Any]:
@@ -380,8 +581,7 @@ class UsageLedger:
             if self.authority is not None:
                 batches = self._receipt_batches()
             else:
-                with (self.root / ".usage-ledger.lock").open("a+") as lock:
-                    fcntl.flock(lock.fileno(), fcntl.LOCK_SH)
+                with self._shared_lock():
                     batches = self._receipt_batches()
         except OSError as exc:
             raise LedgerError("cannot read receipt ledger") from exc
@@ -411,6 +611,8 @@ class UsageLedger:
         v1 usage/corrections remain read-only-compatible. New receipts are never
         also inserted into v1; compatibility is a projection, not a second bill.
         """
+        if self.read_only:
+            raise LedgerError("a read-only ledger reader cannot append")
         if expected_watermark is not None and (type(expected_watermark) is not int or expected_watermark < 0):
             raise LedgerError("invalid expected receipt watermark")
         candidates = list(incoming)
@@ -424,6 +626,8 @@ class UsageLedger:
         if directory.is_symlink():
             raise LedgerError("receipt directory must not be a symlink")
         directory.mkdir(mode=0o700, exist_ok=True)
+        self.last_ingest_lookup = None
+        index = self._ingest_index()  # Opened (and first built) before the exclusive lock.
         try:
             with (self.root / ".usage-ledger.lock").open("a+") as lock:
                 fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
@@ -432,97 +636,41 @@ class UsageLedger:
                 # Reject before ingest; never rebase differing evidence or choose a winner.
                 if expected_watermark is not None and len(batches) != expected_watermark:
                     raise SnapshotChanged("receipt ledger snapshot changed; recollect from current watermark")
-                known = {row.fact_ref: row for rows in self._receipt_cache_rows for row in rows}
-                pending, duplicates = [], 0
-                rewritten: dict[str, str] = {}
-
-                # Transaction-local indexes only: no second store and no change
-                # to fact identity, predecessor checks or recorded-at barriers.
-                def assertion_key(row: Receipt) -> tuple:
-                    return (row.kind, row.entity_ref, row.occurred_at, row.producer, row._payload_json)
-
-                def same_assertion(left: Receipt, right: Receipt) -> bool:
-                    return assertion_key(left) == assertion_key(right)
-
-                superseded = {r.supersedes for r in known.values() if r.supersedes}
-                children: dict[str, dict[str, Receipt]] = {}
-                active_assertions: dict[tuple, dict[str, Receipt]] = {}
-                for fact in known.values():
-                    if fact.supersedes:
-                        children.setdefault(fact.supersedes, {})[fact.fact_ref] = fact
-                    if fact.fact_ref not in superseded:
-                        active_assertions.setdefault(assertion_key(fact), {})[fact.fact_ref] = fact
-
-                def evidence_successor(ref: str) -> str:
-                    # An assertion revision based on P must follow P's pure
-                    # evidence refinements P->P', without following a genuinely
-                    # different assertion Q or selecting among conflicting heads.
-                    visited: set[str] = set()
-                    while ref in known and ref not in visited:
-                        visited.add(ref)
-                        successors = [r for r in children.get(ref, {}).values()
-                                      if same_assertion(known[ref], r)]
-                        if len(successors) != 1:
-                            break
-                        ref = successors[0].fact_ref
-                    return ref
-
-                for row in candidates:
-                    original_ref = row.fact_ref
-                    # An exact source fact may already be in this ledger. Do
-                    # not rebase it onto its own evidence successor on replay.
-                    if row.fact_ref not in known and row.supersedes:
-                        predecessor = evidence_successor(rewritten.get(row.supersedes, row.supersedes))
-                        if predecessor != row.supersedes:
-                            row = Receipt.make(row.kind, None, row.payload, occurred_at=row.occurred_at,
-                                observed_at=row.observed_at, producer=row.producer, evidence=row.evidence,
-                                entity_ref=row.entity_ref, supersedes=predecessor)
-                    prior = known.get(row.fact_ref)
-                    if prior is not None:
-                        if prior.semantic() != row.semantic():
-                            raise LedgerError("immutable receipt identity conflict")
-                        if set(row.evidence) <= set(prior.evidence):
-                            # This exact fact and all supplied provenance are
-                            # already stored. A replay of history must not copy
-                            # an old branch's evidence onto another current head.
-                            rewritten[original_ref] = evidence_successor(row.fact_ref)
-                            duplicates += 1
-                            continue
-                        # Evidence is a revision chain of the current assertion,
-                        # never a fork from its historical first observation.
-                        # Recompute against pending rows too: P->Q->R must make
-                        # R supersede Q, not create two children of P.
-                        active = list(active_assertions.get(assertion_key(row), {}).values())
-                        if not active:
-                            # A duplicate of a superseded historical assertion
-                            # cannot revive it or attach a fresh snapshot head.
-                            rewritten[original_ref] = evidence_successor(row.fact_ref)
-                            duplicates += 1
-                            continue
-                        current = active[-1]
-                        evidence = tuple(sorted(set(current.evidence) | set(row.evidence)))
-                        if evidence == current.evidence:
-                            rewritten[original_ref] = current.fact_ref
-                            duplicates += 1
-                            continue
-                        row = Receipt.make(row.kind, None, row.payload, occurred_at=row.occurred_at,
-                                           observed_at=row.observed_at, producer=row.producer,
-                                           evidence=evidence, entity_ref=row.entity_ref,
-                                           supersedes=current.fact_ref)
-                    if row.supersedes:
-                        prior_revision = known.get(row.supersedes)
-                        if prior_revision is None or (prior_revision.kind, prior_revision.entity_ref) != (row.kind, row.entity_ref):
-                            raise LedgerError("receipt revision has no matching predecessor")
-                    rewritten[original_ref] = row.fact_ref
-                    if row.supersedes:
-                        superseded.add(row.supersedes)
-                        predecessor = known[row.supersedes]
-                        active_assertions.get(assertion_key(predecessor), {}).pop(row.supersedes, None)
-                        children.setdefault(row.supersedes, {})[row.fact_ref] = row
-                    known[row.fact_ref] = row
-                    if row.fact_ref not in superseded:
-                        active_assertions.setdefault(assertion_key(row), {})[row.fact_ref] = row
-                    pending.append(row)
+                # Lookups only: no second store and no change to fact
+                # identity, predecessor checks or recorded-at barriers.
+                lookup = self._index_lookup(index, batches) if index is not None else None
+                if self._index is None:
+                    index = None  # Emptied as stale: this ingest's batch is not indexed either.
+                if lookup is None:
+                    lookup = TableLookup(self._receipt_cache_rows)
+                    if self.last_ingest_lookup is None:
+                        self.last_ingest_lookup = "table"
+                reader = index if isinstance(lookup, IndexLookup) else None
+                try:
+                    pending, duplicates, _ = _decide_ingest(candidates, lookup)
+                except LedgerError:
+                    raise
+                except Exception:
+                    if reader is None:
+                        raise
+                    # A failed index read decides nothing: the tables decide this ingest.
+                    self._index = index = None
+                    self.last_ingest_lookup = "index_unavailable"
+                    pending, duplicates, _ = _decide_ingest(candidates, TableLookup(self._receipt_cache_rows))
+                finally:
+                    if reader is not None:
+                        try:
+                            reader.end_read()  # Before any write; the snapshot served the decision.
+                        except Exception:
+                            pass
+                if reader is not None and index is not None and pending:
+                    # A new row must be new to the ledger itself, not only to its
+                    # derived index: one ref set from the verified read confirms it.
+                    stored = {row.fact_ref for rows in self._receipt_cache_rows for row in rows}
+                    if any(row.fact_ref in stored for row in pending):
+                        self._discard_index(index)
+                        index = None
+                        pending, duplicates, _ = _decide_ingest(candidates, TableLookup(self._receipt_cache_rows))
                 if not pending:
                     return {"inserted": 0, "duplicates": duplicates, "watermark": len(batches)}
                 now = self._clock()
@@ -540,6 +688,7 @@ class UsageLedger:
                     with section:
                         self.authority.append(batch)
                     self._continue_after_own_append(batch, batches)
+                    self._index_append(index, batch)  # After the publication section, under the lock.
                     return {"inserted": len(pending), "duplicates": duplicates, "watermark": batch["sequence"]}
                 with section:
                     target = directory / f"{batch['sequence']:020d}.json"
@@ -570,9 +719,92 @@ class UsageLedger:
                     finally:
                         if os.path.exists(temp_name):
                             os.unlink(temp_name)
-                    return {"inserted": len(pending), "duplicates": duplicates, "watermark": batch["sequence"]}
+                # Outside the publication section a deployment waits for, still under the lock.
+                self._index_append(index, batch)
+                return {"inserted": len(pending), "duplicates": duplicates, "watermark": batch["sequence"]}
         except OSError as exc:
             raise LedgerError("receipt publication failed; replay the same batch, not the business request") from exc
+
+    def _ingest_index(self) -> Any:
+        """This ledger's fact index for ingest, from the class provider on first use."""
+        provider = type(self).index_provider
+        if self._index is None and provider is not None:
+            try:
+                self._index = provider(self)
+            except Exception:
+                self._index = None
+                self.last_ingest_lookup = "index_unavailable"
+        return self._index
+
+    def _index_lookup(self, index: Any, batches: list[dict[str, Any]]) -> IndexLookup | None:
+        """Point reads on `index` once it holds exactly `batches`; else None (use the tables).
+
+        Called under the exclusive lock after the verified read: batches other
+        writers appended since the index last saw this ledger come from that
+        read, never from a second read of the stream. The prefix check and
+        every point read of the decision share one pinned SQLite snapshot
+        (ended by the caller via `end_read`), so a reset another process
+        commits meanwhile cannot hide stored facts from this decision.
+        """
+        from .fact_index import IndexMismatch
+        heads = [b["sha256"] for b in batches]
+        try:
+            bound = index.binding()
+            if bound.sequence > len(heads) or (bound.sequence and heads[bound.sequence - 1] != bound.head_sha256):
+                raise IndexMismatch("index is not a prefix of this ledger")
+            for meta, rows in zip(batches[bound.sequence:], self._receipt_cache_rows[bound.sequence:]):
+                index.apply_batch(meta, [canonical(row.to_dict()) for row in rows])
+            index.begin_read()
+            bound = index.binding()
+            if bound.sequence != len(heads) or (heads and bound.head_sha256 != heads[-1]):
+                raise IndexMismatch("index does not hold exactly this ledger")
+            # The binding names the prefix; the rows must also all be there.
+            facts = sum(len(rows) for rows in self._receipt_cache_rows)
+            if index.row_counts() != (len(heads), facts, facts):
+                index.end_read()
+                self._discard_index(index)
+                return None
+        except IndexMismatch:
+            index.end_read()
+            # Empty it only when it is truly another history, judged in one write
+            # transaction; an index merely behind (e.g. just reset) is kept.
+            try:
+                cleared = index.clear_unless_prefix(heads)
+            except Exception:
+                cleared = False
+            if cleared:
+                self._index, self.last_ingest_lookup = None, "index_stale"
+            else:
+                self.last_ingest_lookup = "index_unavailable"
+            return None
+        except Exception:
+            try:
+                index.end_read()
+            except Exception:
+                pass
+            self.last_ingest_lookup = "index_unavailable"
+            return None
+        self.last_ingest_lookup = "index"
+        return IndexLookup(index)
+
+    def _discard_index(self, index: Any) -> None:
+        """The index lost rows its binding claims: empty it for a rebuild; the tables decide."""
+        try:
+            index.clear()
+        except Exception:
+            pass
+        self._index, self.last_ingest_lookup = None, "index_stale"
+
+    @staticmethod
+    def _index_append(index: Any, batch: dict[str, Any]) -> None:
+        """Index this process's own appended batch; failure leaves it one batch behind."""
+        if index is None:
+            return
+        try:
+            index.apply_batch({k: v for k, v in batch.items() if k != "facts"},
+                              [canonical(raw) for raw in batch["facts"]])
+        except Exception:
+            pass  # The next ingest catches the index up from its verified read.
 
     def _month_paths(self, month: str) -> tuple[Path, Path]:
         return (

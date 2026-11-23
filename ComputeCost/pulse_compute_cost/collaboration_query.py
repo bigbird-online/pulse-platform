@@ -9,12 +9,13 @@ from collections import Counter, defaultdict, OrderedDict
 from dataclasses import dataclass, asdict, replace
 from datetime import datetime, date, time, timedelta
 from decimal import Decimal
-from typing import Any, Mapping, Iterable
+from typing import Any, Mapping, Iterable, NamedTuple
 from zoneinfo import ZoneInfo
 
 from .events import parse_timestamp, utc_text
 from .ledger import UsageLedger
 from .runtime_samples import CC_SYNTHETIC_MODEL
+from . import agy_usage
 from .native_inventory import reconcile_host_inventory
 from .receipts import (Receipt, ReceiptError, TOKEN_FIELDS, ROLES, POLICY, SCHEDULED_JOB_POLICY, EXPLORATION_POLICY,
                        HOST_FALLBACK, supplement_source,
@@ -190,6 +191,58 @@ def _cc_host_attempt(row: Receipt, executions: dict[str, Receipt]) -> tuple | No
         if p.get(key) is not None and ex.payload.get(key) is not None and p[key] != ex.payload[key]:
             return None
     return p['execution_ref'], p['native_scope_ref'], low, high
+
+
+def _agy_window(aggregate: Receipt) -> tuple[datetime, datetime] | None:
+    """A Host agy turn's interval; agy writes step times in whole seconds, so it starts at its second."""
+    p = aggregate.payload
+    if not (p["interval_start"] and p["interval_end"]):
+        return None
+    return (parse_timestamp(p["interval_start"], "Host start").replace(microsecond=0),
+            parse_timestamp(p["interval_end"], "Host end"))
+
+
+def _agy_turn_steps(aggregate: Receipt, details: list[Receipt], turns: list[Receipt],
+                    executions: dict[str, Receipt]) -> tuple[list[Receipt], bool] | None:
+    """The transcript steps one Host agy turn summarizes, proven by exact conservation.
+
+    Every step in the interval must be final with all four classes known, of
+    the turn's model when it names one, and the steps must sum to the turn's
+    counts exactly. A step that another Host turn of the session may also hold
+    (an adjacent turn's rounded start, or a turn of unknown bounds) is not
+    proven to be this turn's. Otherwise nothing is proven (None). The flag
+    says whether every step follows the Host dispatch, so the steps can carry
+    its identity.
+    """
+    p = aggregate.payload
+    window = _agy_window(aggregate)
+    if not (p["final"] and window and p["execution_ref"]):
+        return None
+    low, high = window
+    session = [r for r in details if r.payload["mapping"] == agy_usage.TRANSCRIPT_MAPPING
+               and r.payload["runtime"] == agy_usage.RUNTIME]
+    if any(not r.occurred_at for r in session):
+        # An undated step of the session may be this turn's: nothing is proven.
+        return None
+    steps = [r for r in session if low <= parse_timestamp(r.occurred_at, "native time") <= high]
+    for other in turns:
+        if other.entity_ref == aggregate.entity_ref:
+            continue
+        bounds = _agy_window(other)
+        if bounds is None or any(bounds[0] <= parse_timestamp(r.occurred_at, "native time") <= bounds[1]
+                                 for r in steps):
+            return None
+    if not steps or any(not r.payload["final"] or any(r.payload["tokens"][k] is None for k in TOKEN_FIELDS)
+                        or (p["model"] is not None and r.payload["model"] != p["model"]) for r in steps):
+        return None
+    if any(p["tokens"][k] is None or sum(r.payload["tokens"][k] for r in steps) != p["tokens"][k]
+           for k in TOKEN_FIELDS):
+        return None
+    execution = executions.get(p["execution_ref"])
+    linkable = (execution is not None and execution.occurred_at is not None
+                and all(parse_timestamp(r.occurred_at, "native time")
+                        >= parse_timestamp(execution.occurred_at, "Host attempt") for r in steps))
+    return steps, linkable
 
 
 def _distinct_cc_attempts(left: Receipt, right: Receipt, executions: dict[str, Receipt]) -> bool:
@@ -374,6 +427,21 @@ def reconcile_usage(rows: list[Receipt], *, executions: list[Receipt] | None = N
             # across the entire Pi fleet either. Retain them as a known subset.
             conflict("summary_without_cover_list", [aggregate.entity_ref])
             continue
+        if not p["covers"] and native_scope and p["mapping"] == agy_usage.RESULT_MAPPING:
+            turns = [r for r in scoped_aggregates[native_scope] if r.payload["mapping"] == agy_usage.RESULT_MAPPING]
+            joined = _agy_turn_steps(aggregate, scoped_details.get(native_scope, []), turns, execution_by_ref)
+            if joined is not None:
+                steps, linkable = joined
+                if linkable:
+                    # The transcript itemizes the turn; its steps take the Host's WI.
+                    suppressed.add(aggregate.entity_ref)
+                    for step in steps:
+                        proven_links.setdefault(step.entity_ref, set()).add(p["execution_ref"])
+                else:
+                    # Same quantities, but the steps cannot be shown to follow
+                    # the dispatch: keep the Host turn with its identity.
+                    suppressed.update(step.entity_ref for step in steps)
+                continue
         if not p["covers"] and native_scope:
             # Requests and summaries of different known models are different
             # provider consumption; only an unknown model may overlap them.
@@ -383,9 +451,22 @@ def reconcile_usage(rows: list[Receipt], *, executions: list[Receipt] | None = N
             # Known Host dispatch bounds cannot cover native requests outside
             # that interval. Unknown bounds remain conservatively session-wide.
             cc_result = p["mapping"] in CC_RESULT_MAPPINGS
-            if (p["mapping"] in {"relay_pi.v1", "codex_cli.v1"} or cc_result) and p["interval_start"] and p["interval_end"]:
+            agy_result = p["mapping"] == agy_usage.RESULT_MAPPING
+            if agy_result:
+                # One turn's two sides naming different models is a conflict
+                # about this turn, not two models' separate consumption. A turn
+                # of unknown bounds may hold any step of its session.
+                window = _agy_window(aggregate)
+                clash = [r for r in scoped_details.get(native_scope, [])
+                         if not _same_or_unknown_model(aggregate, r)
+                         and (window is None or _may_overlap(r, window[0], window[1], False))]
+                if clash:
+                    conflict("agy_turn_model_conflict", [aggregate.entity_ref, *(r.entity_ref for r in clash)])
+            if (p["mapping"] in {"relay_pi.v1", "codex_cli.v1"} or cc_result or agy_result) and p["interval_start"] and p["interval_end"]:
                 low = parse_timestamp(p["interval_start"], "Host start")
                 high = parse_timestamp(p["interval_end"], "Host end")
+                if agy_result:
+                    low, high = _agy_window(aggregate)
                 candidates = possible
                 possible = [r for r in candidates if _may_overlap(r, low, high, cc_result)]
                 if candidates and not possible:
@@ -911,6 +992,10 @@ def _value_cost(row: Receipt, catalog: Mapping[str, Any] | None, model_cache: di
     # before the price lookup so a measurement gap is not a price gap.
     if any(counts[k] is None for k in TOKEN_FIELDS):
         return None, "unknown_token_quantity"
+    if p.get("runtime") == agy_usage.RUNTIME:
+        # The agy subscription publishes no per-token price; a reference
+        # catalog rate for the same model name is not what this usage cost.
+        return None, agy_usage.UNPRICED_REASON
     if not catalog or not p["model"] or p["model"] == "unknown":
         return None, "missing_price_or_model"
     try:
@@ -1386,8 +1471,59 @@ def select_supplement(candidates: list[Receipt], boundary: str | None) -> Receip
     return _compatible_task_attribution([r for r in ready if _supplement_rank(r) == best])
 
 
+class Prepared(NamedTuple):
+    """One read-side reconciliation (`_prepare_collaboration`), field by field.
+
+    A tuple, so positional readers keep working; `package_slices` cuts it per
+    session package and merges the slices back into one.
+    """
+    active: list
+    conflicts: dict
+    observation_groups: dict
+    observation_attribution_conflicts: dict
+    attr_conflicts: set
+    attribution_conflict_wis: set
+    non_wi_kinds: dict
+    projected: list
+    all_wis: set
+    accepted_at: dict
+    all_reconciled: list
+    reconciliation: dict
+    actor_context: dict
+    actor_evidence: dict
+    actor_conflicts: dict
+    diagnostic_by_fact: dict
+    diagnostic_context: dict
+    task_evidence: dict
+    attribution_sources: dict
+
+
+def wi_work_key(row: Receipt, payload: Mapping[str, Any], non_wi_kinds: Mapping[str, str],
+             attr_conflicts: set[str]) -> str:
+    """The WI grouping key of a reconciled row: its WI, a non-WI kind, `ambiguous` or unassigned."""
+    p = payload
+    kinds = {non_wi_kinds[k] for k in (row.entity_ref, p.get("execution_ref"))
+             if k in non_wi_kinds}
+    if row.entity_ref in attr_conflicts or p.get("execution_ref") in attr_conflicts:
+        return "ambiguous"
+    if len(kinds) > 1 or (kinds and p.get("wi") is not None):
+        return "ambiguous"
+    return p.get("wi") or (next(iter(kinds)) if kinds else UNKNOWN)
+
+
+def dimension_key(dimension: str, row: Receipt, payload: Mapping[str, Any], actor_context: Mapping[str, Any],
+                  agent_role: str, work: Any) -> str:
+    """A row's key in one non-calendar grouping dimension; `work(row)` gives the WI key."""
+    if dimension == "wi":
+        return work(row)
+    context = actor_context.get(row.entity_ref, {})
+    return ((context.get("tenant") or {}).get("id") if dimension == "tenant"
+            else context.get(dimension) if dimension in {"node", "entrypoint"}
+            else payload.get(agent_role if dimension == "agent" else dimension)) or UNKNOWN
+
+
 def _prepare_collaboration(snapshot: dict[str, Any], agent_tenants: Mapping[str, Any] | None = None, *,
-                           fold_actors: bool | None = None) -> tuple:
+                           fold_actors: bool | None = None) -> Prepared:
     """One read-side reconciliation, independent of period, grouping and price.
 
     Query sessions own reuse. Individual queries, new watermarks and new
@@ -1707,17 +1843,17 @@ def _prepare_collaboration(snapshot: dict[str, Any], agent_tenants: Mapping[str,
     for row in active + [r for versions in conflicts.values() for r in versions]:
         if row.kind == 'attribution' and row.payload.get('scope') != 'actor':
             task_evidence[row.payload['target_ref']].append(row)
-    return (active, conflicts, observation_groups, observation_attribution_conflicts, attr_conflicts, attribution_conflict_wis, non_wi_kinds, projected, all_wis, accepted_at, all_reconciled, reconciliation, actor_context, actor_evidence, actor_conflicts, diagnostic_by_fact, diagnostic_context, task_evidence, attribution_sources)
+    return Prepared(active, conflicts, observation_groups, observation_attribution_conflicts, attr_conflicts, attribution_conflict_wis, non_wi_kinds, projected, all_wis, accepted_at, all_reconciled, reconciliation, actor_context, actor_evidence, actor_conflicts, diagnostic_by_fact, diagnostic_context, task_evidence, attribution_sources)
 
 
-def _copy_preparation(prepared: tuple) -> tuple:
+def _copy_preparation(prepared: Prepared) -> Prepared:
     from copy import deepcopy
     # These domain facts are frozen dataclasses of strings/bytes/tuples; only
     # the surrounding report containers need isolation between sibling views.
-    facts = list(prepared[0]) + list(prepared[7]) + list(prepared[10])
-    facts.extend(r for versions in prepared[1].values() for r in versions)
-    facts.extend(prepared[15].values())
-    return deepcopy(prepared, {id(row): row for row in facts})
+    facts = list(prepared.active) + list(prepared.projected) + list(prepared.all_reconciled)
+    facts.extend(r for versions in prepared.conflicts.values() for r in versions)
+    facts.extend(prepared.diagnostic_by_fact.values())
+    return Prepared(*deepcopy(tuple(prepared), {id(row): row for row in facts}))
 
 
 class _PayloadReads:
@@ -1754,10 +1890,12 @@ class CollaborationQuerySession:
     Returned reports and exported price entries are owned by their caller.
     """
     def __init__(self, snapshot: Mapping[str, Any], *, prices: Mapping | None = None,
-                 agent_tenants: Mapping[str, Any] | None = None, fold_actors: bool | None = None):
+                 agent_tenants: Mapping[str, Any] | None = None, fold_actors: bool | None = None,
+                 canonical_order: bool = False):
         from copy import deepcopy
         self._snapshot = {**snapshot, "facts": tuple(snapshot["facts"])}
         self._prepared = None
+        self._canonical_order = canonical_order
         self._fold_actors = actor_fold_enabled(fold_actors)
         self._prices = deepcopy(dict(prices)) if prices is not None else {}
         self._agent_tenants = deepcopy(dict(agent_tenants)) if agent_tenants else None
@@ -1771,7 +1909,7 @@ class CollaborationQuerySession:
                                                     fold_actors=self._fold_actors)
         return _query_snapshot(self._snapshot, q, _copy_preparation(self._prepared),
                                catalog=catalog, catalog_observed_at=catalog_observed_at,
-                               price_cache=self._prices)
+                               price_cache=self._prices, canonical_order=self._canonical_order)
 
     def export_prices(self, *, limit: int = 50000) -> dict:
         from copy import deepcopy
@@ -1788,9 +1926,26 @@ def query_collaboration(ledger: UsageLedger, q: CollaborationQuery, *, catalog: 
                            catalog=catalog, catalog_observed_at=catalog_observed_at)
 
 
+def _entity_order(row: Receipt) -> str:
+    return row.entity_ref
+
+
 def _query_snapshot(snap: Mapping[str, Any], q: CollaborationQuery, prepared: tuple, *,
                     catalog: Mapping[str, Any] | None,
-                    catalog_observed_at: str | None, price_cache: dict | None = None) -> dict[str, Any]:
+                    catalog_observed_at: str | None, price_cache: dict | None = None,
+                    canonical_order: bool = False) -> dict[str, Any]:
+    if canonical_order:
+        # Rows in entity order, whatever order they were prepared or merged in:
+        # sample fields (unpriced, first refs) then do not depend on loading.
+        # Reconciliation proofs (session counters) are listed per family in
+        # first-row order; in canonical order they are listed by content.
+        reconciliation = {key: sorted(value, key=canonical)
+                          if isinstance(value, list) and any(isinstance(v, dict) for v in value) else value
+                          for key, value in prepared[11].items()}
+        prepared = Prepared(*prepared)._replace(
+            projected=sorted(prepared[7], key=_entity_order),
+            all_reconciled=sorted(prepared[10], key=_entity_order),
+            conflicts=dict(sorted(prepared[1].items())), reconciliation=reconciliation)
     (active, conflicts, observation_groups, observation_attribution_conflicts, attr_conflicts, attribution_conflict_wis, non_wi_kinds, projected, all_wis, accepted_at, all_reconciled, reconciliation, actor_context, actor_evidence, actor_conflicts, diagnostic_by_fact, diagnostic_context, task_evidence, attribution_sources) = prepared
     stage_rows, stage_conflicts = projected, conflicts
     if q.context_ref is not None:
@@ -1853,14 +2008,7 @@ def _query_snapshot(snap: Mapping[str, Any], q: CollaborationQuery, prepared: tu
     unallocated = [r for r in usage if r.entity_ref not in exact_time_refs]
 
     def work_key(row: Receipt) -> str:
-        p = read_payload(row)
-        kinds = {non_wi_kinds[k] for k in (row.entity_ref, p.get("execution_ref"))
-                 if k in non_wi_kinds}
-        if row.entity_ref in attr_conflicts or p.get("execution_ref") in attr_conflicts:
-            return "ambiguous"
-        if len(kinds) > 1 or (kinds and p.get("wi") is not None):
-            return "ambiguous"
-        return p.get("wi") or (next(iter(kinds)) if kinds else UNKNOWN)
+        return wi_work_key(row, read_payload(row), non_wi_kinds, attr_conflicts)
 
     # Catalog identity is immutable for this query. Check uniqueness once per
     # actual model, not once per request and again in every group. No cache is
@@ -1872,7 +2020,7 @@ def _query_snapshot(snap: Mapping[str, Any], q: CollaborationQuery, prepared: tu
         if price_cache is None:
             return _value_cost(row, catalog, model_cache)
         p = read_payload(row)
-        key = digest([catalog_key, p["model"], p["tokens"]])
+        key = digest([catalog_key, p["model"], p["tokens"]] + ([p["runtime"]] if p.get("runtime") == agy_usage.RUNTIME else []))
         cached = price_cache.get(key)
         if cached is None:
             amount, reason = _value_cost(row, catalog, model_cache)
@@ -2303,12 +2451,8 @@ def _query_snapshot(snap: Mapping[str, Any], q: CollaborationQuery, prepared: tu
                         left = calendar_key(utc_text(a), dimension)
                         right = calendar_key(utc_text(b - timedelta(microseconds=1) if b > a else b), dimension)
                         key = left if left == right else "time_unallocated"
-                elif dimension == "wi":
-                    key = work_key(row)
                 else:
-                    key = ((actor_context.get(row.entity_ref, {}).get("tenant") or {}).get("id") if dimension == "tenant"
-                           else actor_context.get(row.entity_ref, {}).get(dimension) if dimension in {"node", "entrypoint"}
-                           else p.get(q.agent_role if dimension == "agent" else dimension)) or UNKNOWN
+                    key = dimension_key(dimension, row, p, actor_context, q.agent_role, work_key)
                 keys.append(key)
             return tuple(keys)
         for row in exact_time:

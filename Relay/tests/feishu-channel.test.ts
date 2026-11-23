@@ -39,6 +39,7 @@ import {
 import { readdirSync } from 'node:fs';
 import lark from '@larksuiteoapi/node-sdk';
 import { createChatLanes } from '../src/channels/chat-lanes.js';
+import { fencedInternalTurn } from '../src/internal-turn-fence.js';
 import { createChannelIntakeJournal, intakeAwareRuntime } from '../src/channels/intake-journal.js';
 import { persistQueuedTurns, replayPendingTurns } from '../src/shutdown-interrupts.js';
 import { nextTurnSeq } from '../src/maintenance-barrier.js';
@@ -122,6 +123,16 @@ it('dispatches without waiting for metering but still drops a turn superseded by
   expect(await stale({type:'human',content:'stale work'})).toBe(false);
   expect(pool.send).toHaveBeenCalledTimes(1);
   expect(stopTyping).toHaveBeenCalledWith('original-message');
+});
+
+it('hands a collaboration turn to the runtime with its fence, which the runtime checks where the turn starts', async () => {
+  const key='fixture:collab-fence';
+  const live={tenantId:key,runtime:'agy',state:'idle',sessionId:'relay-s',agyConversationId:'conv-1'};
+  const pool=makePool({get:vi.fn(()=>live as never)});
+  const message=fencedInternalTurn({type:'human',content:'pr result'},['conv-1'],'ref-feishu');
+  expect(await captureFeishuBusinessDispatch({pool},key,feishuRecoveryBoundaryToken(key))(message)).toBe(true);
+  expect(pool.send).toHaveBeenCalledWith(key,{type:'human',content:'pr result',expect_native_ids:['conv-1'],
+    internal_delivery_ref:'ref-feishu'});
 });
 
 it('dispatches to a CC process whose adapter returns a fresh wrapper per lookup', async () => {
@@ -1755,6 +1766,33 @@ describe('handlePoolResponse', () => {
       expect(sendText.mock.calls[2]?.[1]).not.toContain('secret-key');
       handlers.get('error')?.('eric:pulse', new Error('Native parser rejected response schema'));
       expect(sendText).toHaveBeenCalledTimes(3);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('delivers one explicit agy failure notice to Feishu and never reports an automatic recovery', async () => {
+    const handlers = new Map<string, (...args: unknown[]) => void>();
+    const pool = makePool({
+      get: vi.fn(() => ({ runtime: 'agy' } as never)),
+      on: vi.fn((event: string, handler: (...args: unknown[]) => void) => handlers.set(event, handler)),
+    });
+    const sendText = vi.fn();
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      wirePoolEvents(feishuAgent, pool, new Map([['eric:pulse', 'ou_eric123']]), makeRouter(), sendText, vi.fn());
+      handlers.get('turn-accepted')?.('eric:pulse');
+      // The agy adapter's failed turn: result, error, exit — no session-end.
+      handlers.get('response')?.('eric:pulse', { type: 'result', is_error: true, runtime: 'agy' });
+      handlers.get('error')?.('eric:pulse', new Error('agy conversation runtime timed out after 90000ms'));
+      handlers.get('exit')?.('eric:pulse', 1);
+      await vi.waitFor(() => expect(sendText).toHaveBeenCalledTimes(1));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const texts = sendText.mock.calls.map((call) => String(call[1]));
+      expect(texts).toHaveLength(1);
+      expect(texts[0]).toContain('agy 运行超时');
+      expect(texts.join('\n')).not.toContain('已自动恢复');
+      expect(texts.join('\n')).not.toContain('正在恢复中');
     } finally {
       log.mockRestore();
     }

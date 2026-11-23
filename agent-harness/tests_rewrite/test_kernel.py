@@ -598,3 +598,18 @@ def test_host_rollover_does_not_accept_a_self_named_successor(setup):
     accepted = kernel.execute(accept, "successor")
     assert accepted["status"] == "local_committed", accepted
     assert kernel.execute(accept, "successor")["work_item"]["generation"] == 2
+
+
+def test_resume_names_the_latest_checkpoint_for_a_successor(setup):
+    # A rollover or continuation resumes from the handover checkpoint: resume
+    # gives it directly instead of leaving it among every record.
+    kernel, _ = setup
+    wi = start(kernel)
+    assert "latest_checkpoint" not in kernel.resume(wi, "owner")["result"]
+    assert kernel.execute(checkpoint(wi, "first"), "owner")["status"] == "local_committed"
+    handover = kernel.execute(checkpoint(wi, "handover"), "owner")
+    assert handover["status"] == "local_committed"
+    latest = kernel.resume(wi, "owner")["result"]["latest_checkpoint"]
+    assert latest["record_id"] == handover["result"]["original_request_result"]["record_id"]
+    assert latest["summary"] == "Known completed work and remaining risk"
+    assert latest["position"] == 2

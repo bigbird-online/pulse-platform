@@ -20,7 +20,9 @@ is the authority:
   `pull_request` workflow on the base selects the changed files and the head
   has no check at all. Pending, missing or unreadable checks are absence
   (nothing sent, a later attempt reads again); a failed check is the failure
-  `checks_failed`. A human confirmation with
+  `checks_failed`. While the PR is still open on the reviewed head and checks
+  are still pending with none failed, `defer` holds the next attempt without a
+  write, so a long queue or run does not spend the retry budget (`PENDING_WAIT`). A human confirmation with
   `override_checks` lets failed or missing checks through, never pending or
   unreadable ones.
 
@@ -50,6 +52,8 @@ from typing import Callable, Iterator
 
 import yaml  # type: ignore[import-untyped]  # Existing canonical PyYAML; ci_triggers validates the data.
 
+from datetime import datetime
+
 from . import ci_triggers
 from .model import Json, encoded
 
@@ -57,6 +61,10 @@ METHODS = frozenset({"merge", "squash", "rebase"})
 REPOSITORY = re.compile(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}\Z")
 REQUIRED = {"pulse_gh", "gh", "relay_paths", "repositories"}
 Api = Callable[[str, list[str]], Json]
+# Seconds a merge waits on the same pending checks between two attempts. A check
+# that never finishes still spends one attempt per wait and ends as
+# merge_retry_exhausted (8 attempts: about GitHub's 24-hour queue expiry).
+PENDING_WAIT = 3 * 3600
 
 
 # Completed check-run conclusions that are not failures. GitHub's required checks
@@ -287,8 +295,10 @@ class PullRequestMerge:
         api: Api | None = None,
         fault: Callable[[str], None] | None = None,
         cache: Path | None = None,
+        clock: Callable[[], float] | None = None,
     ):
         self.config = shape(config)
+        self.clock = clock or time.time
         self.python = python
         self.markers = markers
         self.api = api or self._api
@@ -865,6 +875,45 @@ class PullRequestMerge:
         if summary["state"] == "failed":
             return ("failure", {"reason": "checks_failed", "checks": summary}), summary
         return ("absence", {"reason": "checks_missing", "checks": summary}), summary
+
+    def deferrable(self, effect: Json) -> bool:
+        """Whether `defer` would probe GitHub for this effect (no I/O here)."""
+        if effect.get("effect_kind") != "merge_pull_request" or effect.get("status") != "observed_absence":
+            return False
+        last = (effect.get("observations") or [{}])[-1].get("details") or {}
+        started = (effect.get("attempts") or [{}])[-1].get("at")
+        if last.get("reason") != "checks_pending" or not isinstance(started, str):
+            return False
+        try:
+            age = self.clock() - datetime.fromisoformat(started).timestamp()
+        except ValueError:
+            return False
+        return 0 <= age < PENDING_WAIT
+
+    def defer(self, effect: Json) -> str | None:
+        """Why a new attempt now would send nothing and record nothing new.
+
+        Only an absence the last attempt read as `checks_pending`, younger than
+        `PENDING_WAIT`, on a PR still open on the reviewed head and base, whose
+        checks are still pending with none failed (checks finishing one by one
+        is progress, not news): the attempt waits without a write and the next
+        visit reads again. Any other verdict (merged, closed, moved, green,
+        failed, unreadable) begins an attempt, whose own readback and gate
+        decide and record it; nothing here ever releases a merge.
+        """
+        if not self.deferrable(effect):
+            return None
+        try:
+            with self.reading(effect["snapshot"]["repository"]):
+                # The same first read as `apply`: open, on the reviewed head and base.
+                if self.readback(effect)[0] != "absence":
+                    return None
+                blocked, _ = self.gate(effect)
+        except (OSError, KeyError, TypeError):
+            return None  # The attempt's own readback and gate read again and record why.
+        if (blocked or (None, {}))[1].get("reason") != "checks_pending":
+            return None
+        return "checks_pending"
 
     def marker(self, effect: Json, index: int) -> Path:
         if self.markers is None:

@@ -6,7 +6,7 @@ from dataclasses import asdict
 import os
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, overload
 
 from . import guide, workflow
 from .repository_identity import repository_values
@@ -56,6 +56,16 @@ def retired(state: Json, resource: Json) -> bool:
     return bool(resource.get("retirement") and successful(state, resource["retirement"]))
 
 
+def retiring(state: Json, resource: Json) -> bool:
+    """A retirement that still names the workspace: requested, running or done.
+
+    A failed retirement is final evidence only: the workspace it kept stays in
+    ordinary use and owns its scope until a new approved retirement."""
+    effect = state["effects"].get(resource.get("retirement") or "")
+    return bool(resource.get("retirement")) and (
+        effect is None or effect["status"] != "observed_failure")
+
+
 def effect(operation: str, kind: str, resource: Json, generation: int) -> Json:
     return event(
         "EffectRequested",
@@ -95,6 +105,106 @@ def unsettled(state: Json) -> bool:
     )
 
 
+def touches(effect: Json, resource_id: str) -> bool:
+    """An effect acting on this workspace, or publishing a source captured from it."""
+    snapshot = effect.get("snapshot") or {}
+    raw = snapshot.get("source")
+    source: Json = raw if isinstance(raw, dict) else {}
+    return snapshot.get("resource_id") == resource_id or source.get("resource_id") == resource_id
+
+
+# A retirement is the closing of a workspace, not new work: it runs to its end
+# while the WI is held, handed over, stopped or ended.
+RETIRING_STATUSES = frozenset({"active", "transferring", "stopped", "completed", "terminated"})
+
+
+def unsettled_for(state: Json, resource_id: str) -> bool:
+    """Whether an original effect on this one workspace may still act."""
+    return any(
+        e["status"] not in SETTLED_STATUSES
+        and e["effect_kind"] != "workspace_retire"
+        and touches(e, resource_id)
+        for e in state["effects"].values()
+    )
+
+
+def recorded_hosts(history: list[Json]) -> dict[str, str | None]:
+    """Where each workspace's allocation physically happened, read from the journal's
+    committed events (never from command inputs).
+
+    Only the allocation (`workspace_allocate`) establishes a workspace: the host is
+    the surface whose journal record committed its successful `EffectObserved`,
+    provided every attempt of that allocation was started (`EffectAttemptStarted`)
+    from that same surface. A revision request, an allocation never observed as
+    successful, attempts or successes from several surfaces, or a workspace with no
+    allocation effect (a retained historical allocation) prove nothing: its host is
+    absent or None, and nothing runs its effects anywhere.
+    """
+    hosts: dict[str, str | None] = {}
+    allocation: dict[Any, Any] = {}  # allocation effect -> its workspace
+    started: dict[Any, set[str | None]] = {}  # allocation effect -> surfaces that started it
+    for content in history:
+        principal = (content.get("semantics") or {}).get("principal") or {}
+        found = principal.get("surface")
+        surface = found if isinstance(found, str) else None
+        for item in content.get("events") or []:
+            payload = item.get("payload") or {}
+            effect_id = payload.get("effect_id")
+            if item.get("kind") == "EffectRequested" and payload.get("effect_kind") == "workspace_allocate":
+                allocation[effect_id] = (payload.get("snapshot") or {}).get("resource_id")
+            elif item.get("kind") == "EffectAttemptStarted" and effect_id in allocation:
+                started.setdefault(effect_id, set()).add(surface)
+            elif (item.get("kind") == "EffectObserved" and effect_id in allocation
+                  and (payload.get("observation") or {}).get("outcome") == "success"):
+                resource_id = allocation[effect_id]
+                proven = surface if surface is not None and started.get(effect_id) == {surface} else None
+                hosts[resource_id] = proven if hosts.get(resource_id, proven) == proven else None
+    return hosts
+
+
+@overload
+def with_hosts(state: Json, history: list[Json]) -> Json: ...
+
+
+@overload
+def with_hosts(state: None, history: list[Json]) -> None: ...
+
+
+@overload
+def with_hosts(state: Json | None, history: list[Json]) -> Json | None: ...
+
+
+def with_hosts(state: Json | None, history: list[Json]) -> Json | None:
+    """The state with its workspaces' journal-proven hosts, read in this transaction
+    beside it (as the kernel adds family facts); never an event-sourced fact."""
+    return None if state is None else {**state, "workspace_hosts": recorded_hosts(history)}
+
+
+def host_of(state: Json, resource_id: str) -> str | None:
+    """The surface (host) that holds a workspace; None when not proven."""
+    resource = state.get("workspaces", {}).get(resource_id) or {}
+    if isinstance(resource.get("surface"), str):
+        return str(resource["surface"])
+    return (state.get("workspace_hosts") or {}).get(resource_id)
+
+
+def on_host(effect: Json, surface: str | None) -> bool:
+    """Whether this host holds the workspace an effect acts on, so it runs here.
+
+    The inspected effect carries its workspace's proven `host` (`host_of`); one
+    without a proven host runs nowhere and stays pending. Only a host policy
+    without a surface (an isolated installation) falls back to where the bound
+    source repository and Git directory exist.
+    """
+    if surface is not None:
+        return effect.get("host") is not None and effect.get("host") == surface
+    binding = (effect.get("snapshot") or {}).get("binding") or {}
+    return all(
+        isinstance(binding.get(key), str) and Path(binding[key]).is_dir()
+        for key in ("source", "common_dir")
+    )
+
+
 def inherited_elsewhere(state: Json, resource_id: str, context: HostContext) -> bool:
     inherited = state.get("migration")
     return bool(
@@ -113,9 +223,10 @@ def retirement(state: Json, ids: list[str], reason: str, operation: str) -> Deci
     effects = []
     for index, resource_id in enumerate(ids):
         resource = resources[resource_id]
-        if resource.get("retirement"):
+        previous = state["effects"].get(resource.get("retirement") or "")
+        if resource.get("retirement") and (previous is None or previous["status"] != "observed_failure"):
             effects.append(resource["retirement"])
-            continue
+            continue  # A failed retirement kept the workspace: it may be requested again.
         effect_id = f"{operation}.{index}"
         from .publication import safe_retirement
 
@@ -163,14 +274,7 @@ def decide(
         workflow.nonempty(data["reason"])
         human_decision(context, intent, data, wi)
         ids = data["resource_ids"]
-        if (
-            state["status"] not in {"completed", "terminated"}
-            or context.actor != state["definition"]["owner"]
-        ):
-            raise Rejected(
-                "authority_denied",
-                "Terminal owner and exact inventory approval required",
-            )
+        terminal = state["status"] in {"completed", "terminated"}
         if (
             not isinstance(ids, list)
             or not ids
@@ -179,8 +283,50 @@ def decide(
             or len(ids) != len(set(ids))
         ):
             raise Rejected("invalid_input", "Retirement requires known unique resource IDs")
-        if unsettled(state):
-            raise Rejected("domain_conflict", "Unsettled original effects must be preserved")
+        if terminal:
+            if context.actor != state["definition"]["owner"]:
+                raise Rejected(
+                    "authority_denied",
+                    "Terminal owner and exact inventory approval required",
+                )
+            if unsettled(state):
+                raise Rejected("domain_conflict", "Unsettled original effects must be preserved")
+        else:
+            # An active WI's holder releases its own workspaces, wherever they
+            # were allocated: the effect runs on the host that holds each one
+            # (`on_host`), and its scope is free again once retired.
+            for key in ids:
+                resource = resources[key]
+                if not authorized(state, context, intent, resource["resources"]):
+                    raise Rejected(
+                        "authority_denied",
+                        "The current holder retires its own workspace: "
+                        + denial(state, context, intent, resource["resources"], wi=wi),
+                    )
+                if not retiring(state, resource) and not ready(state, resource):
+                    raise Rejected("domain_conflict", "Original workspace intention is unsettled")
+                if not retiring(state, resource) and host_of(state, key) is None:
+                    # Nothing would ever run it, and the scope would stay closed: refuse
+                    # before recording it (a terminal WI's reclaim keeps its own rule).
+                    raise Rejected(
+                        "domain_conflict",
+                        "The original host of this workspace is not proven, so it cannot be "
+                        "retired safely; it stays in use",
+                    )
+                if any(
+                    a["status"] == "running"
+                    and any(
+                        workflow.overlaps(x, y)
+                        for x in resource["resources"] for y in a["resources"]
+                    )
+                    for a in state["attempts"].values()
+                ):
+                    raise Rejected("domain_conflict", "A running task still uses the workspace")
+                if unsettled_for(state, key):
+                    raise Rejected(
+                        "domain_conflict",
+                        "Unsettled original effects on this workspace must be preserved",
+                    )
         if any(inherited_elsewhere(state, key, context) for key in ids):
             raise Rejected(
                 "authority_denied",
@@ -198,7 +344,7 @@ def decide(
         predecessor = resources.get(data["resource_id"])
         if predecessor is None or predecessor.get("superseded_by"):
             raise Rejected("domain_conflict", "Current original workspace required")
-        if predecessor.get("retirement") or not ready(state, predecessor):
+        if retiring(state, predecessor) or not ready(state, predecessor):
             raise Rejected("domain_conflict", "Original workspace intention is unsettled")
         if not authorized(state, context, intent, predecessor["resources"]):
             raise Rejected("authority_denied", "Original workspace scope is not owned: "
@@ -283,6 +429,7 @@ def decide(
                 "allocation": effect_id,
                 "retirement": None,
             }
+            resource["surface"] = context.surface
             if predecessor is not None:
                 retained_original = False
                 if predecessor.get("existing_allocation"):
@@ -328,10 +475,17 @@ def decide(
                 )
             if (
                 resource.get("superseded_by")
-                or resource.get("retirement")
+                or retiring(state, resource)
                 or not ready(state, resource)
             ):
                 raise Rejected("domain_conflict", "Original workspace operation is not settled")
+            if host_of(state, resource_id) is None:
+                # A revision nothing would run would leave the workspace unsettled for good.
+                raise Rejected(
+                    "domain_conflict",
+                    "The original host of this workspace is not proven, so it cannot be "
+                    "revised; it stays in use as it is",
+                )
             if not authorized(state, context, intent, resource["resources"]):
                 raise Rejected("authority_denied", "Previous resource scope is no longer owned: "
                                + denial(state, context, intent, resource["resources"], wi=wi))
@@ -391,15 +545,22 @@ def obsolete(state: Json, effect: Json) -> bool:
     """The intention no longer names the current resource action or generation.
 
     It can never send or resume again; an execution-generation change (for a
-    child WI, its parent's) or a replaced/ended resource makes it so.
+    child WI, its parent's) or a replaced/ended resource makes it so. A
+    retirement, requested by an active WI's holder or after the WI ended, stays
+    current while its resource names it: a later handover or completion does
+    not withdraw it.
     """
     resource = state.get("workspaces", {}).get(effect["snapshot"]["resource_id"])
-    retiring = effect["effect_kind"] == "workspace_retire"
+    if effect["effect_kind"] == "workspace_retire":
+        return (
+            resource is None
+            or state["status"] not in RETIRING_STATUSES
+            or resource.get("retirement") != effect["effect_id"]
+        )
     return (
         resource is None
-        or state["status"] not in ({"completed", "terminated"} if retiring else {"active"})
-        or (resource.get("retirement") if retiring else resource["effect_id"])
-        != effect["effect_id"]
+        or state["status"] != "active"
+        or resource["effect_id"] != effect["effect_id"]
         or effect["generation"] != state["generation"]
     )
 
@@ -516,7 +677,7 @@ def session_write(wi: str, state: Json) -> list[Json]:
         return []
     rows = []
     for resource in state.get("workspaces", {}).values():
-        if resource.get("superseded_by") or resource.get("retirement") or not ready(state, resource):
+        if resource.get("superseded_by") or retiring(state, resource) or not ready(state, resource):
             continue
         branch = resource["branch"]
         if not BRANCH.fullmatch(branch) or any(

@@ -31,6 +31,13 @@ enum CostTableColumn: String, CaseIterable, Identifiable {
         case .model: return 158
         }
     }
+    /// Whether a published view carries the tenant dimension (its rows have a tenant key).
+    static func showsTenant(_ rows: [CostQueryGroup]) -> Bool { rows.contains { $0.key["tenant"] != nil } }
+    /// The columns a published view supports: the tenant column only with the tenant dimension.
+    /// Shared by the full table and the menu-bar preview.
+    static func available(in rows: [CostQueryGroup]) -> [CostTableColumn] {
+        showsTenant(rows) ? allCases : allCases.filter { $0 != .tenant }
+    }
     func text(_ row: CostQueryGroup) -> String {
         if self == .tenant { return row.tenantText }
         if self == .outcome { return row.outputText }
@@ -47,6 +54,7 @@ enum CostTableColumn: String, CaseIterable, Identifiable {
             case "cron": return "cron"
             case "none": return "无"
             case "unassigned": return "未关联"
+            case "undeclared": return "未声明 WI"
             case "ambiguous": return "待核验"
             default: return row.workItem?.parent == nil ? value : "↳ " + value
             }
@@ -62,6 +70,13 @@ struct CostTableSelection: Equatable {
     var sortColumn: CostTableColumn = .amount
     var ascending = false
     var isFiltered: Bool { filters.values.contains { !$0.trimmingCharacters(in: .whitespaces).isEmpty } }
+    /// This selection without filters or sorting on columns the view does not carry.
+    func limited(to columns: [CostTableColumn]) -> CostTableSelection {
+        var result = self
+        result.filters = filters.filter { columns.contains($0.key) }
+        if !columns.contains(sortColumn) { result.sortColumn = .amount; result.ascending = false }
+        return result
+    }
 
     func rows(_ source: [CostQueryGroup]) -> [CostQueryGroup] {
         source.filter { row in
@@ -215,7 +230,21 @@ struct CostActivityTable: NSViewRepresentable {
             let expectedSort = NSSortDescriptor(key: selection.sortColumn.rawValue, ascending: selection.ascending)
             if view.table.sortDescriptors != [expectedSort] { view.table.sortDescriptors = [expectedSort] }
             configuring = false
+            // The tenant column, its filter and sorting only when the publication carries the tenant
+            // dimension; otherwise every row would read "租户未知" for a dimension that was not published.
+            let available = CostTableColumn.available(in: source)
+            if selection.limited(to: available) != selection {
+                selection = selection.limited(to: available)
+                let sort = NSSortDescriptor(key: selection.sortColumn.rawValue, ascending: selection.ascending)
+                configuring = true; view.table.sortDescriptors = [sort]; configuring = false
+            }
             visible = selection.rows(source)
+            let tenantColumn = view.table.tableColumn(withIdentifier: NSUserInterfaceItemIdentifier(CostTableColumn.tenant.rawValue))
+            let hidesTenant = !available.contains(.tenant)
+            if tenantColumn?.isHidden != hidesTenant {
+                tenantColumn?.isHidden = hidesTenant
+                view.filters.needsLayout = true
+            }
             let clip = view.table.enclosingScrollView?.contentView
             let origin = clip?.bounds.origin
             view.table.reloadData()
@@ -456,7 +485,7 @@ final class CostFilterHeader: NSTableHeaderView, NSTextFieldDelegate {
                 field.setAccessibilityLabel("筛选 " + key.title)
                 field.delegate = self; fields[key] = field; addSubview(field)
             }
-            field.isHidden = !showsFilters
+            field.isHidden = !showsFilters || column.isHidden
             let rect = headerRect(ofColumn: index)
             field.frame = NSRect(x: rect.minX + 5, y: 29, width: max(35, rect.width - 10), height: 22)
             if field.stringValue != (values[key] ?? "") { field.stringValue = values[key] ?? "" }
@@ -465,7 +494,7 @@ final class CostFilterHeader: NSTableHeaderView, NSTextFieldDelegate {
     override func draw(_ dirtyRect: NSRect) {
         NSColor.controlBackgroundColor.setFill(); bounds.fill()
         guard let tableView else { return }
-        for (index, column) in tableView.tableColumns.enumerated() {
+        for (index, column) in tableView.tableColumns.enumerated() where !column.isHidden {
             let rect = headerRect(ofColumn: index)
             let sorted = tableView.sortDescriptors.first
             let marker = sorted?.key == column.identifier.rawValue ? (sorted!.ascending ? "  ↑" : "  ↓") : ""

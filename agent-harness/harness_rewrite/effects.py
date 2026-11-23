@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+from datetime import datetime
 from pathlib import Path
 import stat
 import tempfile
@@ -34,6 +35,14 @@ class Prober(Protocol):
     """An adapter that can read back an obsolete resource intention without resuming it."""
 
     def probe(self, effect: Json) -> tuple[str, Json]: ...
+
+
+# A deferral probe reads GitHub (each request bounded by pulse-gh's timeout), so a
+# drain runs at most PROBE_LIMIT of them; the rest wait for a later drain. Which
+# waiting effects are probed changes every PROBE_WINDOW seconds (a hash of the
+# effect and the window), so none is left out for good.
+PROBE_LIMIT = 2
+PROBE_WINDOW = 60
 
 
 def exhausted(effect: Json) -> bool:
@@ -129,9 +138,11 @@ class Effects:
         host: Callable[[tuple[ArtifactInput, ...]], object],
         *,
         fault: Callable[[str], None] | None = None,
+        clock: Callable[[], float] | None = None,
     ):
         self.kernel, self.adapter, self.host = kernel, adapter, host
         self.fault = fault or (lambda stage: None)
+        self.clock = clock or (lambda: datetime.now().timestamp())
 
     def drain(self, wi: str, *, budget: int = 8, kinds: frozenset[str] | None = None) -> list[Json]:
         if type(budget) is not int or not 1 <= budget <= 64:
@@ -151,22 +162,55 @@ class Effects:
                 and item["status"] in {"attempt_started", "unknown", "observed_failure"}
             ),
         )
+        # The adapter may know a new attempt would only repeat the last absence
+        # (a merge whose checks still run): such an effect waits, writing nothing.
+        deferrable = getattr(self.adapter, "deferrable", None)
+        # A workspace effect runs only on the host that holds the workspace.
+        local: Callable[[Json], bool] = getattr(self.adapter, "local", lambda e: True)
+        defer: Callable[[Json], str | None] = getattr(self.adapter, "defer", lambda e: None)
+        waiting = {
+            e["effect_id"] for e in effects
+            if callable(deferrable)
+            and (kinds is None or e["effect_kind"] in kinds)
+            and not e.get("obsolete") and not exhausted(e) and e.get("startable") is not False
+            and not observation_blocks_effect(view, e["effect_id"]) and deferrable(e)
+        }
+        window = int(self.clock() // PROBE_WINDOW)
+        probed = set(sorted(
+            waiting, key=lambda i: digest({"effect_id": i, "window": window}))[:PROBE_LIMIT])
         for effect in effects:
             if kinds is not None and effect["effect_kind"] not in kinds:
                 continue
             if kinds is None and effect["effect_kind"] == "pr_review_dispatch":
                 continue  # Only the Relay review gate executes review requests.
-            if len(results) >= budget:
+            if not local(effect):
+                continue
+            # A deferral is a read-only probe, not a step: it never takes the
+            # batch from an effect behind it that can run now.
+            if sum(r.get("status") != "deferred" for r in results) >= budget:
                 break
             if observation_blocks_effect(view, effect["effect_id"]):
                 continue
             if effect["status"] in {"observed_success", "cancelled"}:
                 continue
-            if effect["status"] == "observed_failure" and effect["effect_kind"] == "merge_pull_request":
-                continue  # A failed merge is final; it needs a new reviewed round.
+            if effect["status"] == "observed_failure" and effect["effect_kind"] in {
+                "merge_pull_request", "workspace_retire",
+            }:
+                # A failed merge needs a new reviewed round; a failed retirement kept the
+                # workspace and only a new approved request retires it. Neither is read back.
+                continue
             if exhausted(effect) and not effect.get("obsolete"):
                 continue  # The kernel would refuse the same request until retry_effect.
+            if effect["status"] in {"requested", "observed_absence"} and (
+                    effect.get("startable") is False):
+                continue  # A merge of ended work or a superseded round: refused for good.
             if effect["status"] in {"requested", "observed_absence"}:
+                if effect["effect_id"] in waiting:
+                    reason = defer(effect) if effect["effect_id"] in probed else "probe_limit"
+                    if reason is not None:
+                        results.append({"status": "deferred", "effect_id": effect["effect_id"],
+                                        "reason": reason})
+                        continue
                 request = f"send.{effect['effect_id']}.{len(effect['attempts'])}"
                 admitted = self.kernel.execute(
                     Command(
@@ -276,13 +320,11 @@ class Effects:
                     ):
                         results.append(admitted)
                         continue
-                    if admitted["work_item"]["generation"] != effect["generation"]:
-                        results.append(admitted)
-                        continue
-                    if effect["effect_kind"] in EFFECT_KINDS and (
-                        effect["effect_kind"] == "workspace_retire"
-                    ) != (
-                        admitted["work_item"]["business_progress"]
+                    # A retirement stays current across handover and completion
+                    # (`workspaces.obsolete`); allocation and revision do not.
+                    if effect["effect_kind"] != "workspace_retire" and (
+                        admitted["work_item"]["generation"] != effect["generation"]
+                        or admitted["work_item"]["business_progress"]
                         in {"completed", "terminated"}
                     ):
                         results.append(admitted)

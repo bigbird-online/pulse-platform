@@ -19,7 +19,7 @@ function binding(sessionId:string, workItemId='wi_20990101_271') {
 
 /** One chat: the persisted identity unit, one live process, the real launch config, a kernel stub. */
 function fixture(options:{leave?:Record<string,unknown>;enter?:Record<string,unknown>;state?:string;
-  runtime?:'cc'|'codex';extra?:Record<string,unknown>;flush?:()=>void}={}) {
+  runtime?:'cc'|'codex'|'agy';extra?:Record<string,unknown>;flush?:()=>void}={}) {
   const state:Record<string,any>={poolKey:'tg:1',agentId:'pulse',sessionId:'sess-a',runtime:options.runtime??'cc',
     status:'active',lastActivity:1,turnCount:1,maxTurns:100,...options.extra};
   let pid=100;
@@ -71,13 +71,60 @@ describe('/wi switch', () => {
     expect(f.launches[1]).toMatchObject({sessionId:'sess-a',resume:true,workspace:'/wt'});
   });
 
-  it('refuses while working, mid-entry, or for Codex work that has no session yet', async () => {
+  it('keeps each session its own /think level: a new target starts at the default, a return restores its level', async () => {
+    const f=fixture({extra:{reasoningLevel:'max'}});
+    await f.run('wi_b');
+    expect(f.state.sessionId).toBe('sess-new');
+    expect(f.state.reasoningLevel).toBeUndefined();
+    expect(f.launches[0].reasoningLevel).toBeUndefined();
+    expect(f.state.workItemSessions.wi_a.unit.reasoningLevel).toBe('max');
+    f.state.reasoningLevel='low';  // /think low in the target session.
+    f.state.pendingWiSwitch=undefined;
+    f.control.mockImplementation(async(request:any)=>request.phase==='leave'
+      ? {status:'local_committed',work_item:{id:'wi_b'}} : {status:'local_committed',work_item:{id:'wi_a'}});
+    await f.run('wi_a');
+    expect(f.state.sessionId).toBe('sess-a');
+    expect(f.launches[1]).toMatchObject({sessionId:'sess-a',reasoningLevel:'max'});
+    expect(f.state.workItemSessions.wi_b.unit.reasoningLevel).toBe('low');
+  });
+
+  it('refuses while working, mid-entry, or for Codex or agy work that has no session yet', async () => {
     for(const f of [fixture({state:'busy'}),fixture({extra:{pendingWorkItemEntry:{workItemId:'wi_x'}}}),
-      fixture({runtime:'codex'})]){
+      fixture({runtime:'codex'}),fixture({runtime:'agy'})]){
       expect((await f.run('wi_b')).text).toContain('未做任何改动');
       expect(f.control).not.toHaveBeenCalled();
       expect(f.runtime.kill).not.toHaveBeenCalled();
     }
+  });
+
+  it('moves between agy conversations by their own ids, each with its WI binding', async () => {
+    const bound=(sessionId:string,wi:string)=>({sessionId,conversationId:'agy-'+sessionId.slice(5),usageBinding:buildRuntimeUsageBinding({workItemId:wi,agentId:'pulse',
+      phase:'conversation',epoch:1,runtime:'agy',procurementSource:'unknown',issuedAt:'2026-11-22T00:00:00Z'})});
+    const state:Record<string,any>={poolKey:'tg:1',agentId:'pulse',sessionId:'sess-a',runtime:'agy',status:'active',
+      lastActivity:1,turnCount:1,maxTurns:100,agyConversation:{sessionId:'sess-a',conversationId:'agy-a'},
+      agyWorkItemBinding:bound('sess-a','wi_20990101_001'),
+      workItemSessions:{wi_20990101_002:{at:'t',unit:{sessionId:'sess-b',runtime:'agy',
+        agyConversation:{sessionId:'sess-b',conversationId:'agy-b'},agyWorkItemBinding:bound('sess-b','wi_20990101_002')}}}};
+    let live:any={sessionId:'sess-a',runtime:'agy',state:'idle',agyConversationId:'agy-a'};
+    const launches:any[]=[];
+    const runtime:any={get:vi.fn(()=>live&&{...live}),kill:vi.fn(async()=>{live=undefined;})};
+    const acquire=vi.fn(async()=>{
+      if(!live){
+        const launch=conversationLaunch({poolKey:'tg:1',agent:{...agent,runtime:'agy'},session:state as any,channel:'telegram',intent:'inbound'});
+        launches.push(launch);
+        live={sessionId:launch.sessionId,runtime:'agy',state:'idle',agyConversationId:state.agyConversation?.conversationId};
+      }
+      return 'tg:1';
+    });
+    const control=vi.fn(async(request:any)=>request.phase==='leave'
+      ? {status:'local_committed',work_item:{id:'wi_20990101_001'}}
+      : {status:'local_committed',work_item:{id:'wi_20990101_002',business_progress:'active'}});
+    const stateManager:any={getSession:()=>state,updateSession:(_k:string,p:any)=>Object.assign(state,p),flushStrict:vi.fn()};
+    const outcome=await switchWorkItem({poolKey:'tg:1',target:'wi_20990101_002',ref:'r'.repeat(64),runtime,stateManager,acquire,control});
+    expect(outcome.resumed).toBe(true);
+    expect(control.mock.calls.map(([r])=>[r.phase,r.native_id,r.pid])).toEqual([['leave','agy-a',undefined],['enter','agy-b',undefined]]);
+    expect(launches[0].computeCostBinding.work_item_id).toBe('wi_20990101_002');
+    expect(state.workItemSessions.wi_20990101_001.unit.agyWorkItemBinding.usageBinding.work_item_id).toBe('wi_20990101_001');
   });
 
   it('keeps everything when recording the current work fails', async () => {

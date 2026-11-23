@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   buildMenuCard,
   buildModelOptionCard,
@@ -7,6 +10,14 @@ import {
   type CommandDeps,
 } from '../src/commands.js';
 import type { AgentConfig } from '../src/types.js';
+
+// agy appears only on nodes that have its launcher; tests choose explicitly.
+const savedAgyBin = process.env.PULSE_AGY_BIN;
+beforeEach(() => { process.env.PULSE_AGY_BIN = '/nonexistent/agy'; });
+afterEach(() => {
+  if (savedAgyBin === undefined) delete process.env.PULSE_AGY_BIN;
+  else process.env.PULSE_AGY_BIN = savedAgyBin;
+});
 
 const agent: AgentConfig = {
   id: 'main',
@@ -62,9 +73,9 @@ describe('buildMenuCard', () => {
     }
   });
 
-  it('renders exactly 11 buttons (session2 + process3 + view3 + config3)', () => {
+  it('renders exactly 12 buttons (session2 + process3 + view3 + config4)', () => {
     const result = buildMenuCard(agent);
-    expect(allButtons(result)).toHaveLength(11);
+    expect(allButtons(result)).toHaveLength(12);
   });
 
   it('reset button uses danger type, others default', () => {
@@ -90,7 +101,7 @@ describe('buildMenuCard', () => {
       expect.arrayContaining([
         'new', 'reset', 'stop', 'kill', 'restart',
         'status', 'session', 'usage',
-        'runtime', 'model', 'yolo',
+        'runtime', 'model', 'think', 'yolo',
       ]),
     );
     // switch/list must NOT appear
@@ -230,5 +241,36 @@ describe('buildYoloOptionCard', () => {
       return v.relay_menu_arg;
     });
     expect(args).toEqual(expect.arrayContaining(['on', 'off', 'status']));
+  });
+});
+
+describe('agy runtime menu', () => {
+  function withAgyLauncher<T>(fn: () => T): T {
+    const dir = mkdtempSync(join(tmpdir(), 'agy-menu-'));
+    const bin = join(dir, 'agy');
+    writeFileSync(bin, '#!/bin/sh\n', { mode: 0o755 });
+    process.env.PULSE_AGY_BIN = bin;
+    try { return fn(); } finally { rmSync(dir, { recursive: true, force: true }); }
+  }
+  const menuValues = (result: { feishuCardElements?: Record<string, unknown>[] }) => allButtons(result).map((button) => {
+    const value = (button.behaviors as Record<string, unknown>[])?.[0]?.value as Record<string, unknown>;
+    return `${String(value.relay_menu)}:${String(value.relay_menu_arg)}`;
+  });
+
+  it('offers agy only where the launcher is installed', () => {
+    expect(menuValues(buildRuntimeOptionCard(agent))).not.toContain('runtime:agy');
+    withAgyLauncher(() => {
+      expect(menuValues(buildRuntimeOptionCard(agent))).toContain('runtime:agy');
+    });
+  });
+
+  it('puts the agy model families on the card itself when agy is active', () => {
+    const agyAgent: AgentConfig = { ...agent, runtime: 'agy' };
+    const result = buildModelOptionCard(agyAgent, 'owner', makeDeps(undefined), undefined, 'agy');
+    const values = menuValues(result);
+    expect(values).not.toContain('model_scope:agy|subscription');
+    expect(values).toContain('model:gemini-4-neon-high');
+    expect(values).toContain('model:claude-opus-5-5-high');
+    expect(result.text).toContain('gemini-4-neon-high（默认）');
   });
 });

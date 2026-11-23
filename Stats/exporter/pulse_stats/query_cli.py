@@ -65,6 +65,8 @@ def parser():
     p.add_argument('--runtime', type=_token(NAME_PATTERN))
     p.add_argument('--work-item-id', dest='work_item_id', type=_token(WI_PATTERN))
     p.add_argument('--metric-id', dest='metric_id', type=_token(re.compile(r'[a-z0-9_.]{1,100}')))
+    p.add_argument('--session-id', dest='session_id', type=_token(re.compile(r'[A-Za-z0-9-]{8,64}')),
+                   help='compactions: one CC native session ID (hashed before matching)')
     p.add_argument('--snapshot', type=Path,
                    help='absolute exporter snapshot file instead of the App cache; cost then comes from it')
     p.add_argument('--cost-dashboard', type=Path, help='absolute cost publication path')
@@ -115,7 +117,8 @@ def main(argv=None, *, now=None, home=None):
     day = {'home': home, 'coevolution_root': args.coevolution_root or home / 'Coevolution',
            'wi_facts': args.wi_facts or home / '.local/state/pulse/stats/wi-facts-v1.json',
            'pr_bodies': args.pr_bodies or home / '.local/state/pulse/stats/pr-bodies-v1.json',
-           'kernel': args.kernel or home / '.local/share/pulse/tools/scl-core/active/harness.pyz'}
+           'kernel': args.kernel or home / '.local/share/pulse/tools/scl-core/active/harness.pyz',
+           'compactions': home / '.local/state/pulse/stats/context-compactions-v1.json'}
     if args.snapshot is not None:
         sources = Sources(app_snapshot=args.snapshot, cost_publication=args.cost_dashboard, now=now, app_kind='file',
                           **day)

@@ -5,6 +5,9 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import shlex
+import subprocess
+import sys
 import tempfile
 import threading
 from types import SimpleNamespace
@@ -22,6 +25,7 @@ TCLOUD = {'id': 'tcloud', 'host': 'tcloud-node2', 'prefix': ['runuser', '-u', 'p
           'script': SCRIPT.format(A), 'transport': 'shared_ledger'}
 ORACLE = {'id': 'oracle-node-1', 'host': 'pulse@oracle-node-1', 'python': d.PEER_PYTHON,
           'script': SCRIPT.format(A), 'transport': 'shared_ledger'}
+ORACLE_ON_B = {**ORACLE, 'script': SCRIPT.format(B)}  # The entry on the reader Oracle selected in these tests.
 OWNERMAC_SOURCES = ['relay-host', 'native-cc-main']
 TENANTS = {'schema': 'pulse_stats_tenant_registry/v2', 'bindings': [], 'relay_users': [],
            'definition_observed_at': '2026-10-06T07:40:34+00:00'}
@@ -149,6 +153,19 @@ class OraclePublisherConfigTests(Home):
         updated = json.loads((self.state/'refresh.json').read_bytes())
         self.assertEqual((updated['source_revision'], updated['peers'][0]['script']), (B, SCRIPT.format(B)))
 
+    def test_selection_probe_names_a_reader_only_with_its_installer_and_cost_refresh_entry(self):
+        runtime = self.reader(B)
+        (runtime/'Stats/deploy.py').write_text('')
+        probe = d.ORACLE_SELECTION_PROBE.replace(repr(str(d.ORACLE_HOME)), repr(str(self.home)))
+        answer = lambda: json.loads(subprocess.run([sys.executable, '-I', '-B', '-c', probe], check=True,
+                                                   capture_output=True).stdout)
+        self.assertEqual(answer(), {'selected': B, 'installer': True, 'publisher_revision': None})
+        (runtime/'Scripts/pulse-stats-cost-refresh.py').unlink()
+        self.assertEqual(answer()['installer'], False)
+        with patch.object(d, 'run', return_value=json.dumps(answer()).encode()), \
+                self.assertRaisesRegex(ValueError, 'installer and entry'):
+            d.oracle_publisher_revision({'peers': [ORACLE]})
+
 
 class PausedPeerTests(Home):
     """2026-11-15: by default only Oracle computes Stats; TCloud stays registered but paused."""
@@ -192,6 +209,8 @@ class PausedPeerTests(Home):
         d.atomic(registry, json.dumps({'tenant_registry_path': str(self.state/'tenant-registry.json')}).encode())
         sent, answer = [], {}
         def run(argv, data=None, **kwargs):
+            if argv[-1] == shlex.join([d.PEER_PYTHON, '-I', '-B', '-c', d.ORACLE_SELECTION_PROBE]):
+                return json.dumps({'selected': B, 'installer': True, 'publisher_revision': B}).encode()
             sent.append(json.loads(data))
             return json.dumps(answer or {'paused_peers': sent[-1]['paused_peers'], 'observing_peers': []}).encode()
         with patch.object(d, 'run', side_effect=run):
@@ -211,6 +230,8 @@ class PausedPeerTests(Home):
             with self.assertRaisesRegex(ValueError, 'readback differs'):
                 d.install_oracle_publisher(self.home, B)
         self.assertEqual([p['paused_peers'] for p in sent[:2]], [self.PAUSED, {}])
+        # The install leaves this node's Oracle entry on the reader it installed.
+        self.assertEqual(json.loads((self.state/'refresh.json').read_bytes())['peers'][1], ORACLE_ON_B)
 
     def test_peer_collection_switch_pauses_and_resumes_between_cycles(self):
         config = {'source_revision': A, 'peers': [TCLOUD, ORACLE], 'extra': 'kept'}
@@ -243,6 +264,7 @@ class OracleHome(Home):
                                             'paused_peers': {}}, A, self.state)
         d.atomic(self.state/'refresh.json', json.dumps(config).encode())
         for target in (patch.object(d, 'ORACLE_HOME', self.home), patch.object(d, 'PUBLISHER_WAIT_SECONDS', 0.5),
+                       patch.object(d, 'ORACLE_CYCLE_WAIT_SECONDS', 0.5),
                        patch.object(d.os, 'uname', return_value=SimpleNamespace(nodename='oracle-node-1'))):
             target.start()
             self.addCleanup(target.stop)
@@ -467,10 +489,13 @@ class PublisherSwitchTests(Home):
                                              'ProgramArguments': d.native_publisher_arguments(self.home, A)}))
         self.job_before = self.job.read_bytes()
         self.original = {'source_revision': A, 'peers': [TCLOUD, ORACLE], 'openrouter_env': '/x/.env'}
+        self.on_b = {**self.original, 'peers': [TCLOUD, ORACLE_ON_B]}
         d.atomic(self.state/'refresh.json', json.dumps(self.original).encode())
         self.config_before = (self.state/'refresh.json').read_bytes()
         self.loaded, self.loaded_job, self.active = True, plistlib.loads(self.job_before), False
         self.failures, self.calls = {}, []
+        # Oracle's publisher runs the reader Oracle selected, not ownermac's native release.
+        self.oracle_answer = {'selected': B, 'installer': True, 'publisher_revision': B}
         for target in (patch.object(d, 'run', side_effect=self.launchctl),
                        patch.object(d.subprocess, 'run', side_effect=self.probe),
                        patch.object(d, 'atomic', side_effect=self.write)):
@@ -491,6 +516,10 @@ class PublisherSwitchTests(Home):
                                stderr=('Could not find service "'+d.LABEL+'"').encode())
 
     def launchctl(self, argv, **kwargs):
+        if argv[0] == '/usr/bin/ssh':
+            self.assertEqual(argv[-1], shlex.join([d.PEER_PYTHON, '-I', '-B', '-c', d.ORACLE_SELECTION_PROBE]))
+            self.calls.append('probe')
+            return json.dumps(self.oracle_answer).encode()
         self.assertEqual(argv[0], '/bin/launchctl')
         self.calls.append(argv[1])
         if argv[1] == 'print':
@@ -530,15 +559,45 @@ class PublisherSwitchTests(Home):
     def test_switch_to_oracle_and_back_restores_the_full_refresh(self):
         result, config, job = self.switch('oracle-node-1')
         self.assertEqual(result['mode'], 'collect-local')
-        self.assertEqual([c for c in self.calls if c != 'print'], ['bootout', 'bootstrap'])
-        self.assertEqual(config, {**self.original, 'publisher': 'oracle-node-1', 'peer_id': 'ownermac'})
+        self.assertEqual([c for c in self.calls if c != 'print'], ['probe', 'bootout', 'bootstrap'])
+        # Oracle selected B while refresh.json named A: the switch moves the entry to B.
+        self.assertEqual(config, {**self.on_b, 'publisher': 'oracle-node-1', 'peer_id': 'ownermac'})
         self.assertEqual(job['ProgramArguments'], d.native_publisher_arguments(self.home, A, 'collect-local'))
         self.assertEqual(self.loaded_job['ProgramArguments'], job['ProgramArguments'])
         self.assertEqual(self.receipt()['status'], 'switched')
         _, config, job = self.switch('ownermac')
-        self.assertEqual(config, self.original)
+        self.assertEqual(config, self.on_b)
         self.assertEqual(job['ProgramArguments'], d.native_publisher_arguments(self.home, A))
         self.assertTrue(list(self.state.glob('refresh-before-switch-*.json')))
+
+    def test_after_the_switch_pulls_reach_the_selected_reader_even_once_the_old_release_is_gone(self):
+        # Oracle selected B and cleaned release A; refresh.json still named A before the switch.
+        _, config, _ = self.switch('oracle-node-1')
+        self.assertEqual(config['peers'][1]['script'], SCRIPT.format(B))
+        config_path = self.state/'refresh.json'
+        bundle = json.dumps({'schema': cost_refresh.PUBLICATION_BUNDLE_SCHEMA, 'dashboard': None, 'last_week': None,
+                             'refresh_status': {'schema': cost_refresh.REFRESH_STATUS_SCHEMA}}).encode()
+        ran = []
+
+        def oracle(peer, command, data=None):
+            if cost_refresh.PUBLISHER_ENTRY_PROBE in command:
+                self.assertEqual(command[-1], '/home/pulse/.local/share/pulse/stats')
+                return json.dumps({'selected': B, 'entry': True}).encode()
+            ran.append(command[1])
+            if command[1] != SCRIPT.format(B):
+                raise cost_refresh.PeerTransportError(2)  # No such file: release A is gone.
+            return bundle
+
+        with patch.object(cost_refresh, 'STATE', self.state), patch.object(cost_refresh, 'ssh', side_effect=oracle):
+            self.assertEqual(cost_refresh.pull_publication_job(config_path)['state'], 'pulled')
+            self.assertEqual(ran, [SCRIPT.format(B)])
+            # An entry left on A is named as such, and A is never run.
+            d.atomic(config_path, json.dumps({**config, 'peers': [TCLOUD, ORACLE]}).encode())
+            with self.assertRaisesRegex(RuntimeError, 'pull failed'):
+                cost_refresh.pull_publication_job(config_path)
+            self.assertEqual(ran, [SCRIPT.format(B)])
+        status = json.loads((self.state/cost_refresh.PULL_STATUS).read_bytes())
+        self.assertEqual((status['state'], status['reason']), ('failed', 'publisher_entry_stale'))
 
     def test_switch_keeps_the_observe_mode_and_refuses_ownermac_while_observing(self):
         _, config, _ = self.switch('oracle-node-1')
@@ -557,6 +616,20 @@ class PublisherSwitchTests(Home):
             d.switch_publisher(self.home, A, 'oracle-node-1')
         self.assertEqual(plistlib.loads(self.job.read_bytes())['ProgramArguments'][2], 'refresh')
         self.assertNotIn('bootout', self.calls)
+
+    def test_switch_to_oracle_refuses_before_any_write_unless_oracle_publishes_from_its_selected_reader(self):
+        for answer in ({'selected': None, 'installer': False, 'publisher_revision': None},
+                       {'selected': B, 'installer': False, 'publisher_revision': B},
+                       {'selected': B, 'installer': True, 'publisher_revision': A},
+                       {'selected': B, 'installer': True, 'publisher_revision': None}):
+            with self.subTest(answer=answer):
+                self.oracle_answer = answer
+                with self.assertRaisesRegex(ValueError, 'Oracle'):
+                    d.switch_publisher(self.home, A, 'oracle-node-1')
+                self.assert_original()
+                self.assertFalse(os.path.lexists(self.state/d.PUBLISHER_SWITCH_RECEIPT))
+                self.assertEqual(list(self.state.glob('refresh-before-switch-*.json')), [])
+                self.assertNotIn('bootout', self.calls)
 
     def test_running_cycle_or_unloaded_job_changes_nothing(self):
         self.active = True
@@ -632,6 +705,70 @@ class PublisherSwitchTests(Home):
                          ('collect-local', 'ownermac', True, True))
         self.assertNotIn('bootout', self.calls)
 
+    def test_a_pull_in_flight_finishes_before_the_switch_back_and_never_writes_after_it(self):
+        # The reader's pull job is the real one; only the SSH fetch from Oracle is simulated.
+        self.switch('oracle-node-1')
+        config_path = self.state/'refresh.json'
+        status_path = self.state/cost_refresh.REFRESH_STATUS
+        oracle_status = {'schema': cost_refresh.REFRESH_STATUS_SCHEMA, 'state': 'oracle_cycle'}
+        bundle = json.dumps({'schema': cost_refresh.PUBLICATION_BUNDLE_SCHEMA, 'dashboard': None,
+                             'last_week': None, 'refresh_status': oracle_status}).encode()
+        order, switched, errors = [], threading.Event(), []
+
+        def switch_back():
+            try:
+                self.switch('ownermac')
+                order.append(('switched', json.loads(config_path.read_bytes()).get('publisher')))
+            except Exception as exc:  # Reported to the main thread.
+                errors.append(exc)
+            finally:
+                switched.set()
+
+        switcher = threading.Thread(target=switch_back)
+
+        def fetch(peer, command, data=None):
+            if cost_refresh.PUBLISHER_ENTRY_PROBE in command:
+                return json.dumps({'selected': B, 'entry': True}).encode()
+            self.assertEqual(command[1:], [SCRIPT.format(B), 'fetch-publication'])
+            switcher.start()
+            # The switch waits on publication-pull.lock while this pull is in flight.
+            self.assertFalse(switched.wait(1.5))
+            self.assertEqual(json.loads(config_path.read_bytes())['publisher'], 'oracle-node-1')
+            order.append(('fetched', None))
+            return bundle
+
+        real_write = cost_refresh.private_write
+
+        def private_write(path, data):
+            order.append(('wrote', path.name))
+            return real_write(path, data)
+
+        with patch.object(cost_refresh, 'STATE', self.state), patch.object(cost_refresh, 'ssh', side_effect=fetch), \
+                patch.object(cost_refresh, 'private_write', side_effect=private_write):
+            report = cost_refresh.pull_publication_job(config_path)
+            switcher.join(30)
+            self.assertEqual(errors, [])
+            self.assertEqual(report['publication']['refresh_status'], 'installed')
+            self.assertEqual(order, [('fetched', None), ('wrote', cost_refresh.REFRESH_STATUS),
+                                     ('wrote', cost_refresh.PULL_STATUS), ('switched', None)])
+            # The local full refresh now owns the cycle status; later pulls leave it alone.
+            local_status = {'schema': cost_refresh.REFRESH_STATUS_SCHEMA, 'state': 'local_cycle'}
+            real_write(status_path, json.dumps(local_status).encode())
+            self.assertEqual(cost_refresh.pull_publication_job(config_path)['state'], 'not_a_reader')
+        self.assertEqual(json.loads(status_path.read_bytes()), local_status)
+
+    def test_the_switch_waits_for_a_held_pull_lock_and_refuses_when_it_outlasts_the_bound(self):
+        self.switch('oracle-node-1')
+        before = (self.state/'refresh.json').read_bytes()
+        with open(self.state/d.PUBLICATION_PULL_LOCK, 'a+b') as held, \
+                patch.object(d, 'PUBLICATION_PULL_WAIT_SECONDS', 0.5):
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with self.assertRaises(TimeoutError):
+                d.switch_publisher(self.home, A, 'ownermac')
+        self.assertEqual((self.state/'refresh.json').read_bytes(), before)
+        self.assertEqual(self.loaded_job['ProgramArguments'][2], 'collect-local')
+        self.assertEqual(self.switch('ownermac')[1], self.on_b)
+
 
 
 class ObserveModeTests(Home):
@@ -640,15 +777,21 @@ class ObserveModeTests(Home):
         super().setUp()
         self.original = {'source_revision': A, 'peers': [TCLOUD, ORACLE], 'publisher': 'oracle-node-1',
                          'peer_id': 'ownermac', 'extra': 'kept'}
+        self.on_b = {**self.original, 'peers': [TCLOUD, ORACLE_ON_B]}
         d.atomic(self.state/'refresh.json', json.dumps(self.original).encode())
         self.before = (self.state/'refresh.json').read_bytes()
         registry = self.home/'.local/state/pulse/compute-cost/sources.json'
         registry.parent.mkdir(parents=True)
         d.atomic(self.state/'tenant-registry.json', json.dumps(TENANTS).encode())
         d.atomic(registry, json.dumps({'tenant_registry_path': str(self.state/'tenant-registry.json'),
+                                       'ledger_root': str(self.home/'ledger'),
                                        'sources': [{'id': i, 'kind': 'cc'} for i in OWNERMAC_SOURCES]}).encode())
         self.calls, self.failures, self.answer, self.during = [], 0, None, None
-        self.oracle_config, self.outcomes = None, []
+        # Oracle's spool of ownermac's bundles (ORACLE_SPOOL_PROBE).
+        self.spool = {'pending': 0, 'consumed': 0}
+        self.oracle_config, self.outcomes, self.installed_revisions = None, [], []
+        # The reader Oracle selected; it need not be ownermac's release (A).
+        self.oracle_selection = {'selected': B, 'installer': True, 'publisher_revision': B}
         target = patch.object(d, 'run', side_effect=self.oracle)
         target.start()
         self.addCleanup(target.stop)
@@ -658,7 +801,18 @@ class ObserveModeTests(Home):
 
     def oracle(self, argv, data=None, **kwargs):
         """receive-oracle-publisher on Oracle: install the configuration, answer its readback."""
+        if argv[-1] == shlex.join([d.PEER_PYTHON, '-I', '-B', '-c', d.ORACLE_SELECTION_PROBE]):
+            return json.dumps(self.oracle_selection).encode()
+        if argv[-1] == shlex.join([d.PEER_PYTHON, '-I', '-B', '-c',
+                                   d.ORACLE_SPOOL_PROBE % (str(d.ORACLE_HOME), 'ownermac')]):
+            return json.dumps(self.spool).encode()
         self.assertIn('receive-oracle-publisher', argv[-1])
+        remote = shlex.split(argv[-1])
+        revision = remote[remote.index('--revision') + 1]
+        # Oracle refuses any release but the one it selected (receive_oracle_publisher).
+        self.assertEqual(revision, self.oracle_selection['selected'])
+        self.assertEqual(remote[3], '/home/pulse/.local/share/pulse/stats/releases/'+revision+'/Stats/deploy.py')
+        self.installed_revisions.append(revision)
         payload = json.loads(data)
         self.calls.append((self.local().get('collect_local_mode', 'full'), payload.get('observe_sources')))
         during, self.during = self.during, None
@@ -671,7 +825,7 @@ class ObserveModeTests(Home):
         outcome = self.outcomes.pop(0) if self.outcomes else 'ok'
         if outcome == 'down':
             raise RuntimeError('ssh failed')
-        self.oracle_config = d.oracle_publisher_config(payload, A, self.home/'oracle')
+        self.oracle_config = d.oracle_publisher_config(payload, revision, self.home/'oracle')
         if outcome == 'lost':
             raise RuntimeError('ssh failed')
         if outcome == 'exit':
@@ -690,15 +844,177 @@ class ObserveModeTests(Home):
         # Oracle took the registration while ownermac still collected in full.
         self.assertEqual(self.calls, [('full', OWNERMAC_SOURCES)])
         self.assertEqual(self.judged(), {'ownermac': OWNERMAC_SOURCES})
-        self.assertEqual(self.local(), {**self.original, 'collect_local_mode': 'observe'})
+        self.assertEqual(self.local(), {**self.on_b, 'collect_local_mode': 'observe'})
         self.assertEqual(len(list(self.state.glob('refresh-before-observe-mode-*.json'))), 1)
+        self.assertEqual((self.receipt()['revision'], self.receipt()['oracle_revision']), (A, B))
+        self.assertEqual(self.oracle_config['source_revision'], B)
         # Any later install hands Oracle the same registration, so a redeployment keeps it.
-        d.install_oracle_publisher(self.home, A)
+        d.install_oracle_publisher(self.home, B)
         self.assertEqual(self.calls[-1], ('observe', OWNERMAC_SOURCES))
         result = d.set_observe_mode(self.home, 'ownermac', 'full')
         self.assertEqual(result['observing_peers'], [])
         self.assertEqual(self.calls[-1], ('observe', None))  # Oracle stopped judging before full resumed.
-        self.assertEqual((self.judged(), self.local()), ({}, {**self.original, 'collect_local_mode': 'full'}))
+        self.assertEqual((self.judged(), self.local()), ({}, {**self.on_b, 'collect_local_mode': 'full'}))
+
+    def test_incremental_needs_a_ready_index_and_registers_no_bundles_on_oracle(self):
+        d.set_observe_mode(self.home, 'ownermac', 'observe')
+        before = (self.state/'refresh.json').read_bytes()
+        with patch.object(d, 'require_incremental_collection_ready',
+                          side_effect=ValueError('incremental mode needs the fact index')) as ready:
+            with self.assertRaisesRegex(ValueError, 'fact index'):
+                d.set_observe_mode(self.home, 'ownermac', 'incremental')
+        ready.assert_called_once_with(self.home)
+        self.assertEqual((self.state/'refresh.json').read_bytes(), before)  # Refused before anything changed.
+        with patch.object(d, 'require_incremental_collection_ready') as ready:
+            result = d.set_observe_mode(self.home, 'ownermac', 'incremental')
+        ready.assert_called_once_with(self.home)
+        # ownermac judges its own sources now: Oracle judges no bundles of it.
+        self.assertEqual((result['observing_peers'], self.calls[-1]), ([], ('observe', None)))
+        self.assertEqual(self.local(), {**self.on_b, 'collect_local_mode': 'incremental'})
+        # Back is the same command with observe; no readiness check is needed for it.
+        result = d.set_observe_mode(self.home, 'ownermac', 'observe')
+        self.assertEqual(result['observing_peers'], ['ownermac'])
+        self.assertEqual(self.calls[-1], ('incremental', OWNERMAC_SOURCES))
+
+    def test_leaving_observe_waits_until_oracle_ingested_every_acknowledged_bundle(self):
+        # 2026-11-20 review repro: the switch completed with one bundle Oracle had
+        # acknowledged but not ingested; with its registration gone nobody consumed it.
+        d.set_observe_mode(self.home, 'ownermac', 'observe')
+        (self.state/'observe').mkdir(mode=0o700)
+        d.atomic(self.state/'observe'/d.OBSERVE_PUSHED, json.dumps({'sequence': 1}).encode())
+        before = (self.state/'refresh.json').read_bytes()
+        for spool in ({'pending': 1, 'consumed': 0}, {'pending': 0, 'consumed': 0}):
+            self.spool = spool
+            for mode in ('incremental', 'full'):
+                with self.subTest(spool=spool, mode=mode), \
+                        patch.object(d, 'require_incremental_collection_ready'):
+                    with self.assertRaisesRegex(ValueError, 'not yet ingested'):
+                        d.set_observe_mode(self.home, 'ownermac', mode)
+                    self.assertEqual((self.state/'refresh.json').read_bytes(), before)
+                    self.assertEqual(self.judged(), {'ownermac': OWNERMAC_SOURCES})  # Oracle still judges them.
+        self.spool = {'pending': 0, 'consumed': 1}  # Its next cycle ingested the bundle.
+        with patch.object(d, 'require_incremental_collection_ready'):
+            d.set_observe_mode(self.home, 'ownermac', 'incremental')
+        self.assertEqual(self.local()['collect_local_mode'], 'incremental')
+
+    def test_the_publisher_cursor_is_not_the_one_incremental_moves(self):
+        # Review r2 repro: observe -> incremental -> observe; the local spool consumed
+        # bundle 2 (observe index 2), Oracle ingested bundle 1 and has no backlog.
+        d.set_observe_mode(self.home, 'ownermac', 'observe')
+        (self.state/'observe').mkdir(mode=0o700)
+        d.atomic(self.state/'observe/index.json', json.dumps({'sequence': 2}).encode())
+        d.atomic(self.state/'observe'/d.OBSERVE_PUSHED, json.dumps({'sequence': 1}).encode())
+        self.spool = {'pending': 0, 'consumed': 1}
+        d.set_observe_mode(self.home, 'ownermac', 'full')
+        self.assertEqual(self.local()['collect_local_mode'], 'full')
+
+    def test_a_node_without_the_acknowledgement_file_takes_its_observe_index(self):
+        # Review r3 repro: upgraded with observe index 23 and no acknowledgement file,
+        # Oracle ingested through 22 with an empty spool; the switch took the cursor as 0.
+        d.set_observe_mode(self.home, 'ownermac', 'observe')
+        (self.state/'observe').mkdir(mode=0o700)
+        d.atomic(self.state/'observe/index.json', json.dumps(
+            {'schema': 'pulse_native_observe_index/v1', 'sequence': 23, 'groups': {}, 'sent': {}}).encode())
+        before = (self.state/'refresh.json').read_bytes()
+        self.spool = {'pending': 0, 'consumed': 22}
+        with self.assertRaisesRegex(ValueError, 'not yet ingested'):
+            d.set_observe_mode(self.home, 'ownermac', 'full')
+        self.assertEqual((self.state/'refresh.json').read_bytes(), before)
+        self.assertEqual(self.judged(), {'ownermac': OWNERMAC_SOURCES})
+        self.spool = {'pending': 0, 'consumed': 23}
+        d.set_observe_mode(self.home, 'ownermac', 'full')
+        self.assertEqual(self.local()['collect_local_mode'], 'full')
+
+    def test_the_refresh_script_and_the_installer_name_one_cursor_file(self):
+        from Stats.exporter.tests.test_cost_refresh import refresh as cost_refresh
+        self.assertEqual(cost_refresh.OBSERVE_PUSHED, d.OBSERVE_PUSHED)
+
+    def test_leaving_incremental_waits_until_the_local_spool_is_judged(self):
+        with patch.object(d, 'require_incremental_collection_ready'):
+            d.set_observe_mode(self.home, 'ownermac', 'incremental')
+        spool = self.home/'ledger/derived/local-spool'
+        spool.mkdir(parents=True, mode=0o700)
+        (spool/f'{7:020d}.json.gz').write_bytes(b'bundle')
+        with self.assertRaisesRegex(ValueError, 'local observation bundles wait'):
+            d.set_observe_mode(self.home, 'ownermac', 'observe')
+        self.assertEqual(self.local()['collect_local_mode'], 'incremental')
+        (spool/f'{7:020d}.json.gz').unlink()
+        d.set_observe_mode(self.home, 'ownermac', 'observe')
+        self.assertEqual(self.local()['collect_local_mode'], 'observe')
+
+    def test_the_spool_probe_counts_only_bundles_not_yet_ingested(self):
+        import hashlib
+        import subprocess
+        import sys
+        spool = self.home/'oracle/.local/state/pulse/stats/imports/ownermac.observations'
+        spool.mkdir(parents=True)
+        done, waiting = spool/f'{3:020d}.json.gz', spool/f'{4:020d}.json.gz'
+        done.write_bytes(b'one'); waiting.write_bytes(b'two')
+        (spool/'.consumed.json').write_text(json.dumps({'schema': 'x', 'last': 3, 'digests': {
+            '3': hashlib.sha256(b'one').hexdigest()}}))
+        probe = d.ORACLE_SPOOL_PROBE % (str(self.home/'oracle'), 'ownermac')
+        answer = json.loads(subprocess.run([sys.executable, '-I', '-B', '-c', probe], capture_output=True,
+                                           check=True).stdout)
+        self.assertEqual(answer, {'pending': 1, 'consumed': 3})
+
+    def test_without_a_selected_oracle_reader_nothing_is_written_or_left_unresolved(self):
+        # 2026-11-18: ownermac ran native release A, Oracle had no reader A; both directions
+        # failed and observe-mode.json stayed unresolved. Now nothing is written at all.
+        for selection in ({'selected': None, 'installer': False, 'publisher_revision': None},
+                          {'selected': B, 'installer': False, 'publisher_revision': B}):
+            for mode in ('observe', 'full'):
+                with self.subTest(selection=selection, mode=mode):
+                    self.oracle_selection = selection
+                    with self.assertRaisesRegex(ValueError, 'selected Stats reader'):
+                        d.set_observe_mode(self.home, 'ownermac', mode)
+                    self.assertFalse(os.path.lexists(self.state/d.OBSERVE_MODE_RECEIPT))
+                    self.assertEqual(list(self.state.glob('refresh-before-observe-mode-*.json')), [])
+                    self.assertEqual(((self.state/'refresh.json').read_bytes(), self.installed_revisions),
+                                     (self.before, []))
+        # An unresolved switch is continued only once Oracle names its reader; until then it stays as it was.
+        self.oracle_selection = {'selected': B, 'installer': True, 'publisher_revision': B}
+        self.outcomes = ['exit']
+        with self.assertRaises(KeyboardInterrupt):
+            d.set_observe_mode(self.home, 'ownermac', 'observe')
+        left = (self.state/d.OBSERVE_MODE_RECEIPT).read_bytes()
+        self.oracle_selection = {'selected': None, 'installer': False, 'publisher_revision': None}
+        with self.assertRaisesRegex(ValueError, 'selected Stats reader'):
+            d.set_observe_mode(self.home, 'ownermac', 'full')
+        self.assertEqual((self.state/d.OBSERVE_MODE_RECEIPT).read_bytes(), left)
+        self.oracle_selection = {'selected': A, 'installer': True, 'publisher_revision': B}
+        d.set_observe_mode(self.home, 'ownermac', 'full')
+        self.assertEqual((self.receipt()['status'], self.receipt()['oracle_revision'], self.installed_revisions[-1]),
+                         ('restored', A, A))
+
+    def test_an_open_switch_never_lands_an_entry_oracle_left_and_install_takes_only_its_selection(self):
+        self.outcomes = ['exit']
+        with self.assertRaises(KeyboardInterrupt):
+            d.set_observe_mode(self.home, 'ownermac', 'observe')
+        left = (self.state/d.OBSERVE_MODE_RECEIPT).read_bytes()
+        self.oracle_selection = {'selected': A, 'installer': True, 'publisher_revision': A}
+        # The target names B's entry; Oracle now selects A, so only the way back is open.
+        with self.assertRaisesRegex(ValueError, 'another Stats reader.*--mode full'):
+            d.set_observe_mode(self.home, 'ownermac', 'observe')
+        self.assertEqual((self.state/d.OBSERVE_MODE_RECEIPT).read_bytes(), left)
+        d.set_observe_mode(self.home, 'ownermac', 'full')
+        self.assertEqual((self.receipt()['status'], self.local()), ('restored', self.original))
+        # install-oracle-publisher installs only Oracle's selection, then moves the entry to it.
+        installed = list(self.installed_revisions)
+        with self.assertRaisesRegex(ValueError, 'only the Stats reader it selected'):
+            d.install_oracle_publisher(self.home, B)
+        self.assertEqual((self.installed_revisions, self.local()), (installed, self.original))
+        self.oracle_selection = {'selected': B, 'installer': True, 'publisher_revision': B}
+        d.install_oracle_publisher(self.home, B)
+        self.assertEqual(self.local(), self.on_b)
+
+    def test_waiting_for_a_publisher_cycle_lasts_until_the_oracle_unit_would_end_it(self):
+        unit = (Path(__file__).parents[2]/'systemd/pulse-stats-refresh.service').read_text()
+        self.assertIn('TimeoutStartSec=%dmin' % (d.ORACLE_CYCLE_LIMIT_SECONDS // 60), unit)
+        self.assertGreater(d.ORACLE_CYCLE_WAIT_SECONDS, d.ORACLE_CYCLE_LIMIT_SECONDS)
+        # The installer on Oracle waits that long; ownermac's SSH call outlasts it.
+        source = (Path(__file__).parents[2]/'deploy.py').read_text()
+        self.assertIn("publisher_cycle(home, ORACLE_CYCLE_WAIT_SECONDS)", source)
+        self.assertIn("timeout=ORACLE_CYCLE_WAIT_SECONDS+300", source)
 
     def test_every_deployment_writer_keeps_the_observe_mode(self):
         observing = {**self.original, 'collect_local_mode': 'observe'}
@@ -784,7 +1100,7 @@ class ObserveModeTests(Home):
         def deploy():
             with patch('pwd.getpwuid', return_value=SimpleNamespace(pw_dir=str(self.home))):
                 d.deploy(args)
-        return (('install-oracle-publisher', lambda: d.install_oracle_publisher(self.home, A)),
+        return (('install-oracle-publisher', lambda: d.install_oracle_publisher(self.home, B)),
                 ('peer-collection', lambda: d.set_peer_collection(self.home, 'tcloud', 'active')),
                 ('switch-publisher', lambda: d.switch_publisher(self.home, A, 'ownermac')),
                 ('deploy', deploy),
@@ -826,7 +1142,7 @@ class ObserveModeTests(Home):
                 # An install that read the other mode reaches Oracle only before the switch, never after it.
                 path = self.state/d.OBSERVE_MODE_RECEIPT
                 receipt = path.read_bytes() if path.exists() else None
-                finish = self.in_flight(lambda: d.install_oracle_publisher(self.home, A))
+                finish = self.in_flight(lambda: d.install_oracle_publisher(self.home, B))
                 with self.assertRaises(TimeoutError):
                     d.set_observe_mode(self.home, 'ownermac', mode)
                 self.assertEqual(path.read_bytes() if path.exists() else None, receipt)
@@ -911,3 +1227,87 @@ class ObserveModeTests(Home):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class IncrementalModeTests(ObserveModeTests):
+    """refresh.json `incremental` on ownermac, carried to the Oracle publisher (WI754).
+
+    The observe-mode fixture (simulated Oracle installer) without its own tests.
+    """
+    locals().update({name: None for name in dir(ObserveModeTests) if name.startswith('test_')})
+
+    def carried(self, answer):
+        # The Oracle installer of this release reads the section back.
+        return {**answer, **({'incremental': self.oracle_config['incremental']}
+                             if 'incremental' in self.oracle_config else {})}
+
+    def receipt(self):
+        return json.loads((self.state/d.INCREMENTAL_MODE_RECEIPT).read_bytes())
+
+    def test_views_shadow_reaches_oracle_and_off_removes_the_section(self):
+        self.answer = self.carried
+        result = d.set_incremental_mode(self.home, None, 'shadow', None)
+        section = {'ingest': 'off', 'views': 'shadow', 'collection': 'off'}
+        self.assertEqual(result, {'incremental': section, 'oracle_incremental': section})
+        self.assertEqual(self.local(), {**self.original, 'incremental': section})
+        self.assertEqual(self.oracle_config['incremental'], section)
+        self.assertEqual(self.receipt()['status'], 'completed')
+        # A later install hands Oracle the same switches.
+        d.install_oracle_publisher(self.home, B)
+        self.assertEqual(self.oracle_config['incremental'], section)
+        d.set_incremental_mode(self.home, None, 'off', None)
+        self.assertEqual(self.local(), {**self.on_b})
+        self.assertNotIn('incremental', self.oracle_config)
+
+    def test_an_oracle_release_that_drops_the_section_restores_the_before_image(self):
+        before = (self.state/'refresh.json').read_bytes()
+        with self.assertRaises(ValueError):
+            d.set_incremental_mode(self.home, None, 'shadow', None)
+        self.assertEqual((self.state/'refresh.json').read_bytes(), before)
+        self.assertNotIn('incremental', self.oracle_config)
+        self.assertEqual(self.receipt()['status'], 'restored')
+
+    def test_unreachable_oracle_leaves_this_node_unchanged(self):
+        self.answer = self.carried
+        self.failures = 1
+        before = (self.state/'refresh.json').read_bytes()
+        with self.assertRaises(RuntimeError):
+            d.set_incremental_mode(self.home, 'on', 'shadow', None)
+        self.assertEqual((self.state/'refresh.json').read_bytes(), before)
+        self.assertEqual(self.receipt()['status'], 'restored')
+
+    def test_an_unresolved_switch_fences_other_writers_and_never_overwrites_their_change(self):
+        # Install and its rollback both fail: incremental-mode.json stays unresolved.
+        self.answer = self.carried
+        self.failures = 2
+        with self.assertRaises(RuntimeError):
+            d.set_incremental_mode(self.home, None, 'shadow', None)
+        self.assertEqual(self.receipt()['status'], 'failed')
+        # Every other refresh.json writer refuses meanwhile (e.g. a new TCloud pause).
+        with self.assertRaisesRegex(ValueError, 'incremental-mode'):
+            d.set_peer_collection(self.home, 'tcloud', 'paused')
+        with self.assertRaisesRegex(ValueError, 'incremental-mode'):
+            d.set_observe_mode(self.home, 'ownermac', 'observe')
+        with self.assertRaisesRegex(ValueError, 'incremental-mode'):
+            d.install_oracle_publisher(self.home, B)
+        # A change that is neither image of the switch (a writer that ignored the fence,
+        # or a hand edit) is never replaced by the retry's restore.
+        changed = json.dumps({**self.original, 'paused_peers': {'tcloud': 'paused_by_decision'}}).encode()
+        d.atomic(self.state/'refresh.json', changed)
+        with self.assertRaisesRegex(ValueError, 'outside the unresolved'):
+            d.set_incremental_mode(self.home, None, 'shadow', None)
+        self.assertEqual((self.state/'refresh.json').read_bytes(), changed)
+        self.assertEqual(self.receipt()['status'], 'failed')
+        # Over one of its own images the retry restores and completes.
+        d.atomic(self.state/'refresh.json', self.before)
+        d.set_incremental_mode(self.home, None, 'shadow', None)
+        self.assertEqual(self.receipt()['status'], 'completed')
+        self.assertEqual(self.local()['incremental']['views'], 'shadow')
+        d.set_peer_collection(self.home, 'tcloud', 'paused')
+
+    def test_off_section_is_never_written_to_oracle(self):
+        payload = {'peers': [TCLOUD, ORACLE], 'required_receipt_features': [], 'paused_peers': {},
+                   'incremental': {'ingest': 'off', 'views': 'off', 'collection': 'off'}}
+        self.assertNotIn('incremental', d.oracle_publisher_config(payload, B, self.state))
+        with self.assertRaises(ValueError):
+            d.oracle_publisher_config({**payload, 'incremental': {'views': 'sometimes'}}, B, self.state)

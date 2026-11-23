@@ -23,7 +23,8 @@ TOKEN_FIELDS = ("uncached_input", "cache_read", "cache_write", "output")
 NATIVE_TOKEN_FIELDS = frozenset({"input", "output", "cacheRead", "cacheWrite", "totalTokens", "reasoning",
     "input_tokens", "output_tokens", "cached_input_tokens", "cache_write_input_tokens", "reasoning_output_tokens",
     "cache_read_input_tokens", "cache_creation_input_tokens", "total_tokens", "inputTokens", "outputTokens",
-    "cachedInputTokens", "cacheWriteInputTokens", "cacheReadInputTokens", "cacheCreationInputTokens"})
+    "cachedInputTokens", "cacheWriteInputTokens", "cacheReadInputTokens", "cacheCreationInputTokens",
+    "cache_read_tokens", "thinking_tokens"})
 ROLES = ("executor", "responsible", "delegator", "reviewer")
 REF = re.compile(r"^ccf1_[a-f0-9]{64}$")
 WI = re.compile(r"^wi_\d{8}_\d{3}$")
@@ -231,7 +232,7 @@ def validate_payload(kind: str, payload: Mapping[str, Any]) -> None:
             raise ReceiptError("sealed expectation requires its exact source usage evidence")
         if payload["ended_at"] and parse_timestamp(payload["started_at"], "start") > parse_timestamp(payload["ended_at"], "end"):
             raise ReceiptError("execution expectation boundary is reversed")
-    if kind in {"execution", "usage", "execution_expectation"} and payload["runtime"] not in {"pi", "codex", "cc", "cc_sdk", "unknown"}:
+    if kind in {"execution", "usage", "execution_expectation"} and payload["runtime"] not in {"pi", "codex", "cc", "cc_sdk", "agy", "unknown"}:
         raise ReceiptError("runtime must be explicit")
     if kind == "usage":
         _ref(payload.get("native_scope_ref"), "native_scope_ref")

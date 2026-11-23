@@ -35,6 +35,7 @@ struct CostDashboardView: View {
     @State private var quotaExpanded: Bool
     @State private var ccQuotaExpanded: Bool
     @State private var grokQuotaExpanded: Bool
+    @State private var agyQuotaExpanded: Bool
     private let statusContext: DashboardStatusContext?
     private let platform: OikosPlatformViewModel?
     @State private var oikosExpanded: Bool
@@ -44,6 +45,7 @@ struct CostDashboardView: View {
     init(document: CostDashboard?, now: Date, refresh: CostRefreshStatus? = nil, initialTab: CostTab = .collaboration,
          initialPeriod: CostPeriod = .today, initialEvidenceExpanded: Bool = false, initialQuotaExpanded: Bool = false,
          initialCCQuotaExpanded: Bool = false, initialGrokQuotaExpanded: Bool = false,
+         initialAgyQuotaExpanded: Bool = false,
          tablePreferences: UserDefaults? = .standard, platform: OikosPlatformViewModel? = nil,
          initialOikosExpanded: Bool = false, statusContext: DashboardStatusContext? = nil,
          browser: CostBrowserState? = nil, onOpenDetails: (() -> Void)? = nil, trailing: AnyView? = nil) {
@@ -62,6 +64,7 @@ struct CostDashboardView: View {
         _quotaExpanded = State(initialValue: initialQuotaExpanded)
         _ccQuotaExpanded = State(initialValue: initialCCQuotaExpanded)
         _grokQuotaExpanded = State(initialValue: initialGrokQuotaExpanded)
+        _agyQuotaExpanded = State(initialValue: initialAgyQuotaExpanded)
     }
 
     private var period: CostPeriod { browser.period }
@@ -110,8 +113,10 @@ struct CostDashboardView: View {
             metric("PR 数", value: query?.mergedPullRequestText ?? "—", note: retainedNote ?? "\(period.title)内核合并", anchor: "dashboard-merged-prs",
                    extra: unregisteredPullRequests?.tileText, retained: notice != nil)
             Divider().frame(height: 33)
-            metric("总成本", value: query?.totalCostAmount.map { StatsFormat.usdDecimal($0) } ?? "—", note: retainedNote ?? "标准价", anchor: "collaboration-cost-amount",
-                   retained: notice != nil) { evidenceExpanded.toggle() }
+            metric("总成本", value: query?.adjustedTotalAmount.map { StatsFormat.usdDecimal($0) } ?? "—",
+                   note: retainedNote ?? query?.adjustmentNote ?? "标准价", anchor: "collaboration-cost-amount",
+                   extra: document?.collectionBacklog?.tileText, retained: notice != nil,
+                   incomplete: document?.collectionBacklog != nil) { evidenceExpanded.toggle() }
         }
         .padding(.vertical, 9)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
@@ -125,15 +130,17 @@ struct CostDashboardView: View {
     }
 
     @ViewBuilder private func metric(_ label: String, value: String, note: String, anchor: String, lamp: StatusLamp? = nil,
-                                     extra: String? = nil, retained: Bool = false, action: (() -> Void)? = nil) -> some View {
+                                     extra: String? = nil, retained: Bool = false, incomplete: Bool = false,
+                                     action: (() -> Void)? = nil) -> some View {
         let content = VStack(alignment: .leading, spacing: 5) {
             Text(label).font(.caption).foregroundStyle(.secondary)
             Text(value).font(.system(size: 19, weight: .semibold)).monospacedDigit()
-                .foregroundStyle(retained ? Color.secondary : lamp?.color ?? Color.primary)
+                .foregroundStyle(retained ? Color.secondary : incomplete ? Color.orange : lamp?.color ?? Color.primary)
                 .lineLimit(1).minimumScaleFactor(0.85).costAnchor(anchor)
             Text(note).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
             if let extra {
-                Text(extra).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                Text(extra).font(.system(size: 10, weight: incomplete ? .semibold : .regular))
+                    .foregroundStyle(incomplete ? Color.orange : Color.secondary).lineLimit(1)
                     .minimumScaleFactor(0.8).costAnchor(anchor + "-unregistered")
             }
         }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 7)
@@ -187,6 +194,16 @@ struct CostDashboardView: View {
                     Text(statusContext?.relay.grokQuotaSummary ?? "待更新").monospacedDigit()
                 }
             }.font(.caption).costAnchor("dashboard-grok-quota")
+            DisclosureGroup(isExpanded: $agyQuotaExpanded) {
+                agyQuotaDetails
+            } label: {
+                HStack(spacing: 6) {
+                    LampDot(lamp: statusContext?.relay.agyLamp ?? .gray, size: 7)
+                    Text("agy 额度")
+                    Spacer()
+                    Text(statusContext?.relay.agyQuotaSummary ?? "待更新").monospacedDigit()
+                }
+            }.font(.caption).costAnchor("dashboard-agy-quota")
         }
     }
 
@@ -286,6 +303,34 @@ struct CostDashboardView: View {
         }.padding(.top, 5).font(.caption2)
     }
 
+    /// agy account quota by group: remaining share and reset time per window.
+    private var agyQuotaDetails: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            if let groups = statusContext?.relay.agyQuotaGroups {
+                VStack(alignment: .leading, spacing: 7) {
+                    ForEach(groups, id: \.name) { group in
+                        detailLine(group.name + " · 周",
+                                   Self.agyBucketText(group.weeklyRemainingPercent, group.weeklyResetsAt))
+                        if group.fiveHourRemainingPercent != nil {
+                            detailLine(group.name + " · 5 小时",
+                                       Self.agyBucketText(group.fiveHourRemainingPercent, group.fiveHourResetsAt))
+                        }
+                    }
+                }.costAnchor("agy-quota-groups")
+            } else {
+                Text(statusContext?.relay.agyQuotaReason ?? "额度暂未更新")
+                    .costAnchor("agy-quota-unavailable")
+            }
+            detailLine("额度读取", CostDetailContent.dateText(statusContext?.relay.agyQuotaObservedAt))
+                .costAnchor("agy-quota-observed-detail")
+            Text("账号级额度，不是单个 Agent 的成本，不计入成本合计").foregroundStyle(.secondary)
+        }.padding(.top, 5).font(.caption2)
+    }
+
+    static func agyBucketText(_ remaining: Double?, _ resetsAt: Date?) -> String {
+        "剩 " + StatsFormat.percent(remaining) + " · " + CostDetailContent.dateText(resetsAt) + " 重置"
+    }
+
     private func detailLine(_ label: String, _ value: String) -> some View {
         StatsDetailRow(label, value)
     }
@@ -307,6 +352,9 @@ struct CostDashboardView: View {
                 Spacer()
                 Text(activity?.populationScopeText ?? "WI 成果 · USD")
             }.font(.caption2).foregroundStyle(.secondary)
+            if let backlog = document?.collectionBacklog, query != nil {
+                CostIncompleteBanner(backlog: backlog).costAnchor("cost-incomplete-banner")
+            }
             if let query {
                 if let activity {
                     stageOutputs(activity)
@@ -597,4 +645,24 @@ struct CostDashboardView: View {
     }
 
 
+}
+
+
+/// The whole 产出与成本 table is an incomplete result while observations wait to be read.
+struct CostIncompleteBanner: View {
+    let backlog: CollectionBacklog
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(CollectionBacklog.tableHeadline).font(.caption.weight(.semibold))
+                Text(backlog.tableDetail).font(.caption2).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(8).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.14), in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.orange.opacity(0.6)))
+    }
 }

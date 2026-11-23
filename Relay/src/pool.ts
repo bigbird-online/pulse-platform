@@ -1,6 +1,6 @@
 import { relayChildEnv, stripRelaySecrets } from './relay-secrets.js';
 import { managedRelayPath } from './managed-paths.js';
-import { sharedAccessPromptLines, standingAccessPromptLine } from './config-paths.js';
+import { resolveSharedRepoRoots, sharedAccessPromptLines, standingAccessPromptLine } from './config-paths.js';
 import {forgetNativeProofOnExit,observeNativeSession} from './native-core-runtime.js';
 import {issueAgentJobsKey} from './agent-jobs-auth.js';
 import { nodeWorkItemCore, readSessionAccess, type SessionAccess } from './native-work-item-command.js';
@@ -15,7 +15,7 @@ const SESSION_ACCESS_REQUEST = '\n## 申请额外访问\n'
   + '内核按家族规则直接登记，无需再请人类同意，对本 Agent 之后的每个会话和定时任务生效，直到撤销。';
 import { spawn as cpSpawn, execSync } from 'node:child_process';
 import { spawnOwnedProcess } from './owned-process.js';
-import { CC_OAUTH_ENV_FILE, readCcSubscriptionToken, assertNoCcTokenCopies, applyCcSubscriptionAuth, ccSubscriptionSettings } from './cc-subscription-auth.js';
+import { CC_OAUTH_ENV_FILE, readCcAuthMode, ccConsoleSettings, readCcSubscriptionToken, assertNoCcTokenCopies, applyCcSubscriptionAuth, ccSubscriptionSettings } from './cc-subscription-auth.js';
 import { appendFileSync, existsSync, mkdirSync, openSync, closeSync, readFileSync, readdirSync, readSync, statSync, realpathSync, unlinkSync, writeFileSync, chmodSync } from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -37,7 +37,7 @@ import type {
 } from './types.js';
 import { writeMessage, createStreamReader } from './stream.js';
 import { resolveVisionConfig, describeImages, extractImageBlocks, replaceImagesWithText } from './vision-proxy.js';
-import { resolveConfiguredCcModelEnv } from './model-context.js';
+import { resolveClaudeRuntimeModel, resolveConfiguredCcModelEnv } from './model-context.js';
 import { extractReplyContextUserTail } from './reply-context.js';
 import {
   ensureClaudeOnboardingComplete,
@@ -54,12 +54,16 @@ import { resolveToolFileOutboxPath, scanToolFileOutbox } from './tool-file-outbo
 import { relayHostSessionRef } from './session-identity.js';
 import { CC_RUNTIME_USAGE_ENV_KEYS, ccRuntimeUsageEnvironment } from './cc-usage-measurement.js';
 import { ccHostMcp } from './cc-session-wi-mcp.js';
-import { addSessionWiGuardSettings, withSessionWiReminder } from './session-wi-guard.js';
+import { addSessionWiGuardSettings, mergeCcSettingsArg, withSessionWiReminder } from './session-wi-guard.js';
+import { ccSessionSettings, ccSystemPromptArgs } from './cc-session-settings.js';
+import { ccPromptForSession } from './cc-prompt-record.js';
 import { nextTurnSeq } from './maintenance-barrier.js';
 import { addCcWriteBoundarySettings, ccPiStateRoot, ccWriteDenials, ccWriteRoots, type PiAgentLease } from './cc-write-boundary.js';
 import { isRateLimitFailureMessage, observeCcRateLimitEvent } from './cc-quota-observation.js';
 import { ccToolUses, publicWorkEvents, toolTurnEffect } from './work-process-events.js';
 import { BackgroundTaskTracker, RUNTIME_NOTIFICATION_TURN, isTurnContentRecord, resolveBackgroundWorkHardCapMs, shouldReclaimIdleRuntime, tagRuntimeNotificationTurn } from './runtime-background-work.js';
+import { reasoningControl } from './reasoning-control.js';
+import { refuseMisroutedTurn, refusedTurnResult, settleInternalTurn } from './internal-turn-fence.js';
 
 /** Resolve a workspace path through realpath, falling back to the literal path if it
  *  doesn't exist (e.g., agent configured but not yet provisioned). */
@@ -71,19 +75,48 @@ export function resolveWorkspaceRealPath(workspace: string): string {
   }
 }
 
-/** Compute the CC session jsonl path: `$HOME/.claude/projects/<cwd-encoded>/<sessionId>.jsonl`.
+/** Compute the CC session jsonl path: `<config dir>/projects/<cwd-encoded>/<sessionId>.jsonl`,
+ *  the config dir defaulting to `$HOME/.claude`.
  *  CC encodes cwd by replacing every non-`[A-Za-z0-9_-]` char with `-`. */
-export function getSessionJsonlPath(workspace: string, sessionId: string, homeDir?: string): string {
+export function getSessionJsonlPath(workspace: string, sessionId: string, homeDir?: string, configDir?: string): string {
   const cwdEncoded = resolveWorkspaceRealPath(workspace).replace(/[^A-Za-z0-9_-]/g, '-');
   const home = homeDir ?? process.env['HOME'] ?? '';
-  return join(home, '.claude', 'projects', cwdEncoded, `${sessionId}.jsonl`);
+  return join(configDir ?? join(home, '.claude'), 'projects', cwdEncoded, `${sessionId}.jsonl`);
+}
+
+/** The HOME a CC child runs with: the tenant workspace under linuxUser, else the agent's userHome, else Relay's. */
+export function ccLaunchHome(
+  config: { workspace: string; linuxUser?: string; userHome?: string },
+  inheritedHome: string | undefined = process.env['HOME'],
+): string | undefined {
+  if (config.linuxUser) return resolveWorkspaceRealPath(config.workspace);
+  return config.userHome || inheritedHome;
+}
+
+/** Env keys sudo keeps for a linuxUser CC child, besides the route's auth keys. */
+export const CC_LINUX_USER_PRESERVED_ENV_KEYS = [
+  'HOME',
+  'PATH',
+  'LANG',
+  'TERM',
+  'SHELL',
+  'NODE_EXTRA_CA_CERTS',
+  'CLAUDE_CODE_MAX_OUTPUT_TOKENS',
+  'SCL_SESSION_REF', 'SCL_RELAY_HOST_CONTEXT', 'HARNESS_SURFACE_ID', 'HARNESS_RUNTIME_CLASS',
+] as const;
+
+/** CC's config dir as its child process sees it: CLAUDE_CONFIG_DIR when set, else `$HOME/.claude`. */
+export function ccConfigDir(env: NodeJS.ProcessEnv): string | undefined {
+  const configured = env['CLAUDE_CONFIG_DIR']?.trim();
+  if (configured) return configured;
+  return env['HOME'] ? join(env['HOME'], '.claude') : undefined;
 }
 
 /** CC 2.x `--bare` records cwd as `/root` and writes session jsonl under
  *  `$HOME/.claude/projects/-root/`. Use as fallback when the workspace-encoded path is absent. */
-export function getBareSessionJsonlPath(sessionId: string, homeDir?: string): string {
+export function getBareSessionJsonlPath(sessionId: string, homeDir?: string, configDir?: string): string {
   const home = homeDir ?? process.env['HOME'] ?? '';
-  return join(home, '.claude', 'projects', '-root', `${sessionId}.jsonl`);
+  return join(configDir ?? join(home, '.claude'), 'projects', '-root', `${sessionId}.jsonl`);
 }
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;  // 30 min
@@ -170,6 +203,7 @@ const DISALLOWED_TOOLS: string[] = [];
 const ANTHROPIC_ENV_KEYS = [
   'ANTHROPIC_BASE_URL',
   'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_DEFAULT_FABLE_MODEL',
   'ANTHROPIC_DEFAULT_HAIKU_MODEL',
   'ANTHROPIC_DEFAULT_SONNET_MODEL',
   'ANTHROPIC_DEFAULT_OPUS_MODEL',
@@ -1647,6 +1681,14 @@ export function createPool(options?: PoolOptions): Pool {
   const killTimeoutMs = options?.killTimeoutMs ?? DEFAULT_KILL_TIMEOUT_MS;
   const interactiveWarmupMs = options?.interactiveWarmupMs ?? DEFAULT_INTERACTIVE_WARMUP_MS;
   const sessionWiMcp = options?.sessionWiMcp;
+  /** Where each CC session's starting ccPrompt is kept; absent keeps every session on CC's default prompt. */
+  function ccPromptRecordDir(): string | undefined {
+    if (options?.ccPromptRecordDir) return options.ccPromptRecordDir;
+    try {
+      const data = managedRelayPath('dataDir');
+      return data ? join(data, 'cc-prompt-sessions') : undefined;
+    } catch { return undefined; }
+  }
   const configuredCcMode = options?.ccMode
     ?? (process.env['RELAY_CC_MODE'] === 'interactive' || process.env['RELAY_CC_MODE'] === 'print'
       ? process.env['RELAY_CC_MODE']
@@ -2151,7 +2193,12 @@ export function createPool(options?: PoolOptions): Pool {
       });
       return;
     }
-    args.push('--model', model);
+    args.push('--model', resolveClaudeRuntimeModel(model));
+  }
+
+  /** The conversation's /think level as CC effort; levels CC has no effort for are not passed. */
+  function appendEffortArg(args: string[], level?: SpawnConfig['reasoningLevel']): void {
+    if (level && (reasoningControl('cc').levels() as string[]).includes(level)) args.push('--effort', level);
   }
 
   function stripAnthropicEnv(env: NodeJS.ProcessEnv): void {
@@ -2359,6 +2406,7 @@ export function createPool(options?: PoolOptions): Pool {
       // OpenRouter requires API_KEY to be explicitly blank when authenticating
       // with ANTHROPIC_AUTH_TOKEN, otherwise cached Anthropic auth can win.
       ANTHROPIC_API_KEY: '',
+      ANTHROPIC_DEFAULT_FABLE_MODEL: providerModel,
       ANTHROPIC_DEFAULT_HAIKU_MODEL: providerModel,
       ANTHROPIC_DEFAULT_SONNET_MODEL: providerModel,
       ANTHROPIC_DEFAULT_OPUS_MODEL: providerModel,
@@ -2739,20 +2787,24 @@ export function createPool(options?: PoolOptions): Pool {
   function claudeSessionIdArgv(config: SpawnConfig, homeDir?: string): string[] {
     const sid = typeof config.sessionId === 'string' ? config.sessionId.trim() : '';
     if (!sid) return [];
-    // Use findExistingSessionFile to handle CC 2.x --bare bug where CC records
-    // incorrect cwd (/root) and writes session jsonl to a different project dir.
-    const tenantId = config.tenantId;
-    const sessionFile = findExistingSessionFile(config.workspace, sid, homeDir, tenantId);
-    // Use tenant-aware stat when linuxUser isolation is active; plain existsSync otherwise.
-    const existsOnDisk = tenantId
-      ? !!statFileAsTenant(sessionFile, tenantId)
-      : existsSync(sessionFile);
     // Only --resume when the session file actually exists on disk.
     // knownSessions tracks in-memory knowledge but the file may have been
     // deleted or never created (e.g. CC crash before first write). Using
     // --resume on a missing file causes CC to exit with code 1 immediately.
     knownSessions.add(sid);
-    return existsOnDisk ? ['--resume', sid] : ['--session-id', sid];
+    return claudeSessionOnDisk(config, homeDir) ? ['--resume', sid] : ['--session-id', sid];
+  }
+
+  /** Whether CC will resume the session's transcript rather than start it. */
+  function claudeSessionOnDisk(config: SpawnConfig, homeDir?: string): boolean {
+    const sid = typeof config.sessionId === 'string' ? config.sessionId.trim() : '';
+    if (!sid) return false;
+    // Use findExistingSessionFile to handle CC 2.x --bare bug where CC records
+    // incorrect cwd (/root) and writes session jsonl to a different project dir.
+    const tenantId = config.tenantId;
+    const sessionFile = findExistingSessionFile(config.workspace, sid, homeDir, tenantId);
+    // Use tenant-aware stat when linuxUser isolation is active; plain existsSync otherwise.
+    return tenantId ? !!statFileAsTenant(sessionFile, tenantId) : existsSync(sessionFile);
   }
 
   /** Check if a model requires interactive (--bare) mode based on provider config. */
@@ -2786,10 +2838,10 @@ export function createPool(options?: PoolOptions): Pool {
     }
   }
 
-  /** The session WI rule enters CC's resident prompt with its tool, as Codex developer_instructions do. */
+  /** Relay's own section of CC's system prompt. The session WI rule is not repeated here: CC
+   * already shows it as the request-purpose server's MCP instructions. */
   function residentSystemPrompt(config: SpawnConfig): string {
-    const prompt = buildFileDeliverySystemPrompt(config);
-    return sessionWiMcp ? `${prompt}\n\n${sessionWiMcp.instructions}` : prompt;
+    return buildFileDeliverySystemPrompt(config);
   }
 
   function buildPrintArgs(config: SpawnConfig, homeDir?: string): string[] {
@@ -2804,9 +2856,10 @@ export function createPool(options?: PoolOptions): Pool {
     ];
 
     appendModelArg(args, config.ccModel);
+    appendEffortArg(args, config.reasoningLevel);
     args.push('--allowed-tools', resolveAllowedTools(config.allowedTools).join(','));
     if (DISALLOWED_TOOLS.length > 0) args.push('--disallowed-tools', ...DISALLOWED_TOOLS);
-    args.push('--append-system-prompt', residentSystemPrompt(config));
+    args.push(...ccSystemPromptArgs(residentSystemPrompt(config), config.ccPrompt));
     // Under the write boundary a working directory is a sandbox write root, so read grants stay prompt-only.
     for (const row of config.sessionAccess ?? []) {
       if (existsSync(row.path) && (!config.ccWriteBoundary || row.mode === 'write')) args.push('--add-dir', row.path);
@@ -2832,9 +2885,10 @@ export function createPool(options?: PoolOptions): Pool {
     ];
 
     appendModelArg(args, config.ccModel);
+    appendEffortArg(args, config.reasoningLevel);
     args.push('--allowed-tools', resolveAllowedTools(config.allowedTools).join(','));
     if (DISALLOWED_TOOLS.length > 0) args.push('--disallowed-tools', ...DISALLOWED_TOOLS);
-    args.push('--append-system-prompt', residentSystemPrompt(config));
+    args.push(...ccSystemPromptArgs(residentSystemPrompt(config), config.ccPrompt));
     appendHostTool(args);
 
     return args;
@@ -5116,10 +5170,15 @@ export function createPool(options?: PoolOptions): Pool {
     // 1. Claude native models (no ccModel set)
     // 2. Legacy models.json format (no providers section)
     const declaredSubscription = provider === 'claude' && !providerOverrideActive && oauthEnvFile !== undefined;
+    const ccAuthMode = declaredSubscription && !config.linuxUser ? readCcAuthMode(oauthEnvFile!) : undefined;
+    let consoleSettings: string | undefined;
     if (declaredSubscription) {
-      const token = readCcSubscriptionToken(oauthEnvFile!);
       assertNoCcTokenCopies(workingConfig.userHome ?? env['HOME'], workingConfig.workspace);
-      applyCcSubscriptionAuth(env, token);
+      if (ccAuthMode === 'api') {
+        consoleSettings = ccConsoleSettings(oauthEnvFile!, env);
+      } else {
+        applyCcSubscriptionAuth(env, readCcSubscriptionToken(oauthEnvFile!));
+      }
     } else if (provider === 'claude' && (primaryToken || fallbackToken)) {
       // For non-resume spawns, reset to primary
       if (!config.resume) {
@@ -5140,14 +5199,11 @@ export function createPool(options?: PoolOptions): Pool {
     // at the tenant workspace. CC reads ~/.claude.json from HOME, and the tenant
     // user cannot write to /home/pulse/. Must happen before onboarding/trust
     // registration so those functions write to the correct location.
+    // For non-linuxUser agents, userHome is the real user's HOME so session files
+    // land in ~/.claude/projects/ (enabling cross-channel session access).
     const linuxUser = config.linuxUser;
-    if (linuxUser) {
-      env['HOME'] = resolveWorkspacePath(config.workspace);
-    } else if (config.userHome) {
-      // For non-linuxUser agents, inject the real user's HOME so session files
-      // land in ~/.claude/projects/ (enabling cross-channel session access).
-      env['HOME'] = config.userHome;
-    }
+    const launchHome = ccLaunchHome(config, env['HOME']);
+    if (launchHome !== undefined) env['HOME'] = launchHome;
 
     // bug-20260509-001 RC-1 mitigation: ensure ~/.claude.json carries the onboarding
     // flags (theme/hasCompletedOnboarding/...) so CC doesn't drop into the first-run
@@ -5168,6 +5224,7 @@ export function createPool(options?: PoolOptions): Pool {
     ensureClaudeProjectRegistered(
       env['HOME'] ?? process.env['HOME'],
       resolveWorkspacePath(config.workspace),
+      resolveSharedRepoRoots(resolveWorkspacePath(config.workspace)),
     );
 
     const ccMode = resolveCCMode(config.ccMode, workingConfig.ccModel);
@@ -5338,10 +5395,15 @@ export function createPool(options?: PoolOptions): Pool {
     }
     Object.assign(env, usage.env);
 
+    // The ccPrompt this CC session began with (cc-prompt-record.ts), so prompt and settings change together.
+    // The stored spawn config keeps the Agent's own value for the next new session.
+    const sessionCcPrompt = ccPromptForSession(ccPromptRecordDir(), effectiveConfig.sessionId.trim(),
+      claudeSessionOnDisk(effectiveConfig, tenantHome), effectiveConfig.ccPrompt);
+    const argvConfig = { ...effectiveConfig, ccPrompt: sessionCcPrompt };
     const claudeBin = process.env['CLAUDE_BIN'] ?? 'claude';
     const ccArgs = ccMode === 'interactive'
-      ? ['-u', bridgeScriptPath, claudeBin, ...buildInteractiveArgs(effectiveConfig, tenantHome)]
-      : buildPrintArgs(effectiveConfig, tenantHome);
+      ? ['-u', bridgeScriptPath, claudeBin, ...buildInteractiveArgs(argvConfig, tenantHome)]
+      : buildPrintArgs(argvConfig, tenantHome);
     const ccCommand = ccMode === 'interactive' ? 'python3' : claudeBin;
 
     // Provider --settings override: CC's ~/.claude/settings.json env section
@@ -5351,7 +5413,7 @@ export function createPool(options?: PoolOptions): Pool {
     // overridden by settings.json's default, causing wrong-endpoint
     // errors. Pass --settings with a merged settings object so CC uses the
     // provider's endpoint.
-    const providerSettingsJson = declaredSubscription ? ccSubscriptionSettings() : (providerOverrideActive
+    const providerSettingsJson = declaredSubscription ? consoleSettings ?? ccSubscriptionSettings() : (providerOverrideActive
       && env['ANTHROPIC_BASE_URL']
       && env['ANTHROPIC_AUTH_TOKEN'])
       ? buildProviderSettingsOverride(
@@ -5368,8 +5430,9 @@ export function createPool(options?: PoolOptions): Pool {
         level: 'info',
         module: 'pool',
         tenant: config.tenantId,
-        msg: declaredSubscription ? 'Passing CC subscription routing controls' : 'Passing --settings override for non-default provider',
+        msg: declaredSubscription ? 'Passing CC native routing controls' : 'Passing --settings override for non-default provider',
         model: workingConfig.ccModel,
+        ccAuthMode,
         baseUrl: env['ANTHROPIC_BASE_URL'],
       });
     }
@@ -5432,6 +5495,7 @@ export function createPool(options?: PoolOptions): Pool {
       }
     }
     // Merged last, into the single --settings value whichever branch above chose.
+    mergeCcSettingsArg(ccArgs, ccSessionSettings(sessionCcPrompt));
     if (effectiveConfig.sessionWiGuard) addSessionWiGuardSettings(ccArgs);
     let piAgentLease: PiAgentLease | undefined;
     if (effectiveConfig.ccWriteBoundary) {
@@ -5454,14 +5518,7 @@ export function createPool(options?: PoolOptions): Pool {
       ...(apiKeyFilePath && apiToken
         ? []  // don't preserve ANTHROPIC_API_KEY either
         : ['ANTHROPIC_API_KEY']),
-      'HOME',
-      'PATH',
-      'LANG',
-      'TERM',
-      'SHELL',
-      'NODE_EXTRA_CA_CERTS',
-      'CLAUDE_CODE_MAX_OUTPUT_TOKENS',
-      'SCL_SESSION_REF', 'SCL_RELAY_HOST_CONTEXT', 'HARNESS_SURFACE_ID', 'HARNESS_RUNTIME_CLASS',
+      ...CC_LINUX_USER_PRESERVED_ENV_KEYS,
     ];
     const preserveList = PRESERVED_ENV_KEYS
       .filter(k => env[k] !== undefined)
@@ -5518,6 +5575,7 @@ export function createPool(options?: PoolOptions): Pool {
     const now = Date.now();
     const proc: CCProcess = {
       tenantId: effectiveConfig.tenantId,
+      ccAuthMode,
       process: child,
       apiKeyFilePath,
       ...(piAgentLease ? { piAgentLease } : {}),
@@ -5665,10 +5723,32 @@ export function createPool(options?: PoolOptions): Pool {
     });
   }
 
+  // The preparation each written input came from, so a replay of it is
+  // prepared again for the process that receives it.
+  const preparedInputs = new WeakMap<StreamJsonMessage, NonNullable<ConversationTurnContext['prepareInput']>>();
+
   async function doSend(proc: CCProcess, tenantId: string, message: StreamJsonMessage, options?: { isReplay?: boolean; turn?: ConversationTurnContext }): Promise<void> {
+    // An internal delivery is written only to the session it was routed to: a queued or replayed
+    // one may reach a process that a switch started for another session.
+    if (refuseMisroutedTurn(message, proc, tenantId)) {
+      if (lastInFlight.get(tenantId) === message) lastInFlight.delete(tenantId);
+      emitter.emit('response', tenantId, refusedTurnResult(options?.turn?.hostAttemptRef, options?.turn?.correlationId));
+      drainQueue(tenantId).catch(() => {});
+      return;
+    }
+    // Received once written to CC; a prompt that is never written leaves the delivery to be offered again.
+    const fenced = message;
     // Fix this turn's input boundary before native work begins. A later
     // message must not make an old tool call appear to belong to the new turn.
     if (options?.turn) activeTurnContexts.set(tenantId, options.turn);
+    // Decided now, as the turn reaches this process, from its session's latest
+    // facts; a replay into a replacement process is decided again for it.
+    const mode = processModes.get(tenantId) ?? 'print';
+    const prepare = options?.turn?.prepareInput ?? (options?.isReplay ? preparedInputs.get(message) : undefined);
+    if (prepare) {
+      message = prepare(message, {sessionId: proc.sessionId, mode});
+      preparedInputs.set(message, prepare);
+    }
     // A new (non-replay) user message landing means whatever backoff was
     // pending is now stale — the caller already spawned (or held) a healthy
     // process to deliver this turn. Cancel the backoff so it cannot wake up
@@ -5704,7 +5784,6 @@ export function createPool(options?: PoolOptions): Pool {
     // it is undeclared on arrival; the reminder rides on what is sent, not on
     // lastInFlight, so a replay gets exactly one reminder.
     const sent = spawnConfigs.get(tenantId)?.sessionWiGuard ? withSessionWiReminder(message) : message;
-    const mode = processModes.get(tenantId) ?? 'print';
     if (mode === 'interactive') {
       // Image handling for interactive mode: save images to temp files and pass
       // file paths to CC, which will use its native Read tool to view them.
@@ -5776,11 +5855,16 @@ export function createPool(options?: PoolOptions): Pool {
       if (warmupDelay > 0) {
         setTimeout(() => {
           const current = processes.get(tenantId);
-          if (!current || current.process !== proc.process || current.state !== 'busy') return;
-          void markInteractivePromptSent(tenantId, current, prompt);
+          if (!current || current.process !== proc.process || current.state !== 'busy') {
+            settleInternalTurn(fenced, 'refused');
+            return;
+          }
+          void markInteractivePromptSent(tenantId, current, prompt).then(
+            () => settleInternalTurn(fenced, 'consumed'), () => settleInternalTurn(fenced, 'refused'));
         }, warmupDelay);
       } else {
-        void markInteractivePromptSent(tenantId, proc, prompt);
+        void markInteractivePromptSent(tenantId, proc, prompt).then(
+          () => settleInternalTurn(fenced, 'consumed'), () => settleInternalTurn(fenced, 'refused'));
       }
       return;
     }
@@ -5826,7 +5910,13 @@ export function createPool(options?: PoolOptions): Pool {
       parent_tool_use_id: null,
       session_id: null,
     };
-    writeMessage(proc.process.stdin!, envelope as unknown as StreamJsonMessage);
+    try {
+      writeMessage(proc.process.stdin!, envelope as unknown as StreamJsonMessage);
+    } catch (error) {
+      settleInternalTurn(fenced, 'refused');
+      throw error;
+    }
+    settleInternalTurn(fenced, 'consumed');
   }
 
   async function drainQueue(tenantId: string): Promise<void> {
@@ -6221,6 +6311,8 @@ export function createPool(options?: PoolOptions): Pool {
     usageMeasurementContext,
     send: sendMessage,
     admitsTurns: true,
+    preparesInput: true,
+    fencesInternalTurns: true,
     injectInput,
     kill: killProcess,
     killAll,

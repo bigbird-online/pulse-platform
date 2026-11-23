@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { buildPulseCodexModelArgs, resolvePulseCodexBin, resolvePulseCodexModel, resolvePulseRuntimePriority } from './codex-defaults.js';
+import { resolveClaudeRuntimeModel } from './model-context.js';
 import type { RuntimeId } from './types.js';
 import { isRateLimitFailureMessage, observeCcRateLimitEvent } from './cc-quota-observation.js';
 import { spawnOwnedProcess } from './owned-process.js';
@@ -36,10 +37,23 @@ export interface BatchRunInput {
   /** The owner Agent's `commitRepos` and `allowedDomains`, applied inside its `ccWriteBoundary`. */
   ccRepoAccess?: CcRepoAccess;
   codexYolo?: boolean;
+  /** Whether the owner Agent runs as the Relay host account; absent is unknown. A host-account-only runtime runs only for 'host'. */
+  ownerIsolation?: import('./agent-isolation.js').OwnerIsolation;
   ccModel?: string;
   ccReasoningEffort?: string;
   codexModel?: string;
   codexReasoningEffort?: string;
+}
+
+/** How long a finished stream-json run waits for stdout to drain before it is finalized. */
+const STREAM_DRAIN_MS = 2_000;
+
+/** CC's own placeholder for a turn that answers nothing; never a reply to deliver. */
+const NO_RESPONSE_PLACEHOLDER = 'No response requested.';
+
+/** A reply worth delivering, or undefined for CC's no-response placeholder. */
+function deliverableReply(text: string): string | undefined {
+  return text.trim() === NO_RESPONSE_PLACEHOLDER ? undefined : text;
 }
 
 export interface BatchRunResult {
@@ -51,9 +65,18 @@ export interface BatchRunResult {
   timedOut: boolean;
   spawnErrorCode?: string;
   spawnErrorMessage?: string;
+  /** A fixed, public reason the job may report; never native output. */
+  failureReason?: string;
+  /** Tool permissions the runtime refused during the run (agy denied_actions). */
+  deniedActions?: string[];
   attemptedRuntimes?: RuntimeId[];
   /** Every attempt that failed before this result: its stdout and stderr, and when it ended. */
   failedAttempts?: Array<{ output: string; endedAt: string }>;
+  /**
+   * The run's last reply alone, without the text of earlier turns that
+   * `stdout` joins; undefined when the runtime does not separate it.
+   */
+  finalText?: string;
 }
 
 export interface RuntimeFailure {
@@ -158,7 +181,7 @@ const CODEX_HEADER_LIMIT = 64 * 1024;
  * not depend on reading a shell's environment. Failure to write it is logged
  * and leaves the run unchanged; the proof is removed when the process exits.
  */
-function scheduledSessionProof(run: ScheduledNativeSession | undefined, runtime: 'cc' | 'codex', pid: number | undefined) {
+export function scheduledSessionProof(run: ScheduledNativeSession | undefined, runtime: 'cc' | 'codex' | 'agy', pid: number | undefined) {
   let written: { path: string; sessionId: string } | undefined;
   let attempted = false;
   const observe = (sessionId: string): void => {
@@ -270,6 +293,11 @@ async function runCommand(spec: CommandSpec, timeoutMs: number, beforeAttempt?: 
     let spawnErrorMessage: string | undefined;
     let failureAbort = false;
     const codexRun = spec.runtime === 'codex';
+    // The last reply of a stream-json run: only a successful `result` event counts,
+    // never the text of an assistant turn that may be followed by tool calls.
+    let finalText: string | undefined;
+    // Resolves once the stream-json reader has consumed all of stdout.
+    let streamDrained: Promise<void> = Promise.resolve();
     let sigkillTimer: ReturnType<typeof setTimeout> | undefined;
 
     const requestChildTermination = (): void => {
@@ -294,9 +322,12 @@ async function runCommand(spec: CommandSpec, timeoutMs: number, beforeAttempt?: 
       if (sigkillTimer) clearTimeout(sigkillTimer);
 
       let finalStdout = stdout;
+      // Set only when the runtime's own last-message file was read.
+      let lastMessage: string | undefined;
       if (spec.outputPath) {
         try {
           finalStdout = readFileSync(spec.outputPath, 'utf-8');
+          lastMessage = finalStdout;
         } catch {
           finalStdout = stdout;
         }
@@ -315,6 +346,8 @@ async function runCommand(spec: CommandSpec, timeoutMs: number, beforeAttempt?: 
         effectiveExitCode = 1;
       }
 
+      // A stream-json run separates its last reply; an `outputPath` run (Codex) writes only that.
+      const lastReply = spec.streamJson ? finalText : lastMessage;
       resolve({
         runtime: spec.runtime,
         stdout: finalStdout,
@@ -324,6 +357,7 @@ async function runCommand(spec: CommandSpec, timeoutMs: number, beforeAttempt?: 
         timedOut,
         spawnErrorCode,
         spawnErrorMessage,
+        ...(lastReply !== undefined ? { finalText: lastReply } : {}),
       });
     };
 
@@ -336,6 +370,7 @@ async function runCommand(spec: CommandSpec, timeoutMs: number, beforeAttempt?: 
 
     if (spec.streamJson && child.stdout) {
       const rl = createInterface({ input: child.stdout });
+      streamDrained = new Promise<void>((resolveDrain) => rl.once('close', () => resolveDrain()));
       rl.on('line', (line: string) => {
         const trimmed = line.trim();
         if (!trimmed) return;
@@ -373,6 +408,10 @@ async function runCommand(spec: CommandSpec, timeoutMs: number, beforeAttempt?: 
             return;
           }
 
+          if (msg.type === 'result' && typeof msg.result === 'string') {
+            finalText = msg.subtype === 'success' && (msg as { is_error?: boolean }).is_error !== true
+              ? deliverableReply(msg.result) : undefined;
+          }
           if (msg.type === 'result' && typeof msg.result === 'string' && !stdout) {
             stdout = msg.result;
             abortForImmediateFailure(msg.result);
@@ -403,7 +442,14 @@ async function runCommand(spec: CommandSpec, timeoutMs: number, beforeAttempt?: 
 
     child.on('exit', (code, signal) => {
       const exitCode = code ?? (signal ? 1 : 0);
-      finalize(exitCode);
+      // stdout may still hold the final events after exit: read them first, but
+      // never wait on a pipe a lingering grandchild keeps open.
+      let drainTimer: ReturnType<typeof setTimeout> | undefined;
+      const drainCap = new Promise<void>((done) => { drainTimer = setTimeout(done, STREAM_DRAIN_MS); drainTimer.unref?.(); });
+      void Promise.race([streamDrained, drainCap]).then(() => {
+        if (drainTimer) clearTimeout(drainTimer);
+        finalize(exitCode);
+      });
     });
 
     child.on('error', (err: NodeJS.ErrnoException) => {
@@ -430,7 +476,7 @@ function createCcCommand(input: BatchRunInput, options: CcBatchOptions): Command
       '--max-turns', String(input.maxTurns ?? 1000),
       '--dangerously-skip-permissions',
       '--verbose',
-      ...(ccModel ? ['--model', ccModel] : []),
+      ...(ccModel ? ['--model', resolveClaudeRuntimeModel(ccModel)] : []),
       ...(ccReasoningEffort ? ['--effort', ccReasoningEffort] : []),
       ...launch.settingsArgs,
       ...launch.mcpArgs,
@@ -598,6 +644,10 @@ export function createCodexBatchRuntimeAdapter(): BatchRuntimeAdapter {
   };
 }
 
+/** Why a scheduled job whose runtime preference mixes agy with other runtimes does not run. */
+export const AGY_MIXED_PREFERENCE_REFUSAL =
+  'agy 只能单独作为作业运行时（runtimePreference 为 ["agy"]），不与其他运行时混排，也不作回退；本次未运行';
+
 export function createBatchRuntimeOrchestrator(
   options: BatchRuntimeOrchestratorOptions,
 ): BatchRuntimeOrchestrator {
@@ -621,6 +671,13 @@ export function createBatchRuntimeOrchestrator(
 
   return {
     async run(input, preferredRuntimes) {
+      // agy runs only alone: it is never a fallback target and never falls back
+      // (AC5), so a preference mixing it with other runtimes is refused outright.
+      if (preferredRuntimes?.includes('agy') && new Set(preferredRuntimes).size > 1) {
+        const failureReason = AGY_MIXED_PREFERENCE_REFUSAL;
+        return { runtime: 'agy', stdout: '', stderr: failureReason, exitCode: 1, durationMs: 0, timedOut: false,
+          failureReason, attemptedRuntimes: [] };
+      }
       const order = buildOrder(preferredRuntimes);
       if (order.length === 0) {
         throw new Error('No batch runtimes configured');
@@ -743,6 +800,8 @@ export interface InteractiveRunOutcome {
   sawAssistant: boolean;
   lastStopReason?: string | null;
   pendingToolUseIds: string[];
+  /** Text of the last terminal assistant entry (end_turn/stop_sequence), or the `result` entry. */
+  finalText?: string;
 }
 
 export function extractInteractiveRunOutcome(jsonlPath: string, afterTimestamp: number): InteractiveRunOutcome {
@@ -763,6 +822,7 @@ export function extractInteractiveRunOutcome(jsonlPath: string, afterTimestamp: 
   let terminal = false;
   let sawAssistant = false;
   let lastStopReason: string | null | undefined;
+  let finalText: string | undefined;
 
   for (const line of content.split('\n')) {
     const trimmed = line.trim();
@@ -775,9 +835,11 @@ export function extractInteractiveRunOutcome(jsonlPath: string, afterTimestamp: 
         sawAssistant = true;
         lastStopReason = entry.message?.stop_reason;
         let hasText = false;
+        const texts: string[] = [];
         for (const block of entry.message.content) {
           if (block.type === 'text' && typeof block.text === 'string') {
             parts.push(block.text);
+            texts.push(block.text);
             hasText = hasText || block.text.length > 0;
           } else if (block.type === 'tool_use' && typeof block.id === 'string') {
             toolUseIds.add(block.id);
@@ -785,6 +847,7 @@ export function extractInteractiveRunOutcome(jsonlPath: string, afterTimestamp: 
         }
         if ((lastStopReason === 'end_turn' || lastStopReason === 'stop_sequence') && hasText) {
           terminal = true;
+          finalText = deliverableReply(texts.join(''));
         }
       } else if (entry.type === 'user' && Array.isArray(entry.message?.content)) {
         for (const block of entry.message.content) {
@@ -794,6 +857,8 @@ export function extractInteractiveRunOutcome(jsonlPath: string, afterTimestamp: 
         }
       } else if (entry.type === 'result' && typeof entry.result === 'string') {
         parts.push(entry.result);
+        // Only a successful result is a reply to deliver; a failed one is not.
+        finalText = entry.subtype === 'success' && entry.is_error !== true ? deliverableReply(entry.result) : undefined;
         terminal = true;
       }
     } catch {
@@ -808,6 +873,7 @@ export function extractInteractiveRunOutcome(jsonlPath: string, afterTimestamp: 
     sawAssistant,
     lastStopReason,
     pendingToolUseIds,
+    ...(finalText !== undefined ? { finalText } : {}),
   };
 }
 
@@ -901,6 +967,7 @@ export function createCcInteractiveBatchRuntimeAdapter(options: CcBatchOptions =
           timedOut,
           spawnErrorCode,
           spawnErrorMessage,
+          ...(outcome.finalText !== undefined ? { finalText: outcome.finalText } : {}),
         };
         return result;
       };
@@ -1015,7 +1082,8 @@ export function createCcInteractiveBatchRuntimeAdapter(options: CcBatchOptions =
  * starts from the platform priority and still fails over.
  */
 export function failoverRuntimes(preference: RuntimeId[] | undefined, strict: boolean): RuntimeId[] | undefined {
-  if (strict) return preference;
+  // A job that names agy runs exactly what it declared: agy takes no failover.
+  if (strict || preference?.includes('agy')) return preference;
   const batch: RuntimeId[] = [...new Set<RuntimeId>([...resolvePulseRuntimePriority(), 'codex', 'cc'])];
   const declared = preference ?? [];
   return [...declared, ...batch.filter((runtime) => !declared.includes(runtime))];

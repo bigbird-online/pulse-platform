@@ -334,10 +334,9 @@ def test_authority_overlap_and_exact_human_inventory_required(setup):
         "reason": "cleanup",
     }
     assert error(rig.send("retire_resources", inventory)) == "source_invalid"
-    assert (
-        error(rig.approve("retire_resources", inventory, actor=rig.contexts["owner"]))
-        == "authority_denied"
-    )
+    # On an active WI only its current holder retires its own workspaces.
+    stranger = replace(rig.contexts["owner"], actor="stranger", session="stranger-session")
+    assert error(rig.approve("retire_resources", inventory, actor=stranger)) == "authority_denied"
     bad = {
         "workspaces": [
             {

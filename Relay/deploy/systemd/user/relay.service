@@ -1,0 +1,59 @@
+[Unit]
+Description=Pulse Relay Gateway
+After=network-online.target
+Wants=network-online.target
+# 2026-08-07（Duke b2-relay-selfref-alert-20260807）：Relay 反复起不来时告知大鸟。
+#
+# 此前本 unit 只有 Restart=always，没有任何失败告警 —— 单次崩溃自愈无需惊动人，
+# 但**持续起不来**同样不能静默。而想报「Relay 挂了」的告警要走 Relay 的
+# /internal/push 送出，正是自指死结（0806 审查 B2）。
+#
+# 阈值用 systemd 原生而非自造计数器：Duke 原话「你要是自己写个计数器，那计数器
+# 在 Relay 挂掉的场景下又是一层自指风险——这正是你这份提案通篇在防的东西，
+# 别在最后一步栽进去」。10min 窗口内允许 3 次 start；自动恢复链触限后
+# 才终态 failed 并触发下面的 OnFailure=。RestartMode=direct 使中间自动重启
+# 跳过 failed/inactive 及 OnFailure，单次可自愈崩溃不会被误报为「反复起不来」。
+StartLimitIntervalSec=600
+StartLimitBurst=3
+OnFailure=relay-down-notify.service
+
+[Service]
+ReadOnlyPaths=/Users/owner/Coevolution
+UMask=0077
+Type=simple
+WorkingDirectory=/Users/owner/Coevolution/Bigbird/PULSE/Relay
+# Audit: who/what triggered start (helps locate manual restarts vs systemd auto-restart)
+# Logs to ~/.relay/restart-audit.log with timestamp + invocation id + user.
+ExecStartPre=/bin/sh -c 'echo "$(date -Iseconds) START unit=relay.service invocation=$${INVOCATION_ID:-?} user=$$USER" >> /home/pulse/.relay/restart-audit.log'
+# Dist freshness gate (2026-07-05): 断根"提交≠部署"。启动前确认 dist 是从当前 src
+# 编出来的；陈旧则自动 npm run build 再起（自愈，因 Restart=always 不能直接拒启动否则
+# 5s 无限重试锁死可用性）；仅 src 编译不过时才 exit 非 0 拒启动。见 scripts/ensure-dist-fresh.sh。
+ExecStartPre=/bin/bash /Users/owner/Coevolution/Bigbird/PULSE/Relay/scripts/ensure-dist-fresh.sh
+ExecStart=/usr/bin/node /Users/owner/Coevolution/Bigbird/PULSE/Relay/dist/cli.js
+# Audit: stop trigger + exit status (memo 2026-06-24 — bigbird needs to trace who killed Relay)
+ExecStopPost=/bin/sh -c 'echo "$(date -Iseconds) STOP unit=relay.service invocation=$${INVOCATION_ID:-?} result=$$SERVICE_RESULT exit_code=$${EXIT_CODE:-?} exit_status=$${EXIT_STATUS:-?}" >> /home/pulse/.relay/restart-audit.log'
+Restart=always
+RestartMode=direct
+RestartSec=5
+Environment=HOME=/home/pulse
+Environment=PATH=/home/pulse/.local/bin:/usr/bin:/usr/local/bin:/bin
+# 1 vCPU / 1.6GiB host: serialize scheduler jobs to avoid another OOM/CPU stampede.
+# Remove this line and safe-restart Relay to roll back to legacy unbounded concurrency.
+Environment=RELAY_SCHEDULER_MAX_CONCURRENT_JOBS=1
+Environment=RELAY_CONFIG_PATH=/Users/owner/Coevolution/Bigbird/PULSE/data/relay.json
+Environment=CRON_JOBS_PATH=/home/pulse/.local/state/pulse/relay-cron/cron-jobs.json
+Environment=CRON_JOBS_STATE_PATH=/home/pulse/.relay/cron-jobs-state.json
+Environment=RELAY_CRON_RUNTIME_STATE_ROOT=/home/pulse/.local/state/pulse/relay-cron
+Environment=RELAY_CRON_ARTIFACT_ATTEST_BIN=/Users/owner/Coevolution/Bigbird/PULSE/Scripts/relay-cron-runtime-state.py
+Environment=RELAY_CRON_ARTIFACT_ENROLLMENT_ID=runtime_artifact_v1_pulse_vultr_relay_cron_jobs
+Environment=RELAY_CRON_ARTIFACT_PRODUCER_ID=relay_cron_config_writer
+Environment=METERING_DIR=/home/pulse/.relay/metering/
+Environment=CLAUDE_BIN=/home/pulse/.local/bin/claude
+Environment=CODEX_BIN=/usr/bin/codex
+Environment=HARNESS_BIN=/home/pulse/.local/share/coevolution/tools/agent-harness/bin/harness
+Environment=HARNESS_SITE_POLICY=/Users/owner/Coevolution/Bigbird/PULSE/data/harness-site-policy.yaml
+Environment="GIT_SSH_COMMAND=/usr/bin/ssh -F /home/pulse/.ssh/config"
+EnvironmentFile=-/home/pulse/.relay/relay.env
+
+[Install]
+WantedBy=default.target

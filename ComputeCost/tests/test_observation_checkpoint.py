@@ -10,7 +10,7 @@ from harness_rewrite.model import digest
 from harness_rewrite.observations import ObservationStore, PREFIX
 from tests_rewrite.test_production_ledger import Rig, git
 from pulse_compute_cost import observation_checkpoint as checkpoint_module
-from pulse_compute_cost.ledger import UsageLedger
+from pulse_compute_cost.ledger import LedgerError, UsageLedger
 from pulse_compute_cost.observation_authority import InstalledAuthority
 from test_stage_record import capture, command, record_stage, query, link, WI
 
@@ -62,6 +62,23 @@ def append(rig, count, *, seed, big=()):
         added.append(batch)
     store.append_many(added)
     return store.sequence
+
+
+def append_rows(rig, batches):
+    """Publish valid receipts, one batch per list."""
+    store = ObservationStore(rig.backend(rig.a))
+    existing = store.read()
+    previous = existing[-1]['sha256'] if existing else None
+    added = []
+    for rows in batches:
+        sequence = len(existing) + len(added) + 1
+        batch = {'schema': 'computecost_ledger_transaction/v1', 'sequence': sequence,
+                 'recorded_at': (T0 + timedelta(minutes=sequence)).isoformat().replace('+00:00', 'Z'),
+                 'previous': previous, 'facts': [r.to_dict() for r in rows]}
+        batch['sha256'] = digest(batch)
+        previous = batch['sha256']
+        added.append(batch)
+    store.append_many(added)
 
 
 def view(ledger):
@@ -336,3 +353,71 @@ def test_removed_head_never_keeps_checkpoint_facts(tmp_path):
     incremental = node(rig, root)
     assert view(incremental) == complete
     assert resumed(incremental) == 0
+
+
+def streamed(ledger, after=0):
+    return [(meta, lines) for meta, lines in ledger.stream_batches(after=after)]
+
+
+def expected_stream(rig, after=0):
+    from pulse_compute_cost.receipts import canonical
+    return [({k: v for k, v in batch.items() if k != 'facts'}, [canonical(raw) for raw in batch['facts']])
+            for batch in ObservationStore(rig.backend(rig.a)).read() if batch['sequence'] > after]
+
+
+def test_stream_batches_equal_the_complete_stream_through_the_checkpoint(tmp_path):
+    rig = Rig(tmp_path)
+    root = private(tmp_path / 'cache')
+    append(rig, 4, seed=30, big={1})
+    assert streamed(node(rig, root)) == expected_stream(rig)
+    assert not manifest_path(root).exists()  # Streaming writes no checkpoint.
+    view(node(rig, root))
+    append(rig, 3, seed=31)
+    ledger = node(rig, root)
+    assert streamed(ledger) == expected_stream(rig)
+    assert resumed(ledger) == 4
+    assert streamed(node(rig, root), after=5) == expected_stream(rig, after=5)
+    assert streamed(node(rig, tmp_path / 'absent', checkpoint=False), after=2) == expected_stream(rig, after=2)
+
+
+def _drop_head(rig):
+    git(rig.a, 'pull', '-q', 'origin', 'main')
+    git(rig.a, 'rm', '-q', PREFIX + 'head.json')
+    git(rig.a, 'commit', '-qm', 'drop observation head')
+    git(rig.a, 'push', '-q', 'origin', 'main')
+
+
+def test_stream_batches_never_hand_out_a_prefix_the_core_no_longer_holds(tmp_path):
+    """Review repro: head removed; a consumer stopping after batch 1 must not index stale facts."""
+    from pulse_compute_cost.fact_index import FactIndex, stream_identity
+    rig = Rig(tmp_path)
+    root = private(tmp_path / 'cache')
+    append(rig, 3, seed=32)
+    view(node(rig, root))
+    _drop_head(rig)
+    assert node(rig, tmp_path / 'absent', checkpoint=False).receipt_snapshot()['watermark'] == 0
+    assert streamed(node(rig, root)) == []
+    ledger = node(rig, root)
+    index = FactIndex.open(tmp_path / 'derived' / 'fact-index.sqlite', stream_identity(ledger))
+    assert index.catch_up(ledger, upto=1) == 0
+    assert index.binding().sequence == 0 and index.stats()['facts'] == 0
+
+
+def test_offline_locality_phases_write_nothing_under_the_ledger_root(tmp_path):
+    """Review repro: the full phase must not publish a checkpoint into the registered ledger root."""
+    from pulse_compute_cost.locality_check import run
+    from support.synthetic_ledger import generate
+    rig = Rig(tmp_path)
+    root = private(tmp_path / 'ledger-root')
+    rows = generate(33, sessions=4)
+    append_rows(rig, [rows[:10], rows[10:20], rows[20:30]])
+    out = tmp_path / 'out'
+    for phase in ('index', 'full'):
+        run({}, node(rig, root, read_only=True), out, 3, phase)
+    assert not (root / 'observation-checkpoint').exists()
+    view(node(rig, root))  # A routine reader publishes a checkpoint; offline phases leave it alone.
+    append_rows(rig, [rows[30:40], rows[40:]])
+    before = {p.name: p.read_bytes() for p in (root / 'observation-checkpoint').iterdir()}
+    for phase in ('index', 'full'):
+        run({}, node(rig, root, read_only=True), out, 5, phase)
+    assert {p.name: p.read_bytes() for p in (root / 'observation-checkpoint').iterdir()} == before

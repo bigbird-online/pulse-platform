@@ -786,6 +786,14 @@ class LiveCollector:
         return True, freshness_by_source
 
     def _collect_ack(self, collection: Collection, existing: Sequence[IncidentProjection]) -> bool:
+        if not self.ack_argv:
+            collection.capabilities.append(_capability(
+                "s2.ack_overdue", health="unknown", freshness="error", observed_at=None,
+                max_age_seconds=2100, reason="Ack probe is retired and no command was injected",
+                evidence=("command:ack-probe-not-configured",),
+            ))
+            collection.provenance_sources.append(_source("ack-probe", "error", error_code="not_configured"))
+            return False
         try:
             result = self.runner.run(self.ack_argv, timeout=ACK_TIMEOUT_SECONDS)
             if result.returncode != 0:
@@ -1505,6 +1513,27 @@ class LiveCollector:
             self._append_cc_quota_metrics(collection, cc_quota_future)
         if self.paths.grok_quota is not None:
             self._append_grok_quota_metrics(collection)
+        if self.paths.agy_quota is not None:
+            self._append_agy_quota_metrics(collection)
+
+    def _append_agy_quota_metrics(self, collection: Collection) -> None:
+        """agy account quota groups as last read by the cost publisher.
+
+        One row per bucket whose window has not reset: group, window
+        (``weekly`` / ``5h``), remaining fraction and reset time. An
+        unavailable fact leaves the value unknown with its reason and keeps the
+        time of the failed read; a stale reading has neither value nor time.
+        Not per-agent cost and never part of a cost total.
+        """
+        from .agy_quota import current_buckets, load_quota, observed_at
+        quota, error = load_quota(self.paths.agy_quota, self.now)
+        rows = current_buckets(quota, self.now) if quota and error is None else None
+        if rows == []:
+            rows, error = None, 'quota_window_elapsed'
+        collection.metrics.append(_metric('relay.agy.quota', 's1.request_trace_capture',
+            value=rows, unit='buckets', observed_at=observed_at(quota) if quota else None,
+            scope='agy account quota groups; not per-agent cost', reason=error,
+            sample_count=len(rows) if rows else None))
 
     def _append_grok_quota_metrics(self, collection: Collection) -> None:
         """Grok account weekly pool as last read by the cost publisher.

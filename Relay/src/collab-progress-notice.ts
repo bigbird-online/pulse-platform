@@ -36,7 +36,7 @@ export interface CollabNoticeContract {
   rewake: boolean;
 }
 
-export type NoticeOutcome = 'ok' | 'error' | 'timeout' | 'paused';
+export type NoticeOutcome = 'ok' | 'error' | 'timeout' | 'paused' | 'deferred';
 
 /** A contract delivered into a human conversation, with Agent display names resolved. */
 export interface CollabTurnNotice {
@@ -138,6 +138,7 @@ const OUTCOME: Record<NoticeOutcome, { title: string; template: string }> = {
   error: { title: '❌ 协作合同后台处理失败', template: 'red' },
   timeout: { title: '⏱️ 协作合同后台处理超时', template: 'orange' },
   paused: { title: '⏸️ 自动执行已暂停，协作合同未处理', template: 'grey' },
+  deferred: { title: '⏳ 撞上订阅用量上限，额度恢复后自动补跑', template: 'orange' },
 };
 
 /** Free text in Feishu card markdown: drop characters that open markup. */

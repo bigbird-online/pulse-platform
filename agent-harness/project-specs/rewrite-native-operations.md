@@ -140,6 +140,13 @@ The tool process keeps its last 32 original execute responses by `request_id` an
 answers that read from them without a core call, because the core journals no
 rejected request and cannot read a creation that returned no WI ID; other request
 ids are read from the core. The full response stays in the tool's details.
+A `resume` result carries `result.latest_checkpoint` (`record_id`, `author`,
+`summary`, `position`: its 1-based place among the records, which later work
+records may follow), the handover a successor after a rollover, continuation or
+switch starts from. The brief's priority is the status line, `next_action`, the
+error, then this checkpoint: its record and as much of its summary as the room
+left after those allows (at most 220 characters, at least an opening, else the
+line is left out), then the rest; `more:` names it first.
 
 A refusal names its recovery. Execution refusals (`No current execution grant`,
 `Current resource execution scope required` and the workspace scope refusals) add
@@ -354,7 +361,7 @@ Host 策略的可选段 `pull_request_gate` 启用该关卡，例如：
 - `submit_pull_request {repository, number, head_sha}`：标准与轻量 WI 均可，调用者须是持有者
   Agent 的会话且 generation 为当前值。Host 现场读 GitHub：PR 须开着、未合并、头等于 `head_sha`、
   基线为 main。作者即创建该头提交的会话：Host 先从登记会话自己的原生记录找提交执行窗口——执行类
-  工具（CC 的 Bash；Codex 的 shell、shell_command、exec_command、exec、js 与 local_shell_call；Pi 的 bash）的调用，
+  工具（CC 的 Bash；Codex 的 shell、shell_command、exec_command、exec、js 与 local_shell_call；Pi 的 bash；agy 的 run_command）的调用，
   其实际命令在任意位置运行 `git [全局选项] commit`（或 merge、pull；含 `git -C <目录>`、`-q`/`--quiet`、
   `-F`、heredoc、`--amend`、复合命令与 `cd … &&` 前缀），记下该调用的模型、工作区与开始、结束时间戳。
   Pi 记录首行须是 `session` 头（原生会话标识与 cwd；Pi 在头部 cwd 打开会话并在该目录运行工具），否则整份
@@ -363,6 +370,24 @@ Host 策略的可选段 `pull_request_gate` 启用该关卡，例如：
   ComputeCost 按 fork 记录原样读取，继承的声明同样绑定 fork 的请求，整份记录声明过两个 WI 的 fork 不能登记。助手消息的 `model` 为该轮模型，此前最近的 `thinking_level_change` 为强度；窗口从含该
   `toolCall` 的助手消息行时间戳开始（Pi 先写入该消息再执行工具），到 `toolCallId` 与工具名都对应的
   `toolResult` 行结束，`isError` 的结果不认领提交（同 CC 的 `is_error`）。
+  agy 记录是 `<brain>/<会话标识>/.system_generated/logs/transcript_full.jsonl`，会话标识即该目录名，不在此位置
+  的文件不可用；每行是一步（带整数 `step_index` 与字符串 `type`），完整行缺这两项则整份记录不可用。`PLANNER_RESPONSE`
+  步的 `model` 为该轮模型 ID，其档位后缀（`-low`、`-medium`、`-high`、`-xhigh` 等）为强度，无后缀的强度为
+  unknown。该步 `tool_calls` 中的 `run_command`（命令取 `args.CommandLine`）可开窗，开始于该步 `created_at`。调用不带
+  id；结果（其后到下一个模型步之前的 `GENERIC` 步）不指名调用，成功结果不回显命令，并行结果按完成先后写入，
+  所以只在唯一读法下把结果配给命令：该步恰有一个 `run_command`，且其后恰有一条命令结果（去掉开头的
+  `Created At:`/`Completed At:` 行后，以 agy 的命令结果行开头：`Command exited with code`、`Command failed to run:`
+  或命令权限拒绝）。窗口结束于这条结果自己的 `Completed At`。输出文本没有来源标记（复合命令与 Git hook 能打印同样形状的文字），所以 agy
+  只在能静态排除其他输出的一种形状下认领提交：命令行恰为 `cd <字面绝对路径> && git commit <参数>`（没有其他运算符、子
+  shell、变量、命令替换或注释），参数含 `--no-verify` 或 `-n`（不跑 pre-commit 与 commit-msg hook），不含 `-q`/`--quiet`；
+  结果为 `Command exited with code 0.`，该步不是 ERROR、不带 `error`，且输出第一行就是 git 自己的摘要
+  `[<分支> <sha>] <标题>`（或 `[<分支> (root-commit) <sha>] <标题>`，记为 `agy_commit`）。HEAD 日志核对再要求该工作区在窗口内
+  恰有一条提交类移动，移到头提交，且由该 sha 指名；窗口内有第二条提交（同工作区的其他调用或会话），作者不明。两个会话
+  的窗口都含同一移动时，全 PR 作者搜索报告两者，内核判为作者不明（`ambiguous_commit_authors`）。其他形状一律不认领。
+  调用只属于自己的模型步，不延续到下一步。一步有多个命令、结果缺 `Completed At`、被截断或认不出是命令结果、失败、非零
+  退出、没有结果，或首行不是指名该提交的摘要行，都不认领；记录里步序号重复或倒退时，整份记录不认领任何提交：作者不明，
+  转人类。agy 会话的提交要自动派审，须按上述形状单独一步执行；否则走人工确认。
+  agy 记录没有工作目录，也没有 `declare_session_wi`：工作区只认上述 `cd <字面绝对路径>`，声明为空。
   工作区：Codex 先取工具输入的 `workdir`，否则会话 cwd；再按 shell 作用域静态读解码后的实际命令
   （`bash -lc '<脚本>'` 读其脚本）：只有与提交命令处于同一 shell 作用域、在其之前确定生效的 `cd <目录>`
   才改变工作区，最后取该提交命令的 `git -C`（均按 shell 引号规则解析，相对路径按前一级解析）。
@@ -384,7 +409,8 @@ Host 策略的可选段 `pull_request_gate` 启用该关卡，例如：
   提交的作者证据。执行成功但 HEAD 未动的命令（如干净工作区上的 `git diff --cached --quiet || git commit`）
   不认领任何提交。同一窗口内的多条提交都归该调用（一条命令可提交多次），`--amend` 产生的新 sha 同样
   归该调用。只有核对通过的窗口才是作者证据，其模型即作者模型，须属已知家族（`claude-*` 为 Claude，
-  `gpt-*` 为 GPT）。输出文本本身不是凭证；没有核对通过的证据（另一会话代为登记、`printf` 伪造而工作区
+  `gpt-*` 与 `codex-*` 为 GPT，`gemini-*` 为 Gemini）；审核运行时取另一家族：Claude 作者派 Codex，GPT 作者派 CC，
+  Gemini 作者派 Codex。输出文本本身不是凭证；没有核对通过的证据（另一会话代为登记、`printf` 伪造而工作区
   HEAD 日志无对应提交类移动的提交行、时间窗外的提交）即 `source_unavailable`。例外是本 WI 的前任持有
   会话：内核按日志把每个卸任的持有者（经交接、在别处继续或接管）记入 `former_holders`；头提交经下述全 PR
   作者搜索核对为同一 Agent 某个前任持有会话所创建时，作者即该会话及其那一轮模型，后继持有会话可登记，
@@ -409,7 +435,7 @@ Host 策略的可选段 `pull_request_gate` 启用该关卡，例如：
   WI 时，以创建该提交的那一轮所在请求的声明为准（`request_declared_wis`，见下；多个窗口都创建了该提交时须全部非空且一致），它都在谱系内才接受；
   它是别的 WI 或证明不了都拒绝，并给出所依据的 WI；头提交由子代理创建时，按下述作者归属判定；采纳的子代理若有声明，也须都在
   该谱系内，否则同样拒绝。作者是 PR 相对 main 引入的全部提交（GitHub 列表，至多 250 个）的生产会话：Host 在本 Agent
-  的 CC、Codex 与 Pi 会话目录（策略中未写 `runtime` 的 profile 为 Pi）中，对每个提交用同一套工作区 HEAD 日志时间窗与分支核对找生产会话与模型
+  的 CC、Codex、Pi 与 agy 会话目录（策略中未写 `runtime` 的 profile 为 Pi；agy 只认上述 transcript 位置）中，对每个提交用同一套工作区 HEAD 日志时间窗与分支核对找生产会话与模型
   （CC 会话连同按上述规则采纳的子代理一起搜索，子代理以自己的会话标识计为作者，所属主会话的声明
   随条目一并给出，与子代理自己的声明分开；主会话条目同样带 `request_declared_wis`，按上述规则代替会话声明，
   该会话有多个窗口创建同一提交时，须每个窗口的证明都非空且一致，否则为 null；Pi 记录只认其原生位置与文件名：距目录根至多两层、路径不含
@@ -435,9 +461,13 @@ Host 策略的可选段 `pull_request_gate` 启用该关卡，例如：
   `git commit` 的那一轮（同一用量消息 id 的全部主记录）计给的 WI，由 `child_dispatch.request_charged` 用上述
   请求证明给出：该调用恰在一条主记录上，这些主记录都走到同一个请求，该请求的声明满足上述条件，主会话没有解不开的声明，
   其他记录文件不共享主会话的 uuid 或该消息 id；否则为 null。Host 只记录，不判定。全 PR 作者搜索中子代理的条目把它自己的声明（`declared_wis`）与所在会话的声明（`session_declared_wis`）分开：子代理自己的声明若有，须都在该谱系内；归属按下述规则判定 marker，marker 无效时取子代理自己的声明，否则会话声明。
-  内核判定：marker 是未结束子 WI，`dispatch_declared_wis` 非空、只含该子 WI 或其父 WI，且含父 WI 时
+  内核判定：marker 是未结束子 WI，`dispatch_declared_wis` 非空、只含该子 WI、其父 WI 或 `cost_served`
+  （Host 按同一导出读出的其余已声明 WI）显示属于同一父 WI 的兄弟子 WI，且含该子 WI 以外的 WI 时
   `cost_child` 显示该子 WI 属于该父 WI、仍为 active、建立不晚于 `dispatch_since`，该子代理才归属该子 WI，此时
-  ComputeCost 把它每一轮用量都计给该子 WI；登记到父 WI 时，会话恰好只声明父 WI 也算（结果同为拒绝）。marker
+  ComputeCost 把它每一轮用量都计给该子 WI（`child_work_items.lineage_child`）；登记到父 WI 时，
+  `dispatch_declared_wis` 只含父 WI 与该子 WI，或会话恰好只声明父 WI 也算；含兄弟子 WI 时须有与登记到子 WI
+  相同的导出证明（`cost_child` 与 `cost_served`）。所以一个请求可派多个带标记
+  子代理并行推进多个子 WI，各自归属自己的标记。marker
   是其他任意 WI（如登记目标本身）且 `dispatch_declared_wis` 恰为该 WI 时，子代理归属该 WI。否则
   继承子代理自己的声明，再否则继承会话的声明。作者归属只要在该谱系内即接受：父 WI 持有会话自己提交的头、未带标记的子代理提交都可登记到子 WI，
   归属子 WI 的子代理提交也可登记到父 WI。
@@ -645,7 +675,7 @@ Host 策略的可选段 `pull_request_gate` 启用该关卡，例如：
               "args": ["pr-review-dispatch", "--actor", "pulse", "--runtime", "codex",
                        "--default-minutes", "7,22,37,52"],
               "timeout": 150, "skipExitCode": 3, "skipOutput": "PR_REVIEW_SKIP"},
-     "prompt": "你是 Pulse 的异构审核者。上方批次只有一项。先用 declare_session_wi 声明其 work_item_id（只声明这一个），再用 harness-native execute 提交 receive_pull_request_review {candidate_id, attempt_id}；然后读 PR（repository、number）在 head_sha 的差异，按正确性与风险打 0–100 分，提交 record_pull_request_review {candidate_id, score, reason}。不修改 PR。"},
+     "prompt": "你是 Pulse 的异构审核者。上方批次只有一项。先用 declare_session_wi 声明其 work_item_id（只声明这一个），再用 harness-native execute 提交 receive_pull_request_review {candidate_id, attempt_id}；先读 PR（repository、number）在 head_sha 的差异，定下要跑哪些测试、它们读写什么，再准备副本：D=$(realpath \"$(mktemp -d)\")（沙箱规则按真实路径匹配）；本地检出（工作区所在仓即是它时用工作区的仓，否则用 /Users/owner/Coevolution 下该仓）里 git cat-file -e <head_sha>^{commit} 成功就以它为 R，只读导出，不在共享检出 fetch；不成功就 git init -q \"$D/r\"，在其中 git fetch <该仓 GitHub 地址> pull/<number>/head，确认 git rev-parse FETCH_HEAD 等于 head_sha，以 $D/r 为 R；mkdir \"$D/t\" \"$D/.home\" \"$D/tmp\"，硬排除 X 为 ':(exclude).harness' ':(exclude,glob)**/.env*' ':(exclude,glob)**/secrets.yaml*' ':(exclude,glob)**/*.key' ':(exclude,glob)**/*.pem'，再按本会话文件访问规则加上该仓不得读取的目录；git -C R archive <head_sha> -- . X ':(exclude,glob)**/*credential*' ':(exclude,glob)**/*token*' | tar -x -C \"$D/t\"，导出其余完整树（含同 head 的 Scripts/、.github/、config/ 等测试依赖）；再补回名字含 credential、token 的源代码与文档：用 git -C R ls-tree -r -z --name-only <head_sha> 按 NUL 分隔读出路径，取路径含 credential 或 token（不分大小写）且以 .py .ts .tsx .js .mjs .cjs .md .swift .sh 结尾的，每条写成 ':(literal)<路径>'；清单为空就跳过这一步（只有排除项时 Git 会对整棵树导出），不空才 git -C R archive <head_sha> -- <这些字面路径> X | tar -x -C \"$D/t\"，补回同样受 X 约束，其余同名文件仍不导出；不从别的提交或生产目录补文件；被排除的文件是测试依赖时，相关测试记为未验证。把 (version 1)(allow default)(deny file-read* (subpath \"/Users\") (subpath \"/Volumes\") (subpath \"/private/tmp\") (subpath \"/private/var/folders\"))(allow file-read-metadata)(deny file-write*)(allow file-read* (subpath \"$D\") (subpath \"/Users/owner/.local/share/coevolution/python-env\") (subpath \"/Users/owner/.local/share/uv/python\")<RELAY_READ>)(allow file-write* (subpath \"$D\") (literal \"/dev/null\") (literal \"/dev/tty\") (regex #\"^/dev/fd/\"))(deny network*) 写入 \"$D/p.sb\"（$D 换成实际路径，<RELAY_READ> 平时为空；允许读路径元数据，严格路径解析要逐级 stat 上级目录）。要跑 Relay 测试时，在沙箱外为副本单独装依赖：N=$(dirname \"$(realpath \"$(command -v node)\")\")；mkdir \"$D/npm-cache\"，cp -R ~/.npm/_cacache \"$D/npm-cache/_cacache\"；在 \"$D/t/Relay\" 里 env -i PATH=$N:/usr/bin:/bin HOME=\"$D/.home\" npm ci --offline --ignore-scripts --no-audit --no-fund --cache \"$D/npm-cache\"，按候选 head 的 package-lock.json 逐包校验完整性、不联网、不跑安装脚本，不读不写共享安装；失败（缓存缺包、完整性不符）则 Relay 测试记为未验证；依赖安装脚本或原生构建的测试也记为未验证。<RELAY_READ> 换成 (subpath \"$(dirname \"$N\")\")，只放行这一个 Node 版本；不跑 Relay 测试时 <RELAY_READ> 为空、N 为空。在 $D/t 里用 env -i PATH=${N:+$N:}/Users/owner/.local/share/coevolution/python-env/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin HOME=\"$D/.home\" TMPDIR=\"$D/tmp\" sandbox-exec -f \"$D/p.sb\" <测试命令> 跑候选测试：不继承生产环境变量，文件只能写 $D，读不到 $D、Python 运行时（跑 Relay 测试时另加该 Node 版本）以外的用户目录、外置盘和其他临时目录，也不能联网；用完 rm -rf \"$D\"。然后按正确性与风险打 0–100 分，提交 record_pull_request_review {candidate_id, score, reason}；缺依赖、被沙箱挡住或跑到时限没跑完的测试在 reason 里写明未验证，不记为通过。不修改 PR。"},
    "delivery": {"mode": "none"}}
   ```
 
@@ -819,7 +849,45 @@ their original path and can still be revised, replaced and retired.
 
 After business completion or explicit termination, first read the exact managed
 inventory. A real human/controller may approve `retire_resources` with
-`resource_ids` and `reason`. Otherwise the effect service submits
+`resource_ids` and `reason`. On an active WI its current holder may retire its
+own workspaces with the same human decision for the exact inventory: each must
+be ready (or already retiring), inside the holder's own scope, not occupied by a
+running task, and without an unsettled effect acting on it or publishing a source
+captured from it. Such a retirement is not withdrawn by a later handover, stop
+or completion: it is the closing of a workspace, not new work, and it runs while
+the WI is active, transferring, stopped, completed or terminated. It cannot be
+cancelled; the scope stays owned until it succeeds, after which the same scope may
+be allocated again. A failed retirement (for example `unique_commits_preserved`)
+is final and settled: no drain reads it back or starts it again (a late
+observation is kept only as evidence), and it is not a pending retirement: the
+workspace it kept is in ordinary use again (tasks on its scope are claimed, its
+write bindings open, its source is captured, it is revised), it still owns its
+scope, `reopen_work` is not held by it, and only a new approved request retires
+it.
+
+Every workspace records the surface of the session that allocated it, and its
+allocation, revision and retirement run only on that host: the inspected effect
+carries its `host`, and an effect service or a session's own drain on another
+host skips it. For a workspace recorded before surfaces were kept, only its
+allocation proves the host: the surface of the journal record that committed the
+allocation effect's successful `EffectObserved` event, provided every attempt of
+that allocation was started (`EffectAttemptStarted`) from that same surface.
+Committed events count, never command inputs: a revision request, a duplicate
+success receipt (which commits nothing) or a success the kernel did not record
+proves nothing. The kernel reads this from the WI's journal records in each
+transaction, beside the replayed state (as it reads family facts), and a write's
+response uses the same revision's records as a later read; it is not an
+event-sourced fact. When that proof is missing (for example a retained historical
+allocation, which has no allocation effect) or two surfaces disagree, the host is unknown: its effects run nowhere and a requested retirement
+stays pending (never settled as already absent by another host); its scope stays
+owned. So an active WI's holder cannot record a retirement or a revision of a
+workspace whose host is not proven (`domain_conflict`): nothing could ever run it,
+and the workspace would turn from usable to blocked. It stays in use as it is;
+`replace_workspace` continues the work in a new workspace on this host. A
+terminal WI's reclaim keeps its rule. Only an installation whose policy has no surface falls back to where the
+bound source repository and Git directory exist. So a holder that moved to
+another host releases an old workspace there; the old host's effect service
+removes it under the protections below. Otherwise the effect service submits
 `retire_terminal_resources` for a terminal WI with no unsettled effect or
 delivery: the human decision that ended the WI covers its cleanup, and the
 request covers every ready, unretired resource. An effect is unsettled while it
@@ -1673,8 +1741,9 @@ transport, preserving source history and normal compare-and-swap publication.
 `observed_absence`（读回证明未发生）的效果；进行中的 WI 由当前持有者提出，已
 completed/terminated 的 WI 由当前所有者提出。未知结果和 `workspace_retire` 不可取消。
 
-资源意图在 WI 结束、执行代际改变（子 WI 随父 WI 换代）或资源被替换后成为过时意图
-（`inspect` 的效果带 `obsolete: true`），不再发送也不再续做。过时的分配或修订若从未
+分配与修订意图在 WI 结束、执行代际改变（子 WI 随父 WI 换代）或资源被替换后成为过时意图
+（`inspect` 的效果带 `obsolete: true`），不再发送也不再续做。退休意图只要资源仍指向它、WI
+仍为 active、transferring、stopped、completed 或 terminated 就不过时：持有者交接、stop 或 WI 结束都不撤回它。过时的分配或修订若从未
 开始过尝试，worker 的 `begin_effect` 把它结清为 `cancelled`（原因
 `obsolete_resource_intention`）。已有尝试时，`begin_effect`/`continue_effect` 以
 `obsolete_resource_intention` 拒绝，worker 改为 fenced 探查并 `observe_effect`：
@@ -1714,13 +1783,38 @@ identities and their head records from production Git and visits at most four WI
 requests terminal reclamation, measures disk, advances effects and observes the WI.
 Each operation rereads the authoritative facts through the normal kernel.
 
-The next WIs are the least recently visited. A WI whose head record changed since
-its last visit, one never visited, and one over its disk quota count as visited 15
-minutes earlier, so they go first without starving the rest. A terminal WI with no
-effect left to advance, no workspace left to reclaim and no exceeded quota waits six
-hours unless its head changes. The visit record in `views_root`
-(`effect-service-cursor.json`) is disposable scheduling data, never a work-state
-source; removing or corrupting it only repeats idempotent observations. Individual
+WIs wait in three queues that take turns leading, one turn per tick; each queue is
+least recently visited first. Due: a WI with an open effect of the service's kinds
+requested or retried after the journal revision its last visit recorded (none
+recorded on a cold start, a lost cursor, an older program's cursor or a WI never
+visited, so every open effect counts), or with an entry the tick could not read;
+or a WI whose last visit moved an advanceable effect, met a retryable refusal
+(retry backoff, busy ledger), or left a merge open (its checks and readback change
+on GitHub without a ledger write). A merge the kernel no longer admits (the
+effect view's `startable` is false: its WI ended, its PR was withdrawn, a later
+round replaced it) is neither begun nor probed and never due, and neither is a
+begin the kernel refused for good during the visit; an open attempt is still
+read back. The schedule keeps one record per WI under `views_root`
+(`effect-service-schedule/<WI>.json`, at most 64 KiB, at most 128 open effects:
+the newest requests) with its last visit and its open effects as folded from its
+journal, so a tick reads only entries newer than the last tick, a cold start
+reads each journal once, and no number of WIs makes the schedule unreadable; a
+malformed entry is that WI's read failure only, and a retry of an effect not
+tracked there (one past the 128 kept) makes its WI news. Anything occupying a
+record's path is replaced; writing or removing one record that still fails loses
+only that record and the tick goes on, and the WI's last visit time is kept with
+the turn so it never counts as unvisited and goes first again. Priority: any other WI whose head
+another writer changed, or that is over its disk quota. Rotation: every other WI,
+including one whose last visit left every advanceable effect as it was (the same
+unknown read back, a workspace on another Host, a refused begin) and one never
+visited. With one visit per tick, a WI waits at most 3 x (WIs in its queue) ticks,
+so a WI with a confirmed merge is visited within 3 x (due WIs) ticks. One visit
+probes at most two merges waiting on checks (`PROBE_LIMIT`), so k merges of one WI
+whose checks pass together all begin within ceil(k / 2) visits after they pass;
+the WI stays due while any of its merges is left to advance. A terminal WI with no effect left to advance, no workspace
+left to reclaim and no exceeded quota waits six hours unless its head changes. The
+visit records are disposable scheduling data, never a work-state
+source; removing or corrupting them only repeats idempotent observations. Individual
 failures remain in the report; they do not make other WIs depend on the failed WI's
 state.
 
@@ -1910,9 +2004,33 @@ results alike, is read as `children.followed` gives it in the same read: a child
 WI is held by its parent's current holder, and by nobody while the parent is
 stopped, in transfer, ended or unreadable, so nothing on it is deliverable then. A withdrawn
 pull request or one awaiting review or merge has no row. The list is separate
-from `items`, so an older gate that does not know the role ignores it. The gate
-hands every row held here to the local Relay as `role: submitter` and never wakes
-an unattended session for it; Relay delivers each round once per status.
+from `items`, so an older gate that does not know the role ignores it. A result
+goes only to the session that made the round's head, the one that registered
+`submit_pull_request` with it. `author_ended` says whether the journal shows
+that session ended, by either of two kernel records: after registering it
+reserved a transfer (rollover) in an entry it committed on the WI or, for a
+child, on its parent; or it switched away from that WI (its `request_switch`
+there was entered in the target by `continue_here` with the Host's switch
+proof, `SessionContinued.source`, or, since an entry into a target the session
+already holds commits no event, the WI is afterwards held by another
+session). Every round records `author_entry`, the Host-attested entry of its
+registering session. A round registered by a scheduler run (`author_entry:
+scheduler`), a fresh native session that never enters a conversation, goes to
+no session: its row says `author_unattended: true` and `author_ended: false`
+and has no `author_key`, so no gate delivers it, the holder's included; the
+result stays in the pull request record, the inbox and Stats. A round from
+before `author_entry` may be a scheduler run, so it counts as ended and its
+holder hears of it. A continuation or takeover by another
+session does not end it, nor does a conversation missing on some node. The
+inbox keeps of each journal only these handoff facts, not its history. While it has not ended, the row carries
+`author_key` (`holder_key`'s digest of the registering session) only on the
+surface the session registered on; the gate there hands the row to the local
+Relay with that key alone, Relay delivers to the conversation whose native
+session matches it and waits while that conversation is busy, and every other
+surface and session, the holder's included, delivers nothing. Once it has
+ended, the row has no `author_key` and the gate where the WI is held hands it
+over with the holder's `holder_key`. The gate never wakes an unattended session
+for a result; Relay delivers each round once per status.
 
 
 ### ownermac 冷切换的独立旧后台

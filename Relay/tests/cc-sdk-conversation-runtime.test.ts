@@ -15,6 +15,7 @@ import {
   type SdkUserMessage,
 } from '../src/cc-sdk-conversation-runtime.js';
 import type { StateManager, StreamJsonMessage } from '../src/types.js';
+import { fencedInternalTurn, watchInternalTurn } from '../src/internal-turn-fence.js';
 
 /**
  * A controllable mock of the SDK `query`. It records the options it was called
@@ -128,12 +129,14 @@ describe('cc-sdk conversation runtime — provider env injection', () => {
 
   it('buildSdkEngineEnv strips inherited routing and retired provider env unless an override is given', () => {
     vi.stubEnv('ANTHROPIC_BASE_URL', 'https://poison.example');
+    vi.stubEnv('ANTHROPIC_DEFAULT_FABLE_MODEL', 'retired-fable');
     vi.stubEnv('ANTHROPIC_DEFAULT_OPUS_MODEL', 'retired-opus');
     vi.stubEnv('GLM_ANTHROPIC_AUTH_TOKEN', 'retired-token');
     vi.stubEnv('OPENROUTER_ANTHROPIC_BASE_URL', 'https://openrouter.ai/api');
     try {
       const env = buildSdkEngineEnv();
       expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
+      expect(env.ANTHROPIC_DEFAULT_FABLE_MODEL).toBeUndefined();
       expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBeUndefined();
       expect(env.GLM_ANTHROPIC_AUTH_TOKEN).toBeUndefined();
       expect(env.OPENROUTER_ANTHROPIC_BASE_URL).toBe('https://openrouter.ai/api');
@@ -151,6 +154,38 @@ describe('cc-sdk conversation runtime — provider env injection', () => {
     await waitFor(() => sdk.calls.length >= 1 && sdk.calls[0].turns.length >= 1);
     expect(sdk.calls[0].options.env?.ANTHROPIC_BASE_URL).toBe(ROUTE.baseUrl);
     adapter.dispose();
+  });
+
+  it('passes the conversation /think level as the SDK effort when the engine starts', async () => {
+    const sdk = createMockSdk();
+    const adapter = createCcSdkConversationRuntime({ sdk });
+    await adapter.spawn({ tenantId: 't-effort', workspace: '/tmp', sessionId: 's1', reasoningLevel: 'xhigh' });
+    await adapter.send('t-effort', humanMsg('hi'));
+    await waitFor(() => sdk.calls.length >= 1);
+    expect(sdk.calls[0].options.effort).toBe('xhigh');
+    await adapter.spawn({ tenantId: 't-none', workspace: '/tmp', sessionId: 's2', reasoningLevel: 'off' });
+    await adapter.send('t-none', humanMsg('hi'));
+    await waitFor(() => sdk.calls.length >= 2);
+    expect(sdk.calls[1].options.effort).toBeUndefined();
+    adapter.dispose();
+  });
+
+  it('uses the managed Claude Code executable for the latest Fable alias', async () => {
+    const sdk = createMockSdk();
+    const adapter = createCcSdkConversationRuntime({ sdk });
+    vi.stubEnv('CLAUDE_BIN', '/managed/claude');
+    try {
+      await adapter.spawn({ tenantId: 't-fable', workspace: '/tmp', sessionId: 's1', ccModel: 'claude-fable-latest' });
+      await adapter.send('t-fable', humanMsg('hi'));
+      await waitFor(() => sdk.calls.length >= 1);
+      expect(sdk.calls[0].options).toMatchObject({
+        model: 'fable',
+        pathToClaudeCodeExecutable: '/managed/claude',
+      });
+    } finally {
+      adapter.dispose();
+      vi.unstubAllEnvs();
+    }
   });
 });
 
@@ -734,6 +769,34 @@ describe('cc-sdk conversation runtime — sends during a turn', () => {
     await third;
     await waitFor(() => sdk.engineTurns.length === 3);
     expect(sdk.engineTurns).toEqual(['first', 'second', 'third']);
+    await sdk.release();
+    adapter.dispose();
+  });
+
+  it('refuses a held delivery once the turn in flight moved the conversation to another session', async () => {
+    const sdk = createGatedEchoSdk();
+    const adapter = createCcSdkConversationRuntime({ sdk });
+    const responses: StreamJsonMessage[] = [];
+    adapter.on('response', (_tenant, msg) => responses.push(msg));
+    await adapter.spawn({ tenantId: 't1', workspace: '/tmp', sessionId: 's1' });
+    // A turn starts while the delivery's notice is out; the delivery, routed to s1, is held behind it.
+    await adapter.send('t1', humanMsg('first'));
+    const outcomes: string[] = [];
+    watchInternalTurn('sdk-1', outcome => outcomes.push(outcome));
+    const held = adapter.send('t1', fencedInternalTurn(humanMsg('pr result'), ['s1'], 'sdk-1'));
+    // That turn's init names another session.
+    await waitFor(() => adapter.get('t1')?.sessionId === 'gated');
+    await sdk.release();
+    await held;
+    await new Promise((r) => setTimeout(r, 20));
+    expect(sdk.engineTurns).toEqual(['first']);
+    expect(outcomes).toEqual(['refused']);
+    expect(responses.at(-1)).toMatchObject({ type: 'result', subtype: 'internal_turn_refused', delivery_visibility: 'control' });
+    // A delivery routed to the session that runs now is served and counted.
+    watchInternalTurn('sdk-2', outcome => outcomes.push(outcome));
+    await adapter.send('t1', fencedInternalTurn(humanMsg('pr result'), ['gated'], 'sdk-2'));
+    await waitFor(() => sdk.engineTurns.length === 2);
+    expect(outcomes).toEqual(['refused', 'consumed']);
     await sdk.release();
     adapter.dispose();
   });

@@ -1,10 +1,12 @@
 """Observed model, reasoning effort and commits of one authenticated native session.
 
 The PR review gate never trusts a session's own claim. The Host reads the
-session's original Claude Code, Codex or Pi record: CC assistant rows carry
+session's original Claude Code, Codex, Pi or agy record: CC assistant rows carry
 `message.model` and `effort`; Codex `turn_context` rows carry `model` and
 `effort`; a Pi assistant message carries `model`, and the latest
-`thinking_level_change` row before it the effort. Every distinct pair is
+`thinking_level_change` row before it the effort; an agy `PLANNER_RESPONSE`
+step carries the model ID, whose tier suffix (`-low` .. `-xhigh`) is the
+effort. Every distinct pair is
 reported; a turn without either value is reported as unknown, which the
 kernel treats as a missing record. A complete row that cannot be read makes the
 whole record unusable; only an unfinished last row is ignored.
@@ -38,6 +40,36 @@ name) ends it; `isError` claims nothing, as CC's `is_error`. A
 `declare_session_wi` counts as ComputeCost (`pi_request_purpose`) qualifies it:
 one call with exactly the argument `wi`, its one non-error result whose single
 text is exactly the Relay extension's ack, both on one request's parentId chain.
+
+An agy (Antigravity CLI) transcript is `<brain>/<conversation>/` +
+`session_sources.AGY_TRANSCRIPT`; the conversation directory names the session.
+Every row is one step (`step_index`, `type`); a row without them makes the
+record unusable. A `PLANNER_RESPONSE` step's `run_command` tool calls carry the
+command (`CommandLine`) but no id, and the transcript records no working
+directory: only a literal absolute `cd <dir>` or `git -C <dir>` names a commit's
+workspace. The `GENERIC` steps after it, up to the next model step, are the
+step's tool results; none names its call, a successful command result does not
+echo its command, and parallel results are written in completion order. So a
+result is bound to a command only when that is the one reading: the step ran
+exactly one `run_command`, and exactly one result after it is a command result
+(its text, after its leading `Created At:`/`Completed At:` lines, starts with
+agy's command result line). The call's window runs from the step's time to that
+result's `Completed At`. Output text has no source marking (a compound command or
+a Git hook prints the same shapes), so an agy call proves a commit only in the one
+shape that excludes other output statically (`agy_commit_shape`): the command
+line is exactly `cd <literal absolute dir> && git commit <args>` (no other
+operator, subshell, variable, substitution or comment), with `--no-verify` or
+`-n` (no pre-commit or commit-msg hook) and without `-q`/`--quiet`; the result
+says `Command exited with code 0.`, the step is not an error, and the first
+output line is git's own summary `[<branch> <sha>] <subject>` (kept as
+`agy_commit`). The workspace HEAD log must then hold exactly one commit-type move
+inside the call's window, to `head`, named by that sha (`claimed`): a second
+commit in the window (another call or session in the same workspace) leaves the
+author unknown. Any other shape claims nothing. A step with several commands, a result without `Completed At`,
+a truncated or unrecognised result, a failure or a missing result claims
+nothing, and a record whose step indexes repeat or go back claims no commit at
+all: the author stays unknown. agy has no `declare_session_wi`: its
+declared WIs are empty.
 
 A Claude Code session's sub-agents (Agent/Task tool) write their own records
 at `<session>/subagents/agent-<agentId>.jsonl`. A child record counts only when
@@ -78,8 +110,9 @@ from typing import Any, Callable
 
 from . import child_dispatch
 from .model import Json
+from .session_sources import AGY_TRANSCRIPT
 # `git`, its global options (`-C <dir>`, `-c <k=v>`, `--opt[=value]`), then the subcommand.
-from .shell_scope import COMMITTING, workspace
+from .shell_scope import COMMITTING, _literal, _tokens, workspace
 
 MAX_BYTES = 256 * 1024 * 1024
 # A native session record is streamed row by row, so its size never bounds memory.
@@ -94,11 +127,34 @@ DECLARE = "declare_session_wi"
 # Declaring "none" (chat, read-only) names no WI; it never counts toward output.
 NO_WI = "none"
 SPAWN_TOOLS = frozenset({"Agent", "Task"})
-# Tools that execute a command: CC Bash; Codex shell, exec_command and code-mode scripts; Pi bash.
+# Tools that execute a command: CC Bash; Codex shell, exec_command and code-mode scripts; Pi bash;
+# agy run_command.
 EXEC_TOOLS = frozenset(
-    {"Bash", "shell", "shell_command", "exec_command", "exec", "js", "local_shell", "bash"}
+    {"Bash", "shell", "shell_command", "exec_command", "exec", "js", "local_shell", "bash",
+     "run_command"}
 )
-RUNTIMES = frozenset({"cc", "codex", "pi"})
+RUNTIMES = frozenset({"cc", "codex", "pi", "agy"})
+# agy: the command tool, a model ID's tier suffix (its effort), and a result's own times.
+AGY_COMMAND = "run_command"
+AGY_TIER = re.compile(r"-(minimal|low|medium|high|xhigh|max)\Z")
+AGY_TIMES = re.compile(r"(Created|Completed) At: (\S+)")
+# The start of agy's own result of a command call (after the time lines).
+AGY_COMMAND_RESULT = re.compile(
+    r"Command exited with code -?\d+\.|Command failed to run:|Encountered error in step "
+    r"execution: permission check failed for (?:command|unsandboxed) \"")
+AGY_SUCCESS = re.compile(r"Command exited with code 0\.(?:\n|\Z)")
+# The summary line `git commit` prints for the commit it created: `[<branch> <sha>]
+# <subject>` or `[<branch> (root-commit) <sha>] <subject>`; an agy call's first output line.
+AGY_COMMIT_SUMMARY = re.compile(r"\[[^\]\s\\]{1,200}(?: \(root-commit\))? ([0-9a-f]{7,64})\] .+")
+AGY_OUTPUT = re.compile(r"Command exited with code 0\.\n\nCommand output:\n([^\n]*)")
+# A literal absolute directory: no quoting, globbing, home or variable is needed to read it.
+AGY_DIRECTORY = re.compile(r"/[A-Za-z0-9._/+@,:=-]*")
+# `git commit` options that take the next word as their value (that word is no option).
+COMMIT_VALUE_OPTIONS = frozenset({
+    "-m", "--message", "-F", "--file", "-c", "-C", "--reuse-message", "--reedit-message",
+    "--author", "--date", "-t", "--template", "--cleanup", "--fixup", "--squash", "--trailer",
+    "--pathspec-from-file", "-S", "--gpg-sign"})
+AGY_ID = re.compile(r"[A-Za-z0-9-]{1,128}\Z")
 # A Pi record's file name: `<start time>_<session id>.jsonl`.
 PI_RECORD = re.compile(r"\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d{3}Z_([A-Za-z0-9-]{1,128})\.jsonl")
 # The Relay Pi extension's declare_session_wi ack, and the WIs it accepts.
@@ -117,7 +173,7 @@ SLACK_SECONDS = 2
 # A sub-agent dispatched for a child WorkItem: the first line of its first prompt.
 WI_MARKER = re.compile(r"\[WI: (wi_\d{8}_\d{3})\]")
 # A marked sub-agent's cost evidence (`child_dispatch`), carried to the kernel.
-DISPATCH = ("dispatch_declared_wis", "dispatch_since", "cost_child")
+DISPATCH = ("dispatch_declared_wis", "dispatch_since", "cost_child", "cost_served")
 
 
 def _text(value: Any) -> str:
@@ -238,6 +294,11 @@ class Reader:
         self.entries: dict[str, Json | None] = {}  # Pi entries by id, None when conflicting.
         self.pi_calls: dict[str, list[tuple[Any, Any]]] = {}  # declare_session_wi calls
         self.pi_results: dict[str, list[tuple[Any, Json]]] = {}  # and their results
+        # agy: the latest model step's command calls and the command results after it.
+        self.agy_calls: list[str] = []
+        self.agy_results: list[tuple[str | None, bool, str]] = []  # (completed, success, text)
+        self.agy_step = -1  # The last step index read; steps must strictly increase.
+        self.agy_disordered = False  # A repeated or out-of-order step: no commit is claimed.
 
     def turn(self, model: str, effort: str) -> None:
         self.observed += 1
@@ -382,9 +443,82 @@ class Reader:
                 if arguments["wi"] != NO_WI:
                     self.declared.add(arguments["wi"])
 
+    def agy_row(self, row: Json) -> None:
+        """One step of an agy transcript."""
+        if not isinstance(row.get("step_index"), int) or not isinstance(row.get("type"), str):
+            raise ValueError("agy step")
+        if row["step_index"] <= self.agy_step:
+            self.agy_disordered = True
+        self.agy_step = max(self.agy_step, row["step_index"])
+        at = row.get("created_at")
+        kind = row["type"]
+        if kind == "PLANNER_RESPONSE":
+            self.agy_settle()
+            # A call belongs to its own model step only: nothing carries over to the next.
+            self.calls = {}
+            model = _text(row.get("model"))
+            tier = AGY_TIER.search(model) if model != UNKNOWN else None
+            self.turn(model, tier.group(1) if tier else UNKNOWN)
+            calls = row.get("tool_calls")
+            for index, call in enumerate(calls if isinstance(calls, list) else []):
+                if not isinstance(call, dict) or call.get("name") != AGY_COMMAND:
+                    continue
+                args = call.get("args")
+                command = args.get("CommandLine") if isinstance(args, dict) else None
+                ident = f"{row['step_index']}.{index}"
+                # Every command counts toward the step: two commands make it unreadable.
+                self.agy_calls.append(ident)
+                if isinstance(command, str):
+                    self.calls[ident] = {
+                        "name": AGY_COMMAND, "command": command, "model": self.model,
+                        "repository": _agy_repository(command), "started_at": at, "wi": None,
+                    }
+        elif kind == "GENERIC" and self.agy_calls:
+            content = row.get("content")
+            text = content if isinstance(content, str) else ""
+            # A result begins with its own `Created At:`/`Completed At:` lines (local
+            # time with offset); the row's `created_at` is only when the tool started.
+            lines = text.split("\n")
+            completed: str | None = None
+            index = 0
+            while index < len(lines) and (found := AGY_TIMES.fullmatch(lines[index])):
+                if found.group(1) == "Completed":
+                    completed = found.group(2)
+                index += 1
+            body = "\n".join(lines[index:])
+            if AGY_COMMAND_RESULT.match(body) is None:
+                return  # Another tool's result, or a truncated one naming no command.
+            success = (AGY_SUCCESS.match(body) is not None and row.get("status") == "DONE"
+                       and not row.get("error"))
+            self.agy_results.append((completed, success, body))
+
+    def agy_settle(self) -> None:
+        """Bind the latest model step's one command to its one command result."""
+        calls, results = self.agy_calls, self.agy_results
+        self.agy_calls, self.agy_results = [], []
+        if len(calls) != 1 or len(results) != 1 or calls[0] not in self.calls:
+            return  # No result, or no single reading: the author stays unknown.
+        completed, success, body = results[0]
+        if not success or completed is None or _instant(completed) is None:
+            return
+        self.result(calls[0], body, completed)
+        window = self.commits.get(calls[0])
+        if window is None:
+            return
+        shape = agy_commit_shape(self.calls[calls[0]]["command"])
+        output = AGY_OUTPUT.match(body)
+        summary = AGY_COMMIT_SUMMARY.fullmatch(output.group(1).rstrip("\r")) if output else None
+        if shape is None or summary is None:
+            del self.commits[calls[0]]  # Not the one provable shape: the author stays unknown.
+            return
+        window.update(repository=shape, agy_commit=summary.group(1))
+
     def row(self, row: Any) -> None:
         if not isinstance(row, dict):
             raise ValueError("row")
+        if self.runtime == "agy":
+            self.agy_row(row)
+            return
         at = row.get("timestamp")
         if self.runtime == "pi":
             self.pi_row(row, at)
@@ -461,6 +595,47 @@ class Reader:
                 self.declared.add(item["arguments"]["wi"])
 
 
+def agy_commit_shape(command: str) -> str | None:
+    """The workspace of the only commit command an agy call can prove: exactly
+    `cd <literal absolute dir> && git commit <literal args>` with `--no-verify` or
+    `-n` and without `-q`/`--quiet`; None for any other shape."""
+    tokens = _tokens(command)
+    if tokens is None or len(tokens) < 5 or [k for k, _ in tokens[:5]] != ["w", "w", "op", "w", "w"]:
+        return None
+    words = [value for _, value in tokens]
+    if (any(kind != "w" for kind, _ in tokens[5:]) or words[0] != "cd" or words[2] != "&&"
+            or words[3:5] != ["git", "commit"]):
+        return None
+    directory, args = words[1], words[5:]
+    if AGY_DIRECTORY.fullmatch(directory) is None or ".." in directory.split("/"):
+        return None
+    if any(not _literal(arg) or arg.startswith("#") for arg in args):
+        return None  # A variable, a substitution or a comment: not read statically.
+    flags = [arg for index, arg in enumerate(args)
+             if index == 0 or args[index - 1] not in COMMIT_VALUE_OPTIONS]
+    if "--no-verify" not in flags and "-n" not in flags:
+        return None
+    if any(flag in {"-q", "--quiet"} or re.fullmatch(r"-[A-Za-z]*q[A-Za-z]*", flag) for flag in flags):
+        return None
+    return os.path.normpath(directory)
+
+
+def _agy_repository(command: str) -> str | None:
+    """The workspace an agy command names itself: agy records no working directory."""
+    if COMMITTING.search(command) is not None:
+        return workspace(None, command)
+    match = re.search(r"\bgit\s+-C\s+", command)
+    return None if match is None else _directory(None, command[match.end():])
+
+
+def agy_conversation(path: Path) -> str | None:
+    """The conversation an agy transcript belongs to: its brain directory's name."""
+    parts = path.parts[-len(AGY_TRANSCRIPT.parts) - 1:]
+    if len(parts) != len(AGY_TRANSCRIPT.parts) + 1 or Path(*parts[1:]) != AGY_TRANSCRIPT:
+        return None
+    return parts[0] if AGY_ID.match(parts[0]) else None
+
+
 def _prompt(content: Any) -> str:
     if isinstance(content, str):
         return content
@@ -520,8 +695,12 @@ def _subagents(path: Path, parent: Reader) -> list[Json]:
             child_dispatch.copies(path.with_suffix(""), {child}))
         if proof is None:
             return {"dispatch_declared_wis": None}
+        # Every other WI the turns were declared to, as the same export reads it:
+        # a sibling under the child's parent leaves the turns to the child.
         return {"dispatch_declared_wis": proof[0], "dispatch_since": proof[1],
-                "cost_child": child_dispatch.exported_child(marker)}
+                "cost_child": child_dispatch.exported_child(marker),
+                "cost_served": {wi: child_dispatch.exported_child(wi)
+                                for wi in proof[0] if wi != marker}}
 
     for agent, call in sorted(parent.children.items()):
         meta = directory / f"agent-{agent}.meta.json"
@@ -559,6 +738,13 @@ def observe(runtime: str, path: Path | None) -> Json | None:
         return None
     if runtime == "pi":
         reader.pi_declared()
+    if runtime == "agy":
+        reader.agy_settle()
+        if reader.agy_disordered:
+            reader.commits = {}  # Steps repeat or go back: which result is whose is unknown.
+        reader.native_id = agy_conversation(path)
+        if reader.native_id is None:
+            return None
     return {
         "schema": "harness.session-compute/v1",
         "runtime": runtime,
@@ -656,13 +842,21 @@ def _creates(message: str) -> bool:
 def claimed(evidence: Json, head: str, reflogs: Reflogs | None = None) -> Move | None:
     """The workspace HEAD move by which this tool call created `head`, if any: the
     call's own workspace HEAD log moved to `head` by a commit-type operation
-    between the call's start and end (2 s slack), and the commit is on a branch."""
+    between the call's start and end (2 s slack), and the commit is on a branch. An
+    agy call (`agy_commit` present) needs its git summary to name `head` and the
+    window to hold no other commit-type move of that workspace."""
     workspace = evidence.get("repository")
     start, end = _instant(evidence.get("started_at")), _instant(evidence.get("ended_at"))
     if not isinstance(workspace, str) or start is None or end is None or end < start:
         return None
-    moves = [m for m in _moves(workspace, {} if reflogs is None else reflogs)
-             if m[2] == head and start - SLACK_SECONDS <= m[3] <= end + SLACK_SECONDS]
+    inside = [m for m in _moves(workspace, {} if reflogs is None else reflogs)
+              if start - SLACK_SECONDS <= m[3] <= end + SLACK_SECONDS]
+    if "agy_commit" in evidence:
+        sha = evidence["agy_commit"]
+        if (not isinstance(sha, str) or len(sha) < 7 or not head.startswith(sha)
+                or len(inside) != 1):
+            return None  # Its own summary and the one commit of its window, or unknown.
+    moves = [m for m in inside if m[2] == head]
     if not moves:
         return None
     if _git(workspace, "cat-file", "-e", head + "^{commit}") is None:
@@ -728,7 +922,8 @@ def find_authors(roots: list[tuple[str, Path]], shas: list[str], since: float) -
     identity. A Pi record counts only at Pi's own place and name for its header id
     (`PI_RECORD`, at most `PI_DEPTH` deep, outside `PI_HOME`). Each session appears
     once per commit; several sessions for one commit are all reported, and the
-    kernel treats that author as ambiguous.
+    kernel treats that author as ambiguous. An agy transcript counts only at its
+    own place (`_agy_place`).
     """
     found: dict[str, list[Json]] = {sha: [] for sha in shas}
     reflogs: Reflogs = {}
@@ -750,6 +945,8 @@ def find_authors(roots: list[tuple[str, Path]], shas: list[str], since: float) -
             except OSError:
                 continue
             if runtime == "pi" and not _pi_place(root, path):
+                continue
+            if runtime == "agy" and not _agy_place(root, path):
                 continue
             compute = observe(runtime, path)
             if compute is None or compute.get("native_id") is None:
@@ -799,6 +996,15 @@ def _pi_place(root: Path, path: Path) -> bool:
     return (len(parts) <= PI_DEPTH and parts[0] != PI_HOME
             and not any(p.startswith(".") for p in parts)
             and PI_RECORD.fullmatch(path.name) is not None)
+
+
+def _agy_place(root: Path, path: Path) -> bool:
+    """An agy transcript's own place: `<root>/<conversation>/` + AGY_TRANSCRIPT."""
+    try:
+        parts = path.relative_to(root).parts
+    except ValueError:
+        return False
+    return len(parts) == len(AGY_TRANSCRIPT.parts) + 1 and agy_conversation(path) is not None
 
 
 # A committing command in a record's raw JSON bytes: a cheap prefilter before parsing.

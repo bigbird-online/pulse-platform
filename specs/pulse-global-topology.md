@@ -102,9 +102,9 @@
   `@anchor const ExecStartPre :: "ensure-dist-fresh.sh"`
   `@anchor symbol RESTART_AUDIT_LOG`
   `@anchor symbol writeAuditLine`
-- [x] 仓内 unit 与 live 副本必须同步（部署即拷贝）。`vultr-pulse-space/systemd/user/relay.service`
-  是已退役 Vultr 的副本，只作源码合同；TCloud 的 Relay 由原生 CD 安装
-  `@anchor manual 同步核对 :: TCloud cmp vultr-pulse-space/systemd/user/dual-heartbeat-watcher.service ~/.config/systemd/user/dual-heartbeat-watcher.service && echo in-sync`
+- [x] 仓内 unit 与 live 副本必须同步（部署即拷贝）。`Relay/deploy/systemd/user/relay.service`
+  只作源码合同；TCloud 的 Relay 由原生 CD 安装
+  `@anchor manual 同步核对 :: TCloud cmp Scripts/monitoring/systemd/user/dual-heartbeat-watcher.service ~/.config/systemd/user/dual-heartbeat-watcher.service && echo in-sync`
 
 ## 4. 重启与治毒纪律载体
 

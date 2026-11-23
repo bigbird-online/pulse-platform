@@ -17,6 +17,16 @@ struct Concern: Equatable, Identifiable, Sendable {
 
 // MARK: - Relay
 
+/// One agy quota group (e.g. Gemini Models): weekly and, when the group has
+/// one, 5-hour remaining share with their reset times. Argon has no 5-hour window.
+struct AgyQuotaGroup: Equatable, Sendable {
+    let name: String
+    let weeklyRemainingPercent: Double?
+    let weeklyResetsAt: Date?
+    let fiveHourRemainingPercent: Double?
+    let fiveHourResetsAt: Date?
+}
+
 /// Everything the ⚡ menu bar item and its panel render.
 struct RelayViewModel: Equatable, Sendable {
     let ccProcesses: Int?
@@ -41,6 +51,11 @@ struct RelayViewModel: Equatable, Sendable {
     /// The account has no personal weekly quota (pooled or none included).
     let grokQuotaNotApplicable: Bool
     let grokQuotaReason: String?
+    /// agy account quota groups in published order; nil when there is no current reading.
+    let agyQuotaGroups: [AgyQuotaGroup]?
+    /// When the shown reading, or the failed read behind the reason, happened.
+    let agyQuotaObservedAt: Date?
+    let agyQuotaReason: String?
 
     let inputTokens: Int?
     let inputTokensUncached: Int?
@@ -131,6 +146,20 @@ struct RelayViewModel: Equatable, Sendable {
         grokPlanLabel = metrics.metric(MetricID.grokPlanLabel)?.value.text
         grokQuotaNotApplicable = Self.grokNotApplicable.contains(grokCode ?? "")
         grokQuotaReason = Self.grokQuotaReasonText(grokCode)
+        // agy is read every publication cycle; a reading older than an hour,
+        // or a bucket past its reset, is not shown as current.
+        let agyRaw = metrics.rawMetric(MetricID.agyQuota)
+        let agyFresh = now.map { time in
+            guard let observed = agyRaw?.observedAt else { return false }
+            return observed <= time.addingTimeInterval(60) && time.timeIntervalSince(observed) < 3600
+        } ?? true
+        let agyGroups = agyFresh ? Self.agyGroups(metrics.rows(MetricID.agyQuota), at: now) : nil
+        agyQuotaGroups = agyGroups
+        let agyCode = agyGroups != nil ? nil
+            : agyRaw?.status == .available ? (agyFresh ? "quota_window_elapsed" : "quota_reading_stale")
+            : agyRaw?.reason ?? "quota_source_unavailable"
+        agyQuotaObservedAt = agyGroups != nil || agyRaw?.status != .available ? agyRaw?.observedAt : nil
+        agyQuotaReason = Self.agyQuotaReasonText(agyCode)
         let usageObserved = metrics.rawMetric("usage.today.source_note")?.observedAt
         let usageFresh = now.map { time in
             guard let usageObserved else { return false }
@@ -218,6 +247,59 @@ struct RelayViewModel: Equatable, Sendable {
         case "no_personal_allowance": return "该账号没有个人周额度"
         default: return "GROK 额度读数无效，暂不显示"
         }
+    }
+
+    /// Groups from the exporter's bucket rows, in first-seen order; buckets
+    /// past their reset are dropped. Nil when no group has a current bucket.
+    static func agyGroups(_ rows: [[String: MetricScalar]]?, at now: Date?) -> [AgyQuotaGroup]? {
+        guard let rows else { return nil }
+        var order: [String] = []
+        var buckets: [String: [String: (Double, Date)]] = [:]
+        for row in rows {
+            guard let group = row["group"]?.string, let window = row["window"]?.string,
+                  let fraction = row["remaining_fraction"]?.number, (0...1).contains(fraction),
+                  let seconds = row["resets_at"]?.number, seconds > 0 else { continue }
+            let reset = Date(timeIntervalSince1970: seconds)
+            if let now, reset <= now { continue }
+            if buckets[group] == nil { order.append(group); buckets[group] = [:] }
+            buckets[group]?[window] = (fraction * 100, reset)
+        }
+        let groups = order.map { name in
+            AgyQuotaGroup(name: name,
+                          weeklyRemainingPercent: buckets[name]?["weekly"]?.0,
+                          weeklyResetsAt: buckets[name]?["weekly"]?.1,
+                          fiveHourRemainingPercent: buckets[name]?["5h"]?.0,
+                          fiveHourResetsAt: buckets[name]?["5h"]?.1)
+        }
+        return groups.isEmpty ? nil : groups
+    }
+
+    /// Plain words for the exporter's stable agy quota reason codes.
+    static func agyQuotaReasonText(_ code: String?) -> String? {
+        switch code {
+        case nil: return nil
+        case "quota_source_unavailable": return "尚未取得 agy 额度读数，等待下一次查询"
+        case "quota_window_elapsed": return "额度窗口已重置，等待下一次查询"
+        case "quota_reading_stale": return "agy 额度读数已超过 1 小时，不当作当前读数"
+        case "agy_command_unavailable": return "本机找不到 agy 命令，暂不显示"
+        case "agy_command_timeout": return "agy 额度查询超时，等待下一次查询"
+        case "agy_command_failed": return "agy 额度查询失败，等待下一次查询"
+        case "quota_schema_changed", "quota_output_too_large": return "agy 额度输出格式已变化，暂不显示"
+        default: return "agy 额度读数无效，暂不显示"
+        }
+    }
+
+    /// The scarcest current bucket across all groups decides the lamp and summary.
+    var agyLowestRemainingPercent: Double? {
+        agyQuotaGroups?.flatMap { [$0.weeklyRemainingPercent, $0.fiveHourRemainingPercent] }
+            .compactMap { $0 }.min()
+    }
+
+    var agyLamp: StatusLamp { LampRules.quota(usedPercent: agyLowestRemainingPercent.map { 100 - $0 }) }
+
+    /// Panel summary beside the agy row.
+    var agyQuotaSummary: String {
+        agyLowestRemainingPercent.map { "最低剩 " + StatsFormat.percent($0) } ?? "待更新"
     }
 
     /// Pure quota colour. Process and 429 health has its own row and concern;
@@ -774,12 +856,15 @@ struct TriageViewModel: Equatable, Sendable {
 ///
 /// v2 had two items because five figures had to go somewhere; with the three
 /// harness counts pushed down into the panel, the reason to split is gone.
-/// This model owns only what the bar shows: two quota slots and one status
-/// word. Everything else about a snapshot is the panel's business.
+/// This model owns only what the bar shows: three quota slots, the WI count
+/// and one status marker. Everything else about a snapshot is the panel's
+/// business — Grok included, which keeps its panel row but left the bar.
 struct MenuBarViewModel: Equatable, Sendable {
     let ccUsedPercent: Double?
     let codexUsedPercent: Double?
-    let grokUsedPercent: Double?
+    /// agy's scarcest current bucket as a used share, so the slot reads like
+    /// its neighbours; nil when the reading is stale, failed or all reset.
+    let agyUsedPercent: Double?
     /// Read straight off `alert_tiers.act` — spec v3 §6: "App 端不自己数".
     let actCount: Int
     let hasSnapshot: Bool
@@ -803,7 +888,7 @@ struct MenuBarViewModel: Equatable, Sendable {
         let relay = RelayViewModel(metrics: metrics, hasSnapshot: hasSnapshot, at: now)
         ccUsedPercent = relay.ccUsedPercent.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
         codexUsedPercent = relay.codexUsedPercent.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
-        grokUsedPercent = relay.grokUsedPercent.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil }
+        agyUsedPercent = relay.agyLowestRemainingPercent.flatMap { $0.isFinite && (0...100).contains($0) ? 100 - $0 : nil }
         actCount = alertTiers.act
         self.hasSnapshot = hasSnapshot
         statusSummary = SnapshotStatusSummary(
@@ -815,7 +900,7 @@ struct MenuBarViewModel: Equatable, Sendable {
 
     var menuQuotaText: String { codexUsedPercent.map { StatsFormat.percent($0) } ?? "—" }
     var menuCCText: String { ccUsedPercent.map { StatsFormat.percent($0) } ?? "—" }
-    var menuGrokText: String { grokUsedPercent.map { StatsFormat.percent($0) } ?? "—" }
+    var menuAgyText: String { agyUsedPercent.map { StatsFormat.percent($0) } ?? "—" }
     /// Same producer-owned summary as the panel's 「要你出手」 tier.
     /// When a snapshot exists, retain its readable aggregate even if some
     /// request sources still need verification; the separate question marker
@@ -833,7 +918,7 @@ struct MenuBarViewModel: Equatable, Sendable {
     var menuAccessibilityLabel: String {
         let quota = codexUsedPercent.map { "Codex 7 天额度已用 " + StatsFormat.percent($0) } ?? "Codex 额度待更新，不以旧数或零替代"
         let cc = ccUsedPercent.map { "CC 7 天额度已用 " + StatsFormat.percent($0) } ?? "CC 额度待更新，不以旧数或零替代"
-        let grok = grokUsedPercent.map { "GROK 周额度已用 " + StatsFormat.percent($0) } ?? "GROK 额度待更新，不以旧数或零替代"
+        let agy = agyUsedPercent.map { "agy 额度最紧一组已用 " + StatsFormat.percent($0) } ?? "agy 额度待更新，不以旧数或零替代"
         let wi: String
         if !hasSnapshot {
             wi = "要你出手数量待更新，不以旧数或零替代"
@@ -842,7 +927,7 @@ struct MenuBarViewModel: Equatable, Sendable {
         } else {
             wi = "已读要你出手 \(actCount) 项，部分请求来源待核验"
         }
-        return "PULSE。" + quota + "。" + cc + "。" + grok + "。" + wi + "。" + compactHelp
+        return "PULSE。" + quota + "。" + cc + "。" + agy + "。" + wi + "。" + compactHelp
     }
 
     var ccText: String { StatsFormat.percent(ccUsedPercent) }
@@ -850,6 +935,7 @@ struct MenuBarViewModel: Equatable, Sendable {
 
     var ccLamp: StatusLamp { LampRules.quota(usedPercent: ccUsedPercent) }
     var codexLamp: StatusLamp { LampRules.quota(usedPercent: codexUsedPercent) }
+    var agyLamp: StatusLamp { LampRules.quota(usedPercent: agyUsedPercent) }
 
     /// Spec v3 §3: "两条线各管各的" — quota never colours the status word.
     /// A box at 100% quota can still read 正常 when runtime, coverage and the

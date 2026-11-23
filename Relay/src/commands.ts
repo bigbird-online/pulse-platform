@@ -7,6 +7,7 @@ import type {
   ContextSoftWarningEvent,
   ConversationRuntimeFallbackEvent,
   ConversationRuntimeId,
+  PersistedSession,
   PoolExitMeta,
   SessionEndReason,
   SpawnConfig,
@@ -17,11 +18,17 @@ import type { ConversationProcess } from './conversation-runtime.js';
 import type { Router } from './router.js';
 import { summarizeMonthlyUsage, type UsageSummary } from './metering.js';
 import { existsSync } from 'node:fs';
-import { getSessionJsonlPath, getBareSessionJsonlPath } from './pool.js';
+import { CC_LINUX_USER_PRESERVED_ENV_KEYS, ccConfigDir, ccLaunchHome, getSessionJsonlPath, getBareSessionJsonlPath } from './pool.js';
+import { buildSdkEngineEnv } from './cc-sdk-conversation-runtime.js';
+import { conversationLaunch } from './conversation-launch.js';
 import { persistedRuntimeUsageBinding } from './runtime-usage-binding.js';
 import { acquireConversation } from './conversation-acquisition.js';
 import { formatConversationPoolKey } from './conversation-address.js';
 import { RuntimeUsageSealError, type RuntimeUsageBaselineReadback, type RuntimeUsageSealReadback } from './runtime-usage-seal.js';
+import { resolveClaudeRuntimeModel } from './model-context.js';
+import { INHERITED_ROUTING_ENV_KEYS } from './provider-routing-env.js';
+import { AGY_MODEL_PROVIDER, DEFAULT_AGY_MODEL, agyEffectiveModel, agyIsolationRefusal, agyModelFamilies, agyModelFamily, agyModelForLevel, agyModelOptions, isAgyInstalled, isAgyModel } from './agy-conversation-runtime.js';
+import { REASONING_LEVELS, describeClaudeDefaultReasoning, describeCodexDefaultReasoning, lastClaudeTurnEffort, parseReasoningLevel, reasoningControl } from './reasoning-control.js';
 
 type RuntimeProcess = CCProcess | ConversationProcess;
 
@@ -42,6 +49,7 @@ export interface CommandRuntime {
   listModels?(tenantId: string): Promise<import('./conversation-runtime.js').ConversationRuntimeModelOption[]>;
   setThinkingLevel?(tenantId: string, level: import('./types.js').ConversationReasoningLevel): Promise<void>;
   listThinkingLevels?(tenantId: string): Promise<import('./types.js').ConversationReasoningLevel[]>;
+  bindRuntimeUsage?(tenantId: string, binding: import('./runtime-usage-binding.js').RuntimeUsageBinding): void;
   compact?(tenantId: string, customInstructions?: string): Promise<Record<string, unknown>>;
   getNativeState?(tenantId: string): Promise<Record<string, unknown>>;
   getNativeSessionStats?(tenantId: string): Promise<Record<string, unknown>>;
@@ -127,6 +135,7 @@ const RUNTIME_LABELS: Record<ConversationRuntimeId, string> = {
   codex: '🟩 Codex',
   'cc-sdk': '🟨 CC SDK',
   pi: '🟪 Pi',
+  agy: '🟫 agy',
 };
 
 const SUBSCRIPTION_PROVIDER_IDS = new Set([
@@ -134,7 +143,6 @@ const SUBSCRIPTION_PROVIDER_IDS = new Set([
   'claude',
   'openai-chatgpt',
   'openai-codex',
-  'google-gemini-cli',
   'github-copilot',
 ]);
 
@@ -173,6 +181,7 @@ function catalogModelsForScope(
   access: ModelAccessMode,
 ): Array<{ provider?: string; model: string; displayName: string }> {
   if (runtime === 'pi') return [];
+  if (runtime === 'agy') return access === 'subscription' ? agyModelOptions() : [];
   if (runtime === 'cc-sdk' && access === 'openrouter') return [];
   const entries = Array.isArray(catalog.entries)
     ? catalog.entries
@@ -380,6 +389,7 @@ export function buildMenuCard(agent: AgentConfig): CommandResult {
     ...menuSection('⚙️ 配置', [
       menuButton('🖥 Runtime', 'runtime', 'default'),
       menuButton('🤖 模型', 'model', 'default'),
+      menuButton('🧠 推理', 'think', 'default'),
       menuButton('⚡ YOLO', 'yolo', 'default'),
     ]),
   );
@@ -387,6 +397,24 @@ export function buildMenuCard(agent: AgentConfig): CommandResult {
     text: `点击下方按钮操作，或直接发送 /命令。当前 Agent：${agent.emoji} ${agent.name}`,
     feishuCardElements: elements,
   };
+}
+
+/**
+ * agy's model buttons, one per model family: a family is picked at the current level when it has
+ * that variant (so /model keeps the /think level), else at its own default. agy has one access
+ * scope, so its models sit on the /model card itself.
+ */
+function agyModelButtons(current: string): Record<string, unknown>[] {
+  const { family: currentFamily, level } = agyModelFamily(current);
+  const buttons = agyModelFamilies().map((family) => {
+    const first = family.models[0]!;
+    const target = (level && agyModelForLevel(first, level)) || agyModelForLevel(first, 'high') || first;
+    const selected = family.family === currentFamily;
+    return menuButton(selected ? `✓ ${family.displayName}` : family.displayName, 'model', selected ? 'primary' : 'default', target);
+  });
+  const rows: Record<string, unknown>[] = [];
+  for (let i = 0; i < buttons.length; i += 2) rows.push(buttonRow(buttons.slice(i, i + 2)));
+  return rows;
 }
 
 /** Build the Relay-wide model control surface.
@@ -412,12 +440,15 @@ export function buildModelOptionCard(
   const structuredModel = activeRuntime === 'pi' ? agent.conversationRuntime?.model : undefined;
   const currentLabel = structuredModel
     ? `${structuredModel.provider}/${structuredModel.model} · thinking=${structuredModel.reasoning}`
+    : activeRuntime === 'agy'
+      ? isAgyModel(currentModel) ? currentModel : `${DEFAULT_AGY_MODEL}（默认）`
     : currentModel === 'auto'
       ? 'auto（按可用性自动选择）'
       : currentModel ?? 'default（运行时自主选择）';
   const elements: Record<string, unknown>[] = [];
 
-  const runtimes: ConversationRuntimeId[] = ['cc', 'codex', 'cc-sdk', 'pi'];
+  const canUseAgy = !agyIsolationRefusal(agent.linuxUser) && (activeRuntime === 'agy' || isAgyInstalled());
+  const runtimes: ConversationRuntimeId[] = ['cc', 'codex', 'cc-sdk', 'pi', ...(canUseAgy ? ['agy' as const] : [])];
   for (const runtime of runtimes) {
     const isCurrent = runtime === activeRuntime;
     const canUsePi = nodeCanUsePi(deps, agent);
@@ -429,12 +460,16 @@ export function buildModelOptionCard(
     } else {
       const subscriptionAvailable = runtime === 'pi'
         ? canUsePi
-        : runtime === 'cc-sdk'
-          ? true
+        : runtime === 'agy'
+          ? false
+          : runtime === 'cc-sdk'
+            ? true
           : !catalog || catalogModelsForScope(catalog, runtime, 'subscription').length > 0;
       const openRouterAvailable = runtime === 'pi'
         ? canUsePi
-        : Boolean(catalog && catalogModelsForScope(catalog, runtime, 'openrouter').length > 0);
+        : runtime === 'agy'
+          ? false
+          : Boolean(catalog && catalogModelsForScope(catalog, runtime, 'openrouter').length > 0);
       if (subscriptionAvailable) {
         buttons.push(menuButton('订阅模型', 'model_scope', 'primary', `${runtime}|subscription`));
       }
@@ -444,6 +479,8 @@ export function buildModelOptionCard(
     }
     const accessSummary = runtime === 'cc-sdk'
       ? '订阅 ✓ · OpenRouter API 尚未接入'
+      : runtime === 'agy'
+        ? isCurrent ? '下面按模型族选择；思考档位用 /think 调。' : '订阅 ✓（agy 账号额度）· OpenRouter API 不适用'
       : runtime === 'pi'
         ? canUsePi ? '订阅 / OpenRouter API（进入后由 Pi 原生探测）' : '节点未配置 Pi runtime'
         : catalog
@@ -457,6 +494,7 @@ export function buildModelOptionCard(
       { tag: 'markdown', content: `${RUNTIME_LABELS[runtime]}${isCurrent ? ' <text_tag color="green">当前</text_tag>' : ''}\n<font color='grey'>${accessSummary}</font>` },
     );
     if (buttons.length > 0) elements.push(buttonRow(buttons));
+    if (isCurrent && runtime === 'agy') elements.push(...agyModelButtons(isAgyModel(currentModel) ? currentModel : DEFAULT_AGY_MODEL));
   }
   return {
     text: [
@@ -482,6 +520,9 @@ export function buildRuntimeOptionCard(agent: AgentConfig, deps?: Pick<CommandDe
   ];
   if (completePiRoute(agent.conversationRuntime) || (deps && nodeCanUsePi(deps, agent))) {
     buttons.push(menuButton('🟪 Pi', 'runtime', current === 'pi' ? 'primary' : 'default', 'pi'));
+  }
+  if (!agyIsolationRefusal(agent.linuxUser) && (current === 'agy' || isAgyInstalled())) {
+    buttons.push(menuButton('🟫 agy', 'runtime', current === 'agy' ? 'primary' : 'default', 'agy'));
   }
   const elements: Record<string, unknown>[] = [];
   for (let i = 0; i < buttons.length; i += 2) elements.push(buttonRow(buttons.slice(i, i + 2)));
@@ -570,6 +611,10 @@ export async function handleModelScope(
       return { text: `读取 Pi 原生模型失败：${error instanceof Error ? error.message : String(error)}` };
     }
     currentModel = `${agent.conversationRuntime.model.provider}/${agent.conversationRuntime.model.model}`;
+  } else if (runtime === 'agy') {
+    // An older card's scope button: agy models now sit on the /model card itself.
+    return buildModelOptionCard(agent, userId, deps,
+      agyEffectiveModel(currentModel, deps.stateManager?.getSession(poolKey)?.reasoningLevel), 'agy');
   } else if (deps.modelCatalog) {
     models = catalogModelsForScope(deps.modelCatalog, runtime, access).map((model) => ({
       provider: model.provider ?? 'subscription',
@@ -581,10 +626,12 @@ export async function handleModelScope(
   return buildScopedModelOptionCard(agent, runtime, access, currentModel, models);
 }
 
-function buildPiThinkingOptionCard(
+function buildThinkingOptionCard(
   agent: AgentConfig,
-  current: import('./types.js').ConversationReasoningLevel,
+  heading: string,
+  current: string,
   levels: import('./types.js').ConversationReasoningLevel[],
+  note: string,
 ): CommandResult {
   const buttons = levels.map((level) => menuButton(
     level === current ? `✓ ${level}` : level,
@@ -595,11 +642,7 @@ function buildPiThinkingOptionCard(
   const elements: Record<string, unknown>[] = [];
   for (let i = 0; i < buttons.length; i += 2) elements.push(buttonRow(buttons.slice(i, i + 2)));
   return {
-    text: [
-      `${agent.emoji} ${agent.name} Pi Thinking`,
-      `当前: ${current}`,
-      levels.length > 0 ? `当前模型原生支持: ${levels.join(', ')}` : 'Pi 尚未启动，原生 thinking level 列表暂不可读。',
-    ].join('\n'),
+    text: [`${agent.emoji} ${agent.name} ${heading}`, `当前: ${current}`, note].join('\n'),
     feishuCardElements: elements.length > 0 ? elements : undefined,
   };
 }
@@ -659,7 +702,7 @@ function formatLastActivity(ts: number | undefined): string {
 }
 
 function parseConversationRuntime(input: string): ConversationRuntimeId | undefined {
-  return input === 'cc' || input === 'codex' || input === 'cc-sdk' || input === 'pi' ? input : undefined;
+  return input === 'cc' || input === 'codex' || input === 'cc-sdk' || input === 'pi' || input === 'agy' ? input : undefined;
 }
 
 // CC-native short aliases — passed as-is so CC resolves them to "latest of that family".
@@ -790,10 +833,10 @@ export function handleHelp(): CommandResult {
     '/switch `<id>` — 切换活跃 Agent（多 Agent 时）',
     '/status — 查看 Agent 状态',
     '/session — 查看 session 信息',
-    '/runtime [cc|codex|cc-sdk|pi] — 查看或切换 conversation runtime（Pi 仅限已配置 canary）',
+    '/runtime [cc|codex|cc-sdk|pi|agy] — 查看或切换 conversation runtime（Pi 仅限已配置 canary）',
     '/model [<id>] — 按 runtime / 接入方式查看或切换模型',
     '/models [关键词] — 检索当前 runtime 可用模型（结果有界）',
-    '/think [level] — 查看/切换 reasoning（当前仅 Pi 原生支持）',
+    '/think [level] — 查看/切换推理档位（cc/cc-sdk effort、codex reasoning effort、agy 模型变体、Pi 原生）',
     '/compact [instructions] — 压缩 context（CC 系透传、Pi 原生）',
     '/context — 查看 context（CC 系透传、Pi 原生）',
     '/yolo [on|off|status] — 查看或切换 Codex YOLO 模式',
@@ -861,7 +904,12 @@ export async function handleRuntime(
 
   const nextRuntime = parseConversationRuntime(requestedRuntime.trim().toLowerCase());
   if (!nextRuntime) {
-    return { text: '不支持的 runtime。可用值: cc, codex, cc-sdk, pi。' };
+    return { text: '不支持的 runtime。可用值: cc, codex, cc-sdk, pi, agy。' };
+  }
+  const agyRefused = nextRuntime === 'agy' ? agyIsolationRefusal(agent.linuxUser) : undefined;
+  if (agyRefused) return { text: agyRefused };
+  if (nextRuntime === 'agy' && !isAgyInstalled()) {
+    return { text: '当前节点未安装 agy 启动脚本，不能切到 agy。' };
   }
   if (
     nextRuntime === 'pi'
@@ -879,6 +927,9 @@ export async function handleRuntime(
   if (!updatedAgent) {
     return { text: `未知 Agent: ${agent.id}` };
   }
+  // An agy model id means nothing to the other runtimes; leaving agy drops it.
+  const droppedAgyModel = nextRuntime !== 'agy' && isAgyModel(router.getAgentModel(userId, agent.id));
+  if (droppedAgyModel) router.setAgentModel(userId, agent.id, undefined);
 
   if (proc) {
     await runtime.kill(poolKey);
@@ -894,6 +945,7 @@ export async function handleRuntime(
       `${updatedAgent.emoji} ${updatedAgent.name} runtime 已切换为 ${nextRuntime}。`,
       `conversationRuntimePreference 已同步为 [${nextRuntime}]，避免旧 fallback 顺序覆盖本次切换。`,
       '已终止/清理当前 active conversation session。',
+      ...(droppedAgyModel ? ['agy 专用模型已清除，新 runtime 使用默认模型。'] : []),
       '下一条消息会使用新的 runtime。',
     ].join('\n'),
   };
@@ -1005,6 +1057,33 @@ export async function handleModel(
     return {
       text: `${updated.emoji} ${updated.name} Pi model → ${nextModel.provider}/${nextModel.model}（reasoning=${nextModel.reasoning}）。${proc ? '当前 native session 已热切换。' : '下一次 spawn 生效。'}`,
     };
+  }
+
+  if (effectiveRuntime === 'agy') {
+    const agyRefused = agyIsolationRefusal(agent.linuxUser);
+    if (agyRefused) return { text: agyRefused };
+    if (!requestedModel?.trim()) {
+      return buildModelOptionCard(agent, userId, deps, agyEffectiveModel(effectiveModel, persisted?.reasoningLevel), effectiveRuntime);
+    }
+    const requested = requestedModel.trim();
+    const bare = requested.startsWith(`${AGY_MODEL_PROVIDER}/`) ? requested.slice(AGY_MODEL_PROVIDER.length + 1) : requested;
+    const reset = bare === 'default' || bare === 'auto';
+    if (!reset && !isAgyModel(bare)) {
+      return { text: [`agy 不提供该模型：${requested}`, '可用模型:',
+        ...agyModelOptions().map((model) => `• ${model.model} (${model.displayName})`)].join('\n') };
+    }
+    const updatedAgent = router.setAgentModel(userId, agent.id, reset ? undefined : bare);
+    if (!updatedAgent) return { text: `未知 Agent: ${agent.id}` };
+    const nextModel = reset ? DEFAULT_AGY_MODEL : bare;
+    if (proc && proc.state !== 'dead' && runtime.setModel) {
+      await runtime.setModel(poolKey, { provider: AGY_MODEL_PROVIDER, model: nextModel, reasoning: 'medium' });
+    }
+    // The chosen model names its own level; a /think level set before no longer applies.
+    if (persisted?.reasoningLevel) {
+      deps.stateManager?.updateSession(poolKey, { reasoningLevel: undefined });
+      deps.stateManager?.flush();
+    }
+    return { text: `${updatedAgent.emoji} ${updatedAgent.name} agy model → ${nextModel}${reset ? '（默认）' : ''}。下一轮生效，会话保留、接着同一 conversation。` };
   }
 
   if (!requestedModel?.trim()) {
@@ -1177,6 +1256,8 @@ export async function handleModels(
     } catch (error) {
       return { text: `读取 Pi 原生模型失败：${error instanceof Error ? error.message : String(error)}` };
     }
+  } else if (runtime === 'agy') {
+    models = agyModelOptions();
   } else if (deps.modelCatalog) {
     const scopes: ModelAccessMode[] = ['subscription', 'openrouter'];
     models = scopes.flatMap((access) => catalogModelsForScope(deps.modelCatalog!, runtime, access).map((model) => ({
@@ -1215,13 +1296,115 @@ export async function handleThink(
   const { router, runtime } = deps;
   const agent = router.getAgents(userId).find((candidate) => candidate.id === agentId) ?? router.getActiveAgent(userId);
   if (!agent) return { text: '无活跃 Agent。' };
+  const poolKey = router.poolKey(userId, agent.id);
+  const persisted = deps.stateManager?.getSession(poolKey);
+  const effectiveRuntime = effectiveCommandRuntime(agent, runtime.get(poolKey), persisted?.runtime);
+  if (effectiveRuntime === 'pi') return handlePiThink(userId, agent, requestedLevel, deps);
+
+  const control = reasoningControl(effectiveRuntime);
+  const proc = runtime.get(poolKey);
+  const label = `${RUNTIME_LABELS[effectiveRuntime]} ${control.label}`;
+  const agyModel = effectiveRuntime === 'agy'
+    ? agyEffectiveModel(router.getAgentModel(userId, agent.id), persisted?.reasoningLevel) : undefined;
+  const levels = control.levels(agyModel);
+  const current = agyModel ? agyModelFamily(agyModel).level ?? '无档位'
+    : persisted?.reasoningLevel ?? describeDefaultReasoning(effectiveRuntime as 'cc' | 'cc-sdk' | 'codex', agent, poolKey, persisted, deps);
+  const unavailable = agyModel && levels.length === 0
+    ? `当前 agy 模型 ${agyModel} 没有可选的思考档位；换档位请先用 /model 换模型。` : undefined;
+  if (!requestedLevel?.trim()) {
+    return buildThinkingOptionCard(agent, label, current, levels, unavailable ?? (agyModel
+      ? `当前模型 ${agyModel}；可选档位即同一模型族的变体，下一轮生效。`
+      : `可选: ${levels.join(', ')}；下一轮生效，/new 后回到默认。`));
+  }
+  if (unavailable) return { text: unavailable };
+  const level = parseReasoningLevel(requestedLevel);
+  if (!level || !levels.includes(level)) {
+    return { text: agyModel
+      ? `agy 模型 ${agyModel} 没有 ${requestedLevel.trim()} 档位；可用: ${levels.join(', ')}。`
+      : `${effectiveRuntime} 不支持 thinking=${requestedLevel.trim()}；可用: ${levels.join(', ')}。` };
+  }
+  if (!persisted?.sessionId) return { text: `${agent.emoji} ${agent.name} 还没有会话；先发一条消息，再用 /think 设档位。` };
+  const live = proc && proc.state !== 'dead' ? proc : undefined;
+  if (live && control.restartToApply && live.state === 'busy') {
+    return { text: `${agent.emoji} ${agent.name} 正在工作；请先 /stop，待本轮结束后再切换 ${control.label}。` };
+  }
+  if (live && !control.restartToApply) {
+    if (!runtime.setThinkingLevel) return { text: `当前 runtime manager 不支持切换 ${control.label}。` };
+    try {
+      await runtime.setThinkingLevel(poolKey, level);
+    } catch (error) {
+      return { text: `${control.label} 切换失败，原档位保留：${error instanceof Error ? error.message : String(error)}` };
+    }
+  }
+  deps.stateManager?.updateSession(poolKey, { reasoningLevel: level });
+  deps.stateManager?.flush();
+  // CC reads its effort at start: the idle process restarts and the next turn resumes the same session.
+  if (live && control.restartToApply) await runtime.kill(poolKey);
+  return { text: `${agent.emoji} ${agent.name} ${label} → ${level}${agyModel ? `（${agyEffectiveModel(agyModel, level)}）` : ''}。`
+    + '下一轮生效，会话保留；/new 后回到默认。' };
+}
+
+/**
+ * The "当前" line when the session has no /think level. Codex gets the effort Relay passes it.
+ * cc and cc-sdk choose their own: the line reports the effort the session's transcript recorded
+ * for its last turn, found under the config dir the CC process sees; nothing is predicted.
+ */
+function describeDefaultReasoning(
+  runtime: 'cc' | 'cc-sdk' | 'codex',
+  agent: AgentConfig,
+  poolKey: string,
+  persisted: PersistedSession | undefined,
+  deps: CommandDeps,
+): string {
+  if (runtime === 'codex') return describeCodexDefaultReasoning();
+  return describeClaudeDefaultReasoning(lastClaudeTurnEffort(claudeTranscriptPaths(runtime, agent, poolKey, persisted, deps)));
+}
+
+/** Where the CC process of this session writes its transcript, by the launch's workspace, HOME and env. */
+function claudeTranscriptPaths(
+  runtime: 'cc' | 'cc-sdk',
+  agent: AgentConfig,
+  poolKey: string,
+  persisted: PersistedSession | undefined,
+  deps: CommandDeps,
+): string[] {
+  let launch: ReturnType<typeof conversationLaunch>;
+  try {
+    launch = conversationLaunch({ poolKey, agent, session: persisted, channel: deps.inboundChannel ?? 'telegram', intent: 'inbound' });
+  } catch {
+    return [];
+  }
+  if (!launch.sessionId) return [];
+  let env: NodeJS.ProcessEnv;
+  if (runtime === 'cc-sdk') {
+    // The SDK engine's CC inherits this env, HOME included.
+    env = buildSdkEngineEnv();
+  } else {
+    const home = ccLaunchHome(launch);
+    // A linuxUser tenant runs under sudo, which keeps only the preserved keys.
+    env = launch.linuxUser
+      ? { ...Object.fromEntries(CC_LINUX_USER_PRESERVED_ENV_KEYS.map((key) => [key, process.env[key]])), HOME: home }
+      : { ...process.env, HOME: home };
+  }
+  const configDir = ccConfigDir(env);
+  if (!configDir) return [];
+  return [
+    getSessionJsonlPath(launch.workspace, launch.sessionId, env['HOME'], configDir),
+    getBareSessionJsonlPath(launch.sessionId, env['HOME'], configDir),
+  ];
+}
+
+async function handlePiThink(
+  userId: string,
+  agent: AgentConfig,
+  requestedLevel: string | undefined,
+  deps: CommandDeps,
+): Promise<CommandResult> {
+  const { router, runtime } = deps;
   const route = agent.conversationRuntime;
+  if (!route?.model) return { text: '当前 Pi runtime 缺少 structured provider/model/reasoning 配置。' };
   const poolKey = router.poolKey(userId, agent.id);
   let proc = runtime.get(poolKey);
-  const effectiveRuntime = effectiveCommandRuntime(agent, proc, deps.stateManager?.getSession(poolKey)?.runtime);
-  if (effectiveRuntime !== 'pi' || !route?.model) {
-    return { text: `当前 Agent runtime=${effectiveRuntime}；/think 的 Relay 原生控制目前只对 Pi 生效。` };
-  }
   if (!proc || proc.state === 'dead') {
     try {
       proc = await ensurePiCommandProcess(userId, agent, deps);
@@ -1237,12 +1420,14 @@ export async function handleThink(
       levels = [];
     }
   }
-  if (!requestedLevel?.trim()) return buildPiThinkingOptionCard(agent, route.model.reasoning, levels);
+  if (!requestedLevel?.trim()) {
+    return buildThinkingOptionCard(agent, 'Pi Thinking', route.model.reasoning, levels,
+      levels.length > 0 ? `当前模型原生支持: ${levels.join(', ')}` : 'Pi 尚未启动，原生 thinking level 列表暂不可读。');
+  }
   if (proc?.state === 'busy') return { text: `${agent.emoji} ${agent.name} 正在工作；请先 /stop，待 turn settled 后再切换 thinking level。` };
 
-  const normalized = requestedLevel.trim().toLowerCase() as import('./types.js').ConversationReasoningLevel;
-  const known = new Set<import('./types.js').ConversationReasoningLevel>(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
-  if (!known.has(normalized)) return { text: '不支持的 thinking level。可用值: off, minimal, low, medium, high, xhigh, max。' };
+  const normalized = parseReasoningLevel(requestedLevel);
+  if (!normalized) return { text: `不支持的 thinking level。可用值: ${REASONING_LEVELS.join(', ')}。` };
   if (proc && levels.length > 0 && !levels.includes(normalized)) {
     return { text: `当前 Pi model 不支持 thinking=${normalized}；原生可用值: ${levels.join(', ')}。` };
   }
@@ -1474,6 +1659,8 @@ export async function handleNew(userId: string, agentId: string, deps: CommandDe
       runtime: configuredRuntime,
       sessionId: newSessionId,
       codexThreadId: undefined,
+      // /think is a per-session setting: a new session starts at the runtime default (reasoning-control.ts).
+      reasoningLevel: undefined,
       pendingWiSwitch: undefined,
       wrapRequestedAt: undefined,
       recoveryRequiredAt: undefined,
@@ -1539,6 +1726,7 @@ export async function handleReset(userId: string, agentId: string, deps: Command
         runtime: configuredRuntime,
         sessionId: newSessionId,
         codexThreadId: undefined,
+        reasoningLevel: undefined,
         wrapRequestedAt: undefined,
         recoveryRequiredAt: undefined,
         recoveryReason: undefined,
@@ -1716,6 +1904,11 @@ export function handleSession(userId: string, agentId: string, deps: CommandDeps
   if (runtimeId === 'codex') {
     lines.push(`threadId=${codexThreadId ? `${codexThreadId.slice(0, 8)}...` : 'N/A'}`);
   }
+  if (runtimeId === 'agy') {
+    const live = proc && 'agyConversationId' in proc ? (proc as { agyConversationId?: string }).agyConversationId : undefined;
+    const saved = persisted?.agyConversation?.sessionId === sessionId ? persisted.agyConversation.conversationId : undefined;
+    lines.push(`conversationId=${live ?? saved ?? 'N/A'}`);
+  }
 
   if (proc) {
     const uptime = Math.round((Date.now() - proc.spawnedAt) / 1000);
@@ -1772,8 +1965,9 @@ export async function handleCc(userId: string, agentId: string, deps: CommandDep
     }
     const ccEnv: Record<string, string> = {};
     const ccModel = router.getAgentModel(userId, agent.id);
+    const ccRuntimeModel = resolveClaudeRuntimeModel(ccModel ?? 'auto');
+    const entry = ccModel ? deps.modelCatalog?.findById(ccModel) : undefined;
     if (ccModel && ccModel !== 'auto' && deps.modelCatalog) {
-      const entry = deps.modelCatalog.findById(ccModel);
       if (entry?.provider) {
         const provider = deps.modelCatalog.findProvider(entry.provider);
         if (provider) {
@@ -1788,11 +1982,16 @@ export async function handleCc(userId: string, agentId: string, deps: CommandDep
           }
         }
       }
-      ccArgs.push('--model', ccModel);
+      ccArgs.push('--model', ccRuntimeModel);
     }
     // Model mappings from global env (systemd service config)
-    for (const mk of ['ANTHROPIC_DEFAULT_HAIKU_MODEL', 'ANTHROPIC_DEFAULT_SONNET_MODEL', 'ANTHROPIC_DEFAULT_OPUS_MODEL']) {
-      if (process.env[mk]) ccEnv[mk] = process.env[mk]!;
+    for (const key of INHERITED_ROUTING_ENV_KEYS) {
+      if (!key.startsWith('ANTHROPIC_DEFAULT_')) continue;
+      if (key === 'ANTHROPIC_DEFAULT_FABLE_MODEL' && ccRuntimeModel === 'fable' && !entry?.provider) {
+        ccEnv[key] = '';
+      } else if (process.env[key]) {
+        ccEnv[key] = process.env[key]!;
+      }
     }
     // --settings with env block (provider credentials + model mappings)
     ccArgs.push('--settings', JSON.stringify({ env: ccEnv }));

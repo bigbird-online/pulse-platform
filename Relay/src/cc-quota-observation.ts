@@ -87,9 +87,14 @@ export function resolveCcQuotaPath(env: NodeJS.ProcessEnv = process.env): string
 
 /** tmp + rename 原子替换，权限 0600；不跟随目标或临时文件上的符号链接。 */
 export function writeCcQuotaDocument(path: string, document: CcQuotaDocument): void {
+  writePrivateJson(path, document);
+}
+
+/** 私有 JSON 文档的原子替换：tmp + rename，权限 0600，拒绝替换符号链接。 */
+export function writePrivateJson(path: string, document: unknown): void {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   try {
-    if (lstatSync(path).isSymbolicLink()) throw new Error('refusing to replace symlinked quota document');
+    if (lstatSync(path).isSymbolicLink()) throw new Error('refusing to replace a symlinked document');
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }

@@ -141,6 +141,8 @@ class AutomationTests(unittest.TestCase):
         failed=check(status='error',executionStatus='error',verifyStatus='failed')
         self.assertEqual((failed['color'],failed['status']),('red','核验失败'))
         self.assertEqual(check(status='error',executionStatus='error')['status'],'执行失败')
+        limited=check(status='error',executionStatus='error',deliveryStatus='skipped',deferred=True)
+        self.assertEqual((limited['color'],limited['status']),('orange','等待重试'))
         old=check(verifyStatus='passed',scheduledFor='2026-09-17T04:00:00Z')
         self.assertEqual(old['status'],'本轮结果待核验')
         j=job(delivery='none',requires_verify=True);j['state']['lastResult'].update(verifyStatus='passed',definitionHash='b'*64)

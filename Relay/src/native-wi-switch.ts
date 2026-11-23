@@ -3,14 +3,15 @@ import type {StateManager, WorkItemSession, SessionIdentityUnit, PersistedSessio
 import type {CommandRuntime} from './commands.js';
 import type {NativeChannelResult} from './native-work-item-command.js';
 import {replaceConversation} from './conversation-acquisition.js';
+import {nativeCommandSource,type NativeSourceCandidate} from './session-identity.js';
 
 type Control = (request:{ref:string;pid?:number;native_id?:string;tenant?:string;phase:'leave'|'enter'|'readback'}) =>
   Promise<NativeChannelResult & {left?:string|null}>;
 type Live = NonNullable<ReturnType<CommandRuntime['get']>>;
 
-/** Every field that identifies a native session to acquisition and usage binding. */
-const UNIT_KEYS = ['sessionId','runtime','codexThreadId','codexThreadUsage','activeWorkItemRuntimeBinding',
-  'pendingWorkItemEntry','terminalWorkItemRuntimeBinding'] as const;
+/** Every field that identifies a native session to acquisition and usage binding, with its /think level. */
+const UNIT_KEYS = ['sessionId','runtime','codexThreadId','codexThreadUsage','agyConversation','agyWorkItemBinding',
+  'reasoningLevel','activeWorkItemRuntimeBinding','pendingWorkItemEntry','terminalWorkItemRuntimeBinding'] as const;
 
 function unitOf(saved:PersistedSession|undefined, live:Live): SessionIdentityUnit {
   const unit:any={};
@@ -22,10 +23,10 @@ function unitOf(saved:PersistedSession|undefined, live:Live): SessionIdentityUni
   return unit as SessionIdentityUnit;
 }
 
-/** The actual native source of a live conversation, as `/wi continue` passes it. */
+/** The actual native source of a live conversation, as `/wi continue` passes it. An agy session
+ * without a conversation names none; the core then refuses the request as unidentified. */
 function nativeSource(live:Live, poolKey:string) {
-  return live.process?.pid ? {pid:live.process.pid}
-    : {native_id:('codexThreadId' in live ? live.codexThreadId : undefined) ?? live.sessionId, tenant:poolKey};
+  return nativeCommandSource(live as NativeSourceCandidate,poolKey) ?? {native_id:'',tenant:poolKey};
 }
 
 /** Adapters return a fresh wrapper on every get(); compare the native process, not the object. */
@@ -84,9 +85,10 @@ async function switchLocked(options:Parameters<typeof switchWorkItem>[0]):Promis
   const sessions={...(saved?.workItemSessions ?? {})};
   const known=sessions[target];
   const runtimeId=saved?.runtime ?? 'cc';
-  if(!known && runtimeId==='codex')
-    // Codex has no native identity before its first turn, so the kernel cannot hand it work.
-    return {text:'Codex 运行时下 '+target+' 还没有会话：请先 /new，再 /wi continue '+target+'；之后可用 /wi switch 往返。未做任何改动。'};
+  if(!known && (runtimeId==='codex' || runtimeId==='agy'))
+    // Codex and agy have no native identity before their first turn, so the kernel cannot hand it work.
+    return {text:(runtimeId==='codex'?'Codex':'agy')+' 运行时下 '+target+' 还没有会话：请先 /new 并发一条消息，再 /wi continue '+target
+      +'；之后可用 /wi switch 往返。未做任何改动。'};
   let left:NativeChannelResult={status:'unknown',error:{code:'leave_failed'}};
   for(let attempt=0;attempt<LEAVE_READBACKS&&left.status==='unknown';attempt++){
     try {left=await options.control({ref,...nativeSource(live,poolKey),phase:'leave'});}

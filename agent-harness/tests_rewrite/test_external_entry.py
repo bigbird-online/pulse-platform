@@ -72,6 +72,33 @@ def launcher(proc, python, entry, binding_id):
     child.joinpath("environ").write_bytes(b"")
 
 
+@pytest.mark.skipif(os.getuid() == 0, reason="root reads every environment")
+def test_an_unreadable_older_pi_above_the_launcher_does_not_refuse_it(external):
+    """wi_20261120_666: the scan for a dispatched verifier reads only processes titled
+    harness-pi-v1. An older Pi (title pi) above the launcher, whose environment this
+    account cannot read, is never read, and the entry nearer than it still works."""
+    policy, proc, inputs, data, python, entry = external
+    data["node"] = str(policy.parent / "pi")
+    policy.write_text(json.dumps(data))
+    binding_id, _ = bind(data, inputs)
+    launcher(proc, python, entry, binding_id)
+    proc.joinpath("202/status").write_text(f"Uid:\t{os.getuid()}\nPPid:\t203\n")
+    older = proc / "203"
+    older.mkdir()
+    older.joinpath("status").write_text(f"Uid:\t{os.getuid()}\nPPid:\t1\n")
+    older.joinpath("cmdline").write_bytes(b"pi\0")
+    older.joinpath("comm").write_text("pi\n")
+    older.joinpath("environ").write_bytes(b"HARNESS_REWRITE_DISPATCH=effect.fixture\0")
+    older.joinpath("environ").chmod(0)
+    try:
+        with pytest.raises(PermissionError):
+            older.joinpath("environ").read_bytes()
+        host = NativeHost(policy, proc=proc, pid=101)
+        assert (host.runtime, host.entry, host.base.actor) == ("external", "chatgpt_web", "producer")
+    finally:
+        older.joinpath("environ").chmod(0o600)
+
+
 def test_confirmed_binding_works_as_its_agent_with_exact_confirmations(external):
     policy, proc, inputs, data, python, entry = external
     binding_id, _ = bind(data, inputs)

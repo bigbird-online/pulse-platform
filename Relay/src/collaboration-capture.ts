@@ -1,5 +1,5 @@
 /** Native model evidence for one Host dispatch, never routing defaults. */
-export type NativeRuntime = 'pi' | 'codex';
+export type NativeRuntime = 'pi' | 'codex' | 'agy';
 type Row = Record<string, unknown>;
 export type Counts = Record<string, number>;
 export interface ModelQuantity { model: string; provider: string | null; usage: Counts }
@@ -8,8 +8,10 @@ export interface NativeModelUsage {
   runtime: NativeRuntime;
   models: ModelQuantity[];
 }
+// agy CLI reports uncached input, cache reads and output (thinking included); it reports no cache writes.
 export const usageKeys = (runtime: NativeRuntime): string[] => runtime === 'pi'
   ? ['input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens', 'output_tokens']
+  : runtime === 'agy' ? ['input_tokens', 'cache_read_input_tokens', 'output_tokens']
   : ['input_tokens', 'cached_input_tokens', 'cache_write_input_tokens', 'output_tokens'];
 export function nativeObject(value: unknown): Row {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Row : {};
@@ -23,7 +25,7 @@ export function nativeCounts(value: unknown, runtime: NativeRuntime): Counts | u
   for (const key of usageKeys(runtime)) {
     // Explicit Codex exec has no cache-write class. This is not the generic
     // rollout adapter's policy for an absent native field.
-    const n = key === 'cache_write_input_tokens' && !Object.hasOwn(raw, key) ? 0 : raw[key];
+    const n = runtime === 'codex' && key === 'cache_write_input_tokens' && !Object.hasOwn(raw, key) ? 0 : raw[key];
     if (typeof n !== 'number' || !Number.isSafeInteger(n) || n < 0) return;
     result[key] = n;
   }
@@ -102,6 +104,11 @@ export function codexTurnUsage(usage: unknown, baseline: unknown): ObjectRecord 
   const observed = safeUsage(usage);
   return Object.fromEntries(Object.keys(observed).map(k => [k, null]));
 }
+/** ComputeCost's agy mapping (agy_result.v1) reads agy's own field names: the
+ * Relay-internal cache_read_input_tokens is agy's cache_read_tokens. */
+function agyHostUsage(usage: ObjectRecord): ObjectRecord {
+  return Object.fromEntries(Object.entries(usage).map(([k, v]) => [k === 'cache_read_input_tokens' ? 'cache_read_tokens' : k, v]));
+}
 const TOKEN_KEYS = ['input_tokens','output_tokens','cache_read_input_tokens','cache_creation_input_tokens',
   'cached_input_tokens','cache_write_input_tokens','inputTokens','outputTokens','cacheReadInputTokens',
   'cacheCreationInputTokens','cachedInputTokens','cacheWriteInputTokens'];
@@ -158,7 +165,7 @@ export interface CapturedAttempt {
   finished: boolean;
 }
 export interface ScheduledSessionRecord {
-  runtime: 'cc' | 'codex';
+  runtime: 'cc' | 'codex' | 'agy';
   sessionId: string;
   jobId: string;
   jobName: string;
@@ -297,7 +304,8 @@ export function createCollaborationCapture(directory: string | undefined,
         responsible: null, delegator: null});
       const stableDispatchRef = dispatchRef(runtime, config, correlation);
       const attempt: CapturedAttempt = { ref: collaborationRef('attempt', [writer, correlation, nonce()]), dispatchRef: stableDispatchRef,
-        startedAt: now(), runtime, nativeSession: config?.sessionId, common,
+        // An agy conversation is named by agy itself; the Relay session ID is never its native scope.
+        startedAt: now(), runtime, nativeSession: runtime === 'agy' ? undefined : config?.sessionId, common,
         assignmentRef: binding ? collaborationRef('assignment', binding.binding_sha256) : null,
         parentRef: parent ?? null, expectedUsage,
         details: new Map(), usageEvents: new Map(), finished: false };
@@ -314,7 +322,8 @@ export function createCollaborationCapture(directory: string | undefined,
       // event to the right attempt is the manager's responsibility.
       // Native init/assistant metadata, never a user message or model text. An
       // actual session may only become available after the fresh process starts.
-      const session = text(message.session_id);
+      // agy names its conversation apart from session_id, which is the Relay session to the entry.
+      const session = text(attempt.runtime === 'agy' ? message.agy_conversation_id : message.session_id);
       if (session && (message.type === 'system' || message.type === 'assistant' || message.type === 'usage_observation' || message.type === 'result')) {
         if (attempt.details.size && attempt.nativeSession && attempt.nativeSession !== session) {
           capture.gap(attempt, 'unpaired_result');
@@ -346,7 +355,7 @@ export function createCollaborationCapture(directory: string | undefined,
       }
       if (message.type !== 'result') return;
       if (message.usage_scope === 'final_message') { capture.finish(attempt, 'completed'); return; }
-      if (attempt.runtime === 'pi' || attempt.runtime === 'codex') {
+      if (attempt.runtime === 'pi' || attempt.runtime === 'codex' || attempt.runtime === 'agy') {
         // Codex exec counters are thread-cumulative; the native partition is this turn's.
         const proof = validateNativeModelUsage(message.native_model_usage, attempt.runtime === 'codex'
           ? codexTurnUsage(message.usage, message.thread_usage_baseline) : message.usage, attempt.runtime);
@@ -354,8 +363,9 @@ export function createCollaborationCapture(directory: string | undefined,
           for (const {model, provider, usage} of proof.models) {
             const usageRef = collaborationRef('usage', [attempt.ref, 'native_model_result', provider, model]);
             emitUsage(attempt, {kind: 'usage', ...attempt.common, attempt_ref: attempt.ref,
-              usage_ref: usageRef, runtime: attempt.runtime, model, provider, usage,
-              mapping: attempt.runtime === 'pi' ? 'relay_pi.v1' : 'codex_cli.v1',
+              usage_ref: usageRef, runtime: attempt.runtime, model, provider,
+              usage: attempt.runtime === 'agy' ? agyHostUsage(usage) : usage,
+              mapping: attempt.runtime === 'pi' ? 'relay_pi.v1' : attempt.runtime === 'agy' ? 'agy_result.v1' : 'codex_cli.v1',
               granularity: 'turn_aggregate',
               ...(attempt.nativeSession ? {native_scope_ref: collaborationRef('native_session', [attempt.runtime, attempt.nativeSession])} : {}),
               coverage_ref: collaborationRef('coverage', [attempt.ref, provider, model]), covers: [], final: true});
@@ -393,8 +403,9 @@ export function createCollaborationCapture(directory: string | undefined,
         const usageRef = collaborationRef('usage',[attempt.ref,'result']);
         emitUsage(attempt, {kind:'usage', ...attempt.common, attempt_ref:attempt.ref,
           usage_ref:usageRef, runtime:attempt.runtime === 'cc-sdk' ? 'cc_sdk' : attempt.runtime,
-          model, provider:null, usage:attempt.runtime === 'codex' ? codexTurnUsage(message.usage, message.thread_usage_baseline) : safeUsage(message.usage),
-          mapping:attempt.runtime==='pi'?'relay_pi.v1':attempt.runtime==='codex'?'codex_cli.v1':'cc_result.v1',
+          model, provider:null, usage:attempt.runtime === 'codex' ? codexTurnUsage(message.usage, message.thread_usage_baseline)
+            : attempt.runtime === 'agy' ? agyHostUsage(safeUsage(message.usage)) : safeUsage(message.usage),
+          mapping:attempt.runtime==='pi'?'relay_pi.v1':attempt.runtime==='codex'?'codex_cli.v1':attempt.runtime==='agy'?'agy_result.v1':'cc_result.v1',
           granularity:'turn_aggregate', ...(attempt.nativeSession ? {native_scope_ref: collaborationRef('native_session', [attempt.runtime === 'cc-sdk' ? 'cc' : attempt.runtime, attempt.nativeSession])} : {}), coverage_ref:collaborationRef('coverage',[attempt.ref,model]),
           covers:[...attempt.details.keys()], final:true});
       }
@@ -490,6 +501,13 @@ function processCapture(env: NodeJS.ProcessEnv): CollaborationCapture | undefine
   }
   return capture;
 }
+/**
+ * The Host capture a scheduled run records its own turn into, as a conversation
+ * does (begin/response/finish); undefined where no receipt spool is configured.
+ */
+export function scheduledTurnCapture(env: NodeJS.ProcessEnv): CollaborationCapture | undefined {
+  return processCapture(env);
+}
 /** Called only at the authenticated ingress, never by parsing a model/user prompt. */
 export function captureHumanParticipation(inputRef: string, observedAtMs: number, env: NodeJS.ProcessEnv): void {
   processCapture(env)?.human(inputRef, observedAtMs);
@@ -523,7 +541,7 @@ const JOB_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
  * configures. The native session ID and the prompt are not written. Evidence
  * loss only: a missing field or failed write never fails the run.
  */
-export function captureScheduledSession(runtime: 'cc' | 'codex', sessionId: string,
+export function captureScheduledSession(runtime: 'cc' | 'codex' | 'agy', sessionId: string,
   run: { jobId: string; jobName?: string; runId?: string; startedAt?: string; wi?: string },
   env: NodeJS.ProcessEnv): void {
   // The public name stays one bounded line, as ComputeCost requires.

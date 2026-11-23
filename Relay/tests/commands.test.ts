@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { settleWiSwitch } from '../src/native-work-item-command.js';
 import { adoptAgentSwitchRequests } from '../src/agent-switch-request.js';
-import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createRouter } from '../src/router.js';
+import { createStateManager as createRealStateManager } from '../src/state.js';
+import { conversationLaunch } from '../src/conversation-launch.js';
 import { createModelCatalog } from '../src/model-catalog.js';
 import { buildRuntimeUsageBinding, runtimeAuthorityRef } from '../src/runtime-usage-binding.js';
 import {
@@ -28,6 +30,7 @@ import {
   handleReset,
   handleStop,
   handleSession,
+  buildRuntimeOptionCard,
   handleUsage,
   handleUsageSeal,
   resolveInboundRoutingAgent,
@@ -36,6 +39,7 @@ import {
   RELAY_SWITCH_CB_PREFIX,
 } from '../src/commands.js';
 import type { PersistedSession, Pool, ProcessStatusInfo } from '../src/types.js';
+import type { TerminalManager } from '../src/web-terminal.js';
 
 const testDir = join(tmpdir(), 'relay-commands-test-' + Date.now());
 
@@ -1410,6 +1414,30 @@ describe('handleCc', () => {
     const cardText = JSON.stringify(result.feishuCardElements);
     expect(cardText).toContain('claude --resume');
   });
+
+  it('resumes Fable latest with the native alias and clears an inherited model override', async () => {
+    const router = setupRouter();
+    const modelCatalog = createModelCatalog(join(import.meta.dirname, '../config/models.example.json'));
+    const createToken = vi.fn<TerminalManager['createToken']>(() => 'terminal-test-token');
+    const deps = { router, runtime: createMockPool(), modelCatalog };
+    await handleModel('owner', 'main', 'claude-fable-latest', deps);
+
+    vi.stubEnv('ANTHROPIC_DEFAULT_FABLE_MODEL', 'claude-fable-5');
+    try {
+      await handleCc('owner', 'main', {
+        ...deps,
+        terminalManager: { createToken } as unknown as TerminalManager,
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    const [{ ccArgs = [], ccEnv }] = createToken.mock.calls[0];
+    expect(ccArgs[ccArgs.indexOf('--model') + 1]).toBe('fable');
+    expect(ccEnv?.['ANTHROPIC_DEFAULT_FABLE_MODEL']).toBe('');
+    const settings = JSON.parse(ccArgs[ccArgs.indexOf('--settings') + 1]);
+    expect(settings.env.ANTHROPIC_DEFAULT_FABLE_MODEL).toBe('');
+  });
 });
 
 describe('handleUsage', () => {
@@ -1530,6 +1558,18 @@ describe('handleUsage', () => {
 });
 
 describe('handleModel', () => {
+  it('offers the Fable latest alias in the CC model picker and persists the alias', async () => {
+    const modelCatalog = createModelCatalog(join(import.meta.dirname, '../config/models.example.json'));
+    const router = setupRouter();
+    const deps = { router, runtime: createMockPool(), modelCatalog };
+
+    const card = await handleModelScope('owner', 'main', 'cc|subscription', deps);
+    expect(JSON.stringify(card.feishuCardElements)).toContain('claude-fable-latest');
+
+    await handleModel('owner', 'main', 'claude-fable-latest', deps);
+    expect(router.getAgentModel('owner', 'main')).toBe('claude-fable-latest');
+  });
+
   it('removes previous major models from CC and Codex catalog options and rejects stale selections', async () => {
     const catalogPath = writeTmpConfig('models.json', {
       providers: {
@@ -1803,7 +1843,6 @@ describe('Pi native internal commands', () => {
     const listModels = vi.fn(async () => [
       { provider: 'anthropic', model: 'claude-fable-5', displayName: 'Claude Fable 5' },
       { provider: 'anthropic', model: 'claude-opus-5-5', displayName: 'Claude Opus 5.5' },
-      { provider: 'google-gemini-cli', model: 'gemini-3.1-pro-preview', displayName: 'Gemini 3.1 Pro' },
     ].concat(modelIds.map((model) => ({
       provider: 'openai-codex', model, displayName: model,
     }))));
@@ -1811,7 +1850,7 @@ describe('Pi native internal commands', () => {
     Object.assign(pool, { listModels, setModel });
 
     const card = await handleModelScope('owner', 'main', 'pi|subscription', { router, runtime: pool });
-    expect(card.text).toContain('可用模型: 9');
+    expect(card.text).toContain('可用模型: 8');
     const cardJson = JSON.stringify(card.feishuCardElements);
     expect(cardJson).toContain('openai-codex/gpt-6.1-sol');
     expect(cardJson.indexOf('openai-codex/gpt-6.1-sol')).toBeLessThan(cardJson.indexOf('openai-codex/gpt-6-sol'));
@@ -2220,5 +2259,355 @@ describe('an unfinished /wi switch and an explicit session replacement', () => {
     release();
     await switching;
     expect((await handleReset('owner','main',{router,runtime:createMockPool(),stateManager})).text).toContain('已强制重置');
+  });
+});
+
+describe('/think on every conversation runtime', () => {
+  const savedAgyBin = process.env.PULSE_AGY_BIN;
+  beforeEach(() => {
+    mkdirSync(testDir, { recursive: true });
+    const bin = join(testDir, 'agy');
+    writeFileSync(bin, '#!/bin/sh\n', { mode: 0o755 });
+    process.env.PULSE_AGY_BIN = bin;
+  });
+  afterEach(() => {
+    if (savedAgyBin === undefined) delete process.env.PULSE_AGY_BIN;
+    else process.env.PULSE_AGY_BIN = savedAgyBin;
+  });
+
+  function session(runtime: PersistedSession['runtime'], extra: Partial<PersistedSession> = {}): PersistedSession {
+    return { poolKey: 'owner:main', agentId: 'main', runtime, sessionId: 'relay-session',
+      turnCount: 1, maxTurns: 20, lastActivity: Date.now(), status: 'active', ...extra };
+  }
+  function live(state: 'idle' | 'busy') {
+    return createMockPool({ 'owner:main': { tenantId: 'owner:main', state, pid: 1, lastActivity: Date.now(), spawnedAt: Date.now(), restartCount: 0 } });
+  }
+  function thinkButtons(card: Awaited<ReturnType<typeof handleThink>>): string[] {
+    return (card.feishuCardElements ?? []).flatMap((element) => Array.isArray(element.columns)
+      ? (element.columns as Array<{ elements: Array<{ behaviors: Array<{ value: Record<string, string> }> }> }>)
+        .map((column) => column.elements[0]!.behaviors[0]!.value)
+        .filter((value) => value.relay_menu === 'think').map((value) => value.relay_menu_arg!)
+      : []);
+  }
+
+  it.each([['cc'], ['cc-sdk']] as const)('%s maps the level to effort and restarts the idle process, keeping the session', async (runtimeId) => {
+    const router = setupRouter();
+    router.setAgentRuntime('owner', 'main', runtimeId);
+    const pool = live('idle');
+    const kill = vi.fn(async () => undefined);
+    const setThinkingLevel = vi.fn(async () => undefined);
+    Object.assign(pool, { kill, setThinkingLevel });
+    const stateManager = createStateManager({ 'owner:main': session(runtimeId) });
+    const deps = { router, runtime: pool, stateManager };
+
+    const card = await handleThink('owner', 'main', undefined, deps);
+    expect(card.text).toContain('effort');
+    expect(card.text).toContain('当前: 默认');
+    expect(thinkButtons(card)).toEqual(['low', 'medium', 'high', 'xhigh', 'max']);
+
+    const set = await handleThink('owner', 'main', 'max', deps);
+    expect(set.text).toContain('effort → max');
+    expect(set.text).toContain('下一轮生效');
+    expect(stateManager.getSession('owner:main')?.reasoningLevel).toBe('max');
+    expect(stateManager.getSession('owner:main')?.sessionId).toBe('relay-session');
+    expect(kill).toHaveBeenCalledWith('owner:main');
+    expect(setThinkingLevel).not.toHaveBeenCalled();
+    expect(thinkButtons(await handleThink('owner', 'main', undefined, deps))).toContain('max');
+
+    const busy = live('busy');
+    Object.assign(busy, { kill });
+    kill.mockClear();
+    const refused = await handleThink('owner', 'main', 'low', { router, runtime: busy, stateManager });
+    expect(refused.text).toContain('正在工作');
+    expect(kill).not.toHaveBeenCalled();
+    expect(stateManager.getSession('owner:main')?.reasoningLevel).toBe('max');
+    expect((await handleThink('owner', 'main', 'off', deps)).text).toContain('不支持 thinking=off');
+  });
+
+  describe('default line from the transcript of the last turn', () => {
+    const turn = (effort: string) => JSON.stringify({ type: 'assistant', requestedModel: 'claude-opus-5-5', effort, perTurnEffort: effort,
+      message: { role: 'assistant', model: 'claude-opus-5-5', content: [] } });
+    /** Write the session transcript where CC puts it: <config dir>/projects/<cwd encoded>/<session>.jsonl. */
+    function writeTranscript(configDir: string, workspace: string, lines: string[]): void {
+      const dir = join(configDir, 'projects', realpathSync(workspace).replace(/[^A-Za-z0-9_-]/g, '-'));
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'relay-session.jsonl'), lines.join('\n') + '\n');
+    }
+    function setup(agentExtra: Record<string, unknown> = {}, runtime = 'cc') {
+      const workspace = join(testDir, `ws-${runtime}`);
+      mkdirSync(workspace, { recursive: true });
+      const path = join(testDir, `relay-think-${runtime}.json`);
+      writeFileSync(path, JSON.stringify({ users: [{ userId: 'owner', chatId: '111222333', defaultAgent: 'main', agents: [
+        { id: 'main', name: 'Vigil', emoji: 'V', botToken: 'fake-v', workspace, runtime, ...agentExtra },
+      ] }] }));
+      const router = createRouter(path);
+      const stateManager = createStateManager({ 'owner:main': session(runtime as PersistedSession['runtime']) });
+      return { workspace, deps: { router, runtime: createMockPool(), stateManager } };
+    }
+    let home: string;
+    beforeEach(() => {
+      home = join(testDir, 'think-home');
+      mkdirSync(home, { recursive: true });
+      vi.stubEnv('HOME', home);
+      vi.stubEnv('CLAUDE_CONFIG_DIR', '');
+    });
+    afterEach(() => { vi.unstubAllEnvs(); });
+
+    it.each([['cc'], ['cc-sdk']] as const)('%s shows the effort the last turn actually ran at', async (runtime) => {
+      const { workspace, deps } = setup({}, runtime);
+      writeTranscript(join(home, '.claude'), workspace, [turn('high'), turn('medium'), JSON.stringify({ type: 'user', message: {} })]);
+      const card = await handleThink('owner', 'main', undefined, deps);
+      expect(card.text).toContain('当前: 默认（上一轮实际 medium，模型 claude-opus-5-5）');
+      expect(card.text).toContain('/new 后回到默认。');
+    });
+
+    it('names no level before the first reply or when records carry no effort', async () => {
+      const { workspace, deps } = setup();
+      expect((await handleThink('owner', 'main', undefined, deps)).text)
+        .toContain('当前: 默认（由 Claude Code 决定，首轮回复后可见实际档位）');
+      writeTranscript(join(home, '.claude'), workspace, [JSON.stringify({ type: 'assistant', message: { model: 'claude-opus-5-5' } })]);
+      expect((await handleThink('owner', 'main', undefined, deps)).text)
+        .toContain('当前: 默认（由 Claude Code 决定，首轮回复后可见实际档位）');
+    });
+
+    it('reads the agent HOME, and CLAUDE_CONFIG_DIR ahead of it', async () => {
+      const agentHome = join(testDir, 'think-agent-home');
+      const { workspace, deps } = setup({ userHome: agentHome });
+      writeTranscript(join(home, '.claude'), workspace, [turn('max')]);
+      writeTranscript(join(agentHome, '.claude'), workspace, [turn('low')]);
+      expect((await handleThink('owner', 'main', undefined, deps)).text).toContain('上一轮实际 low');
+      const configDir = join(testDir, 'think-config-dir');
+      writeTranscript(configDir, workspace, [turn('xhigh')]);
+      vi.stubEnv('CLAUDE_CONFIG_DIR', configDir);
+      expect((await handleThink('owner', 'main', undefined, deps)).text).toContain('上一轮实际 xhigh');
+    });
+
+    it('reads a linuxUser tenant under its workspace HOME, where sudo drops CLAUDE_CONFIG_DIR', async () => {
+      const { workspace, deps } = setup({ linuxUser: 'tenant' });
+      writeTranscript(join(realpathSync(workspace), '.claude'), workspace, [turn('medium')]);
+      const configDir = join(testDir, 'think-relay-config-dir');
+      writeTranscript(configDir, workspace, [turn('max')]);
+      vi.stubEnv('CLAUDE_CONFIG_DIR', configDir);
+      expect((await handleThink('owner', 'main', undefined, deps)).text).toContain('当前: 默认（上一轮实际 medium，模型 claude-opus-5-5）');
+    });
+  });
+
+  it('shows the effort Relay passes Codex, and promises no level for /new', async () => {
+    vi.stubEnv('PULSE_CODEX_REASONING_EFFORT', '');
+    vi.stubEnv('RELAY_CODEX_REASONING_EFFORT', '');
+    vi.stubEnv('PULSE_RUNTIME_PRIORITY_PATH', join(testDir, 'missing-runtime-priority.json'));
+    try {
+      // The Agent prefers cc (sampleConfig sets no runtime); this session fell back to Codex.
+      const router = setupRouter();
+      const stateManager = createStateManager({ 'owner:main': session('codex') });
+      const card = await handleThink('owner', 'main', undefined, { router, runtime: createMockPool(), stateManager });
+      expect(card.text).toContain('Codex reasoning effort');
+      expect(card.text).toContain('当前: 默认（xhigh，来自 Relay 内置默认）');
+      expect(card.text).toContain('/new 后回到默认。');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('codex maps the level to reasoning effort on the live process for the next turn', async () => {
+    const router = setupRouter();
+    router.setAgentRuntime('owner', 'main', 'codex');
+    const pool = live('busy');
+    const kill = vi.fn(async () => undefined);
+    const setThinkingLevel = vi.fn(async () => undefined);
+    Object.assign(pool, { kill, setThinkingLevel });
+    const stateManager = createStateManager({ 'owner:main': session('codex') });
+    const deps = { router, runtime: pool, stateManager };
+
+    expect(thinkButtons(await handleThink('owner', 'main', undefined, deps))).toEqual(['low', 'medium', 'high', 'xhigh']);
+    const set = await handleThink('owner', 'main', 'xhigh', deps);
+    expect(set.text).toContain('reasoning effort → xhigh');
+    expect(setThinkingLevel).toHaveBeenCalledWith('owner:main', 'xhigh');
+    expect(kill).not.toHaveBeenCalled();
+    expect(stateManager.getSession('owner:main')?.reasoningLevel).toBe('xhigh');
+    expect((await handleThink('owner', 'main', 'max', deps)).text).toContain('codex 不支持 thinking=max');
+  });
+
+  it('agy maps the level to the model family variant, and refuses a level the family lacks', async () => {
+    const router = setupRouter();
+    router.setAgentRuntime('owner', 'main', 'agy');
+    const pool = live('idle');
+    const setThinkingLevel = vi.fn(async () => undefined);
+    const setModel = vi.fn(async () => undefined);
+    Object.assign(pool, { setThinkingLevel, setModel });
+    const stateManager = createStateManager({ 'owner:main': session('agy') });
+    const deps = { router, runtime: pool, stateManager };
+
+    const card = await handleThink('owner', 'main', undefined, deps);
+    expect(card.text).toContain('当前: high');
+    expect(thinkButtons(card)).toEqual(['low', 'medium', 'high', 'xhigh']);
+    const set = await handleThink('owner', 'main', 'low', deps);
+    expect(set.text).toContain('模型变体 → low（gemini-4-neon-low）');
+    expect(setThinkingLevel).toHaveBeenCalledWith('owner:main', 'low');
+    expect(stateManager.getSession('owner:main')?.reasoningLevel).toBe('low');
+    // The /model card follows the session level.
+    const modelCard = JSON.stringify((await handleModel('owner', 'main', undefined, deps)).feishuCardElements);
+    expect(modelCard).toContain('gemini-4-argon-low');
+
+    await handleModel('owner', 'main', 'gemini-3.8-flash-high', deps);
+    expect(stateManager.getSession('owner:main')?.reasoningLevel).toBeUndefined();
+    const refused = await handleThink('owner', 'main', 'xhigh', deps);
+    expect(refused.text).toContain('agy 模型 gemini-3.8-flash-high 没有 xhigh 档位；可用: low, medium, high');
+
+    await handleModel('owner', 'main', 'gemini-pro-orchestrator-neon', deps);
+    const none = await handleThink('owner', 'main', 'low', deps);
+    expect(none.text).toContain('没有可选的思考档位');
+  });
+
+  it('asks for a conversation before storing a level', async () => {
+    const router = setupRouter();
+    router.setAgentRuntime('owner', 'main', 'codex');
+    const stateManager = createStateManager();
+    const result = await handleThink('owner', 'main', 'high', { router, runtime: createMockPool(), stateManager });
+    expect(result.text).toContain('还没有会话');
+    expect(stateManager.getSession('owner:main')).toBeUndefined();
+  });
+
+  it.each([['/new', handleNew], ['/reset', handleReset]] as const)('%s starts the next launch at the runtime default level', async (_name, replace) => {
+    const router = setupRouter();
+    router.setAgentRuntime('owner', 'main', 'cc');
+    const pool = live('idle');
+    Object.assign(pool, { kill: vi.fn(async () => undefined) });
+    const stateManager = createRealStateManager(join(testDir, 'state.json'));
+    stateManager.load();
+    stateManager.updateSession('owner:main', session('cc'));
+    const deps = { router, runtime: pool, stateManager };
+    expect((await handleThink('owner', 'main', 'low', deps)).text).toContain('effort → low');
+    const agent = router.getActiveAgent('owner')!;
+    const launch = () => conversationLaunch({ poolKey: 'owner:main', agent, session: stateManager.getSession('owner:main'),
+      channel: 'telegram', intent: 'inbound' });
+    expect(launch().reasoningLevel).toBe('low');
+
+    await replace('owner', 'main', deps);
+    expect(stateManager.getSession('owner:main')?.sessionId).not.toBe('relay-session');
+    expect(launch().reasoningLevel).toBeUndefined();
+  });
+});
+
+describe('agy runtime commands', () => {
+  const savedAgyBin = process.env.PULSE_AGY_BIN;
+  beforeEach(() => {
+    mkdirSync(testDir, { recursive: true });
+    const bin = join(testDir, 'agy');
+    writeFileSync(bin, '#!/bin/sh\n', { mode: 0o755 });
+    process.env.PULSE_AGY_BIN = bin;
+  });
+  afterEach(() => {
+    if (savedAgyBin === undefined) delete process.env.PULSE_AGY_BIN;
+    else process.env.PULSE_AGY_BIN = savedAgyBin;
+  });
+
+  function agySession(extra: Partial<PersistedSession> = {}): PersistedSession {
+    return { poolKey: 'owner:main', agentId: 'main', runtime: 'agy', sessionId: 'relay-session',
+      turnCount: 1, maxTurns: 20, lastActivity: Date.now(), status: 'active', ...extra };
+  }
+
+  it('switches to agy only where the launcher exists', async () => {
+    const router = setupRouter();
+    const pool = createMockPool();
+    const stateManager = createStateManager();
+    const switched = await handleRuntime('owner', 'main', 'agy', { router, runtime: pool, stateManager });
+    expect(switched.text).toContain('runtime 已切换为 agy');
+    expect(readConfig().users[0].agents[0].conversationRuntimePreference).toEqual(['agy']);
+
+    process.env.PULSE_AGY_BIN = join(testDir, 'missing-agy');
+    const router2 = setupRouter();
+    const refused = await handleRuntime('owner', 'main', 'agy', { router: router2, runtime: pool, stateManager });
+    expect(refused.text).toContain('未安装 agy');
+  });
+
+  it('refuses agy at /runtime and /model for an Agent isolated under its own Linux user', async () => {
+    const config = JSON.parse(JSON.stringify(sampleConfig));
+    config.users[0].agents[0].linuxUser = 'agent-iso';
+    writeFileSync(join(testDir, 'relay.json'), JSON.stringify(config));
+    const router = createRouter(join(testDir, 'relay.json'));
+    const pool = createMockPool();
+    const stateManager = createStateManager();
+    const refused = await handleRuntime('owner', 'main', 'agy', { router, runtime: pool, stateManager });
+    expect(refused.text).toContain('独立 Linux 用户隔离');
+    expect(readConfig().users[0].agents[0].conversationRuntimePreference)
+      .toEqual(config.users[0].agents[0].conversationRuntimePreference);
+    const agent = router.getAgents('owner').find((a) => a.id === 'main')!;
+    expect(JSON.stringify(buildRuntimeOptionCard(agent, { router }))).not.toContain('agy');
+
+    // An Agent already on agy (configured before this guard) cannot pick or keep an agy model either.
+    router.setAgentRuntime('owner', 'main', 'agy');
+    const model = await handleModel('owner', 'main', 'gemini-4-neon-medium', { router, runtime: pool, stateManager });
+    expect(model.text).toContain('独立 Linux 用户隔离');
+    expect(router.getAgentModel('owner', 'main')).not.toBe('gemini-4-neon-medium');
+  });
+
+  it('drops an agy model when the agent leaves agy', async () => {
+    const router = setupRouter();
+    router.setAgentRuntime('owner', 'main', 'agy');
+    router.setAgentModel('owner', 'main', 'gemini-4-neon-high');
+    const result = await handleRuntime('owner', 'main', 'cc', { router, runtime: createMockPool(), stateManager: createStateManager() });
+    expect(result.text).toContain('agy 专用模型已清除');
+    expect(router.getAgentModel('owner', 'main')).toBeUndefined();
+  });
+
+  it('lists every measured agy model family on the /model card itself, the current one marked', async () => {
+    const router = setupRouter();
+    router.setAgentRuntime('owner', 'main', 'agy');
+    const deps = { router, runtime: createMockPool() };
+    const card = await handleModel('owner', 'main', undefined, deps);
+    const buttons = (card.feishuCardElements ?? []).flatMap((element) => Array.isArray(element.columns)
+      ? (element.columns as Array<{ elements: Array<{ text: { content: string }; behaviors: Array<{ value: Record<string, string> }> }> }>)
+        .map((column) => ({ label: column.elements[0]!.text.content, ...column.elements[0]!.behaviors[0]!.value }))
+      : []);
+    const models = buttons.filter((button) => button.relay_menu === 'model');
+    expect(models.map((button) => button.label)).toEqual(['✓ Gemini 4 Neon', 'Gemini 4 Argon', 'Gemini 4 Hydrogen',
+      'Orchestrator (Neon)', 'Orchestrator (Argon)', 'Gemini 3.8 Flash', 'Claude Opus 5.5', 'Claude Sonnet 5.5', 'GPT-OSS 120B']);
+    // A family is picked at the current level (high) when it has it, else at its only variant.
+    expect(models.map((button) => button.relay_menu_arg)).toEqual(['gemini-4-neon-high', 'gemini-4-argon-high',
+      'gemini-4-hydrogen-high', 'gemini-pro-orchestrator-neon', 'gemini-pro-orchestrator-g1-pro', 'gemini-3.8-flash-high',
+      'claude-opus-5-5-high', 'claude-sonnet-5-5-high', 'gpt-oss-120b-medium']);
+    expect(buttons.some((button) => button.relay_menu === 'model_scope')).toBe(false);
+    // An older card's scope button lands on the same card.
+    const scoped = await handleModelScope('owner', 'main', 'agy|subscription', deps);
+    expect(JSON.stringify(scoped.feishuCardElements)).toContain('gemini-pro-orchestrator-g1-pro');
+    const listed = await handleModels('owner', 'main', deps, 'claude');
+    expect(listed.text).toContain('agy/claude-opus-5-5-low');
+    expect(listed.text).toContain('匹配: 6');
+  });
+
+  it('selects an agy model in place, keeping the conversation', async () => {
+    const router = setupRouter();
+    router.setAgentRuntime('owner', 'main', 'agy');
+    const pool = createMockPool({
+      'owner:main': { tenantId: 'owner:main', state: 'idle', pid: 1, lastActivity: Date.now(), spawnedAt: Date.now(), restartCount: 0 },
+    });
+    const setModel = vi.fn(async () => undefined);
+    const kill = vi.fn(async () => undefined);
+    Object.assign(pool, { setModel, kill });
+    const stateManager = createStateManager({ 'owner:main': agySession() });
+
+    const result = await handleModel('owner', 'main', 'gemini-4-neon-medium', { router, runtime: pool, stateManager });
+    expect(result.text).toContain('agy model → gemini-4-neon-medium');
+    expect(setModel).toHaveBeenCalledWith('owner:main', { provider: 'agy', model: 'gemini-4-neon-medium', reasoning: 'medium' });
+    expect(kill).not.toHaveBeenCalled();
+    expect(router.getAgentModel('owner', 'main')).toBe('gemini-4-neon-medium');
+
+    const rejected = await handleModel('owner', 'main', 'claude-opus-5-5', { router, runtime: pool, stateManager });
+    expect(rejected.text).toContain('agy 不提供该模型');
+    expect(router.getAgentModel('owner', 'main')).toBe('gemini-4-neon-medium');
+
+    const reset = await handleModel('owner', 'main', 'default', { router, runtime: pool, stateManager });
+    expect(reset.text).toContain('gemini-4-neon-high（默认）');
+  });
+
+  it('shows the agy conversation id bound to this Relay session', () => {
+    const router = setupRouter();
+    router.setAgentRuntime('owner', 'main', 'agy');
+    const stateManager = createStateManager({ 'owner:main': agySession({
+      agyConversation: { sessionId: 'relay-session', conversationId: 'conv-123' } }) });
+    const result = handleSession('owner', 'main', { router, runtime: createMockPool(), stateManager });
+    expect(result.text).toContain('runtime=agy');
+    expect(result.text).toContain('conversationId=conv-123');
   });
 });

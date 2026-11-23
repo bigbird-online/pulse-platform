@@ -18,7 +18,10 @@ from typing import Iterator, cast
 
 from .model import Json, Rejected, digest, encoded
 
-RUNTIMES = {"pi", "cc", "codex"}
+RUNTIMES = {"pi", "cc", "codex", "agy"}
+# Antigravity CLI keeps one directory per conversation under its brain root; the
+# directory name is the conversation ID, the transcript names no session itself.
+AGY_TRANSCRIPT = Path(".system_generated/logs/transcript_full.jsonl")
 MAX_ROW = 8 * 1024 * 1024
 # A Relay scheduler run: its proof supplies a CLI session's native ID only.
 SCHEDULER = "scheduler"
@@ -73,6 +76,15 @@ def rows(path: Path) -> Iterator[tuple[int, Json]]:
 
 
 def user_text(row: Json, runtime: str) -> str | None:
+    if runtime == "agy":
+        # Only the user's own explicit input; system notices are never consent.
+        if row.get("type") != "USER_INPUT" or row.get("source") != "USER_EXPLICIT":
+            return None
+        content = row.get("content")
+        if not isinstance(content, str):
+            return None
+        request = re.search(r"<USER_REQUEST>\n?(.*?)\n?</USER_REQUEST>", content, re.S)
+        return request.group(1) if request else content
     if runtime == "codex":
         # response_item is the original native input. event_msg duplicates it.
         if row.get("type") != "response_item":
@@ -137,6 +149,44 @@ def _option(argv: list[str], name: str) -> str | None:
     try:
         return argv[argv.index(name) + 1]
     except (ValueError, IndexError):
+        return None
+
+
+def conversation_option(argv: list[str]) -> str | None:
+    """agy's one --conversation value in a bounded argv (argv[0] is the program).
+
+    Absent, repeated or malformed is no identity: the session is not guessed.
+    """
+    values = []
+    for index, arg in enumerate(argv[1:], 1):
+        if arg == "--conversation":
+            values.append(argv[index + 1] if index + 1 < len(argv) else "")
+        elif arg.startswith("--conversation="):
+            values.append(arg.partition("=")[2])
+    if len(values) != 1 or re.fullmatch(r"[A-Za-z0-9-]{1,128}", values[0]) is None:
+        return None
+    return values[0]
+
+
+def process_cwd(pid: int, proc: Path) -> Path | None:
+    """The working directory of one native process, read-only; None if unreadable."""
+    from .runtime_presence import procfs_absent
+
+    if procfs_absent(proc):
+        try:
+            listed = subprocess.run(
+                ["lsof", "-a", "-d", "cwd", "-p", str(pid), "-Fn"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout
+        except (OSError, subprocess.SubprocessError):
+            return None
+        found = [line[1:] for line in listed.splitlines() if line.startswith("n/")]
+        return Path(found[0]) if len(found) == 1 else None
+    try:
+        return (proc / str(pid) / "cwd").resolve(strict=True)
+    except OSError:
         return None
 
 
@@ -321,11 +371,14 @@ def locate(
     *,
     entry: Path | None = None,
     pre_model: bool = False,
+    nearer_than: int | None = None,
 ) -> Json | None:
     """Authenticate CC/Codex source using installed executable and source roots.
 
     With pre_model, a Relay-proven session whose runtime has not yet written its
     first log row is located without a path. Only Relay slash input uses this.
+    With `nearer_than`, only the first that many processes can be the native
+    runtime; its Relay, scheduler and launcher proofs still read the whole chain.
     """
     found = []
     pending = []
@@ -341,7 +394,7 @@ def locate(
         native = next(
             (
                 row
-                for row in chain
+                for row in chain[:nearer_than]
                 if row["uid"] == os.getuid()
                 and any(
                     program(installed, value)
@@ -407,8 +460,19 @@ def locate(
             if scheduled
             else (_option(native["argv"], "--session-id") or _option(native["argv"], "--resume"))
             if runtime == "cc"
+            else conversation_option(native["argv"])
+            if runtime == "agy"
             else environment.get("CODEX_THREAD_ID") or environment.get("CODEX_SESSION_ID")
         )
+        if runtime == "agy" and not proof and profile.get("workspace_roots"):
+            # An agy transcript records no working directory. Without a Relay
+            # conversation proof (tenant), the process's own cwd selects the
+            # Agent, as a CC or Codex header cwd does.
+            cwd = process_cwd(native["pid"], proc)
+            if cwd is None or not any(
+                cwd == Path(p) or Path(p) in cwd.parents for p in profile["workspace_roots"]
+            ):
+                continue
         if proof:
             native_id = proof["session_id"]
             if profile.get("standalone"):
@@ -467,7 +531,7 @@ def locate(
 
 
 def old_session_ref(runtime: str, native_id: str) -> str:
-    prefix = "pulse-session-v1\0" if runtime in {"pi", "cc"} else "scl-codex-session-v1\0"
+    prefix = "pulse-session-v1\0" if runtime in {"pi", "cc", "agy"} else "scl-codex-session-v1\0"
     return "session_v1_" + hashlib.sha256((prefix + native_id).encode()).hexdigest()
 
 
@@ -528,9 +592,19 @@ def source_files(profile: Json, native_id: str) -> Iterator[Path]:
     root = Path(profile["session_root"])
     if root.resolve(strict=True) != root:
         raise Rejected("authority_denied", "Native source root redirects")
-    files = codex_files(root, native_id) if runtime == "codex" else list(
-        root.rglob(("*" if runtime == "pi" else "") + native_id + ".jsonl")
-    )
+    if runtime == "agy":
+        # The conversation directory is the identity; never search other names.
+        if re.fullmatch(r"[A-Za-z0-9-]{1,128}", native_id) is None:
+            raise Rejected("source_invalid", "Native agy conversation identity is invalid")
+        conversation = root / native_id
+        if conversation.is_symlink() or (conversation.exists() and conversation.resolve() != conversation):
+            raise Rejected("authority_denied", "Native agy conversation redirects")
+        transcript = conversation / AGY_TRANSCRIPT
+        files = [transcript] if transcript.exists() or transcript.is_symlink() else []
+    else:
+        files = codex_files(root, native_id) if runtime == "codex" else list(
+            root.rglob(("*" if runtime == "pi" else "") + native_id + ".jsonl")
+        )
     for path in files:
         if path.is_symlink() or path.resolve() != path or path.stat().st_uid != os.getuid():
             raise Rejected(
@@ -540,7 +614,11 @@ def source_files(profile: Json, native_id: str) -> Iterator[Path]:
         if first is None:
             continue
         row = first[1]
-        if runtime == "pi":
+        if runtime == "agy":
+            # Every agy row is one step; the first carries its index and type.
+            if not isinstance(row.get("step_index"), int) or not isinstance(row.get("type"), str):
+                raise Rejected("source_invalid", "Native agy transcript differs from its step format")
+        elif runtime == "pi":
             if row.get("type") != "session" or row.get("id") != native_id:
                 raise Rejected("source_invalid", "Native Pi header differs from Host identity")
             scopes = [Path(p) for p in profile.get("workspace_roots", [])]

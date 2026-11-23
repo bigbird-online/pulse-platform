@@ -33,6 +33,8 @@ MANAGED_POLICY_KEYS = (
     "claude_model",
 )
 HARNESS_DEFAULT_COMPUTE_PROFILE = "platform_default"
+FABLE_CC_ALIAS = "claude-fable-latest"
+PLATFORM_CC_ALIAS_FIELD = "platform_default_cc_alias"
 BACKEND_MEDIA_UAT_PROFILE = "media"
 BACKEND_MEDIA_UAT_BACKUP_PREFIX = "backend-media-uat"
 CURRENT_SAFE_PRESET = "current_safe"
@@ -283,10 +285,27 @@ def _validate_profile(profile: dict[str, Any]) -> dict[str, Any]:
         raise ManagementError("codex.yolo must be boolean")
     if not isinstance(claude.get("model"), str) or not claude["model"].strip():
         raise ManagementError("claude.model must be a non-empty string")
+    if profile.get(PLATFORM_CC_ALIAS_FIELD) not in (None, FABLE_CC_ALIAS):
+        raise ManagementError(f"{PLATFORM_CC_ALIAS_FIELD} must be {FABLE_CC_ALIAS} or null")
     return profile
 
 
-def _desired_profile(args: argparse.Namespace, current: dict[str, Any]) -> dict[str, Any]:
+def _compute_profile_catalog(path: Path) -> dict[str, Any]:
+    catalog = _read_json(path)
+    if catalog.get("schema_version") != 2 or not isinstance(catalog.get("profiles"), dict):
+        raise ManagementError(f"invalid compute profile catalog: {path}")
+    return catalog
+
+
+def _uses_fable_default(catalog: dict[str, Any]) -> bool:
+    default = catalog["profiles"].get(HARNESS_DEFAULT_COMPUTE_PROFILE)
+    cc = default.get("cc") if isinstance(default, dict) else None
+    return isinstance(cc, dict) and cc.get("model_alias") == FABLE_CC_ALIAS
+
+
+def _desired_profile(
+    args: argparse.Namespace, current: dict[str, Any], compute_profiles_path: Path
+) -> dict[str, Any]:
     desired = json.loads(json.dumps(current))
     if args.priority:
         desired["runtime_priority"] = [part.strip() for part in args.priority.split(",") if part.strip()]
@@ -298,6 +317,15 @@ def _desired_profile(args: argparse.Namespace, current: dict[str, Any]) -> dict[
         desired["codex"]["yolo"] = args.codex_yolo == "on"
     if args.claude_model:
         desired["claude"]["model"] = args.claude_model.strip()
+    if args.platform_default_cc is not None:
+        desired[PLATFORM_CC_ALIAS_FIELD] = (
+            FABLE_CC_ALIAS if args.platform_default_cc == FABLE_CC_ALIAS else None
+        )
+    elif (
+        PLATFORM_CC_ALIAS_FIELD not in desired
+        and _uses_fable_default(_compute_profile_catalog(compute_profiles_path))
+    ):
+        desired[PLATFORM_CC_ALIAS_FIELD] = FABLE_CC_ALIAS
     desired = _validate_profile(desired)
     if "fable" in desired["claude"]["model"].lower():
         raise ManagementError("claude.model Fable is disabled; choose an approved non-Fable model")
@@ -563,9 +591,7 @@ def _transform_backend_media_uat_cron(path: Path) -> tuple[bytes, int, int]:
 
 
 def _transform_compute_profiles(path: Path, profile: dict[str, Any]) -> bytes:
-    catalog = _read_json(path)
-    if catalog.get("schema_version") != 2 or not isinstance(catalog.get("profiles"), dict):
-        raise ManagementError(f"invalid compute profile catalog: {path}")
+    catalog = _compute_profile_catalog(path)
     model_match = re.fullmatch(
         r"gpt-\d+(?:\.\d+)*-(sol|terra|luna)",
         profile["codex"]["model"],
@@ -574,8 +600,10 @@ def _transform_compute_profiles(path: Path, profile: dict[str, Any]) -> bytes:
         raise ManagementError(
             "codex.model must name a Sol/Terra/Luna family model so cron can use a latest alias"
         )
+    cc_alias = profile.get(PLATFORM_CC_ALIAS_FIELD)
+    cc_profile = {"model_alias": cc_alias} if cc_alias else {"model": profile["claude"]["model"]}
     platform_default = {
-        "cc": {"model": profile["claude"]["model"]},
+        "cc": cc_profile,
         "codex": {
             "model_alias": f"codex-{model_match.group(1)}-latest",
             "reasoning_effort": profile["codex"]["reasoning_effort"],
@@ -1153,6 +1181,8 @@ def _print_summary(
         f"codex_yolo={'on' if profile['codex']['yolo'] else 'off'}",
         f"claude={profile['claude']['model']}",
     )
+    if PLATFORM_CC_ALIAS_FIELD in profile:
+        print(f"platform_default_cc={profile[PLATFORM_CC_ALIAS_FIELD] or 'shared'}")
     print(
         f"managed relay_agents={counts['relay_agents']} direct_jobs={counts['direct_jobs']} "
         f"harness_policies={counts['harness_policies']} "
@@ -1173,7 +1203,7 @@ def _print_summary(
 def _plan_or_apply(args: argparse.Namespace, apply: bool) -> int:
     paths = _paths()
     current = _profile_from_disk(paths["profile"])
-    desired = _desired_profile(args, current)
+    desired = _desired_profile(args, current, paths["compute_profiles"])
     rendered, counts, cost_route = _render(paths, desired, args.preset)
     plan = _structured_plan(paths, current, desired, cost_route)
     changed = _changed_paths(paths, rendered)
@@ -1200,7 +1230,7 @@ def _plan_or_apply(args: argparse.Namespace, apply: bool) -> int:
         # A plan that was valid before lock acquisition must not authorize a
         # write after another manager invocation changed active state.
         locked_current = _profile_from_disk(paths["profile"])
-        locked_desired = _desired_profile(args, locked_current)
+        locked_desired = _desired_profile(args, locked_current, paths["compute_profiles"])
         rendered, counts, cost_route = _render(paths, locked_desired, args.preset)
         locked_plan = _structured_plan(paths, locked_current, locked_desired, cost_route)
         _require_apply_preconditions(args, locked_plan)
@@ -1590,6 +1620,11 @@ def _add_profile_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--codex-reasoning-effort")
     parser.add_argument("--codex-yolo", choices=("on", "off"))
     parser.add_argument("--claude-model")
+    parser.add_argument(
+        "--platform-default-cc",
+        choices=(FABLE_CC_ALIAS, "shared"),
+        help="select Fable latest or the shared Claude model for the Relay platform default",
+    )
 
 
 def _parser() -> argparse.ArgumentParser:

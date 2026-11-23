@@ -1,5 +1,6 @@
 import {describe,it,expect,vi} from 'vitest';
 import {rolloverNativeSession} from '../src/native-session-rollover.js';
+import {conversationLaunch} from '../src/conversation-launch.js';
 import type {AgentConfig,StateManager,PersistedSession} from '../src/types.js';
 import type {CommandRuntime} from '../src/commands.js';
 
@@ -281,5 +282,179 @@ describe('an Agent-requested native session rollover',()=>{
     await rolloverNativeSession({...f.input,control:control as any,origin:'agent'});
     expect(f.state.pendingNativeRollover?.ref).toBe(f.input.ref);
     expect(f.runtime.kill).not.toHaveBeenCalled();
+  });
+});
+
+describe('agy session rollover',()=>{
+  it('names both agy conversations, binds the successor to the WI and accepts it after its bootstrap turn',async()=>{
+    const poolKey='human:asobi',ref='b'.repeat(64);
+    const state:PersistedSession={poolKey,agentId:'asobi',runtime:'agy',sessionId:'source',
+      agyConversation:{sessionId:'source',conversationId:'agy-source'},status:'active',lastActivity:1,turnCount:1,maxTurns:100};
+    let live:any={sessionId:'source',state:'idle',runtime:'agy',agyConversationId:'agy-source'};
+    const sent:any[]=[];
+    const runtime={get:vi.fn(()=>live),kill:vi.fn(async()=>{live=undefined;}),
+      spawn:vi.fn(async(config:any)=>{live={sessionId:config.sessionId,state:'idle',runtime:'agy'};return live;}),
+      bindRuntimeUsage:vi.fn(),
+      // The bootstrap turn makes agy name the successor's conversation.
+      sendIdempotent:vi.fn(async(_key:string,message:any)=>{sent.push(message);live.agyConversationId='agy-successor';})};
+    const stateManager={getSession:()=>state,updateSession:(_key:string,patch:any)=>Object.assign(state,patch),
+      flushStrict:vi.fn()} as unknown as StateManager;
+    let prepared=false,accepted=false;
+    const control=vi.fn(async(request:any)=>{
+      if(request.stage==='prepare')prepared=true;
+      if(request.stage==='accept')accepted=true;
+      return {status:'read_only',session_handover:{ref,wi:'wi_20261122_053',source_native_id:'agy-source',
+        target_session_id:'target',runtime:'agy',prepared,accepted,target_session_exists:sent.length>0,
+        target_bootstrap_observed:sent.length>0}};
+    });
+    const input={poolKey,ref,agent:{id:'asobi',name:'Asobi',emoji:'A',workspace:'/workspace',runtime:'agy'} as AgentConfig,
+      runtime:runtime as unknown as CommandRuntime,stateManager,channel:'telegram' as const,control};
+    const first=await rolloverNativeSession(input);
+    expect(control.mock.calls.find(([r])=>r.stage==='prepare')![0]).toEqual({stage:'prepare',ref,native_id:'agy-source',tenant:poolKey});
+    // No conversation before the bootstrap turn: nothing to accept yet; the handover waits.
+    expect(first.session_handover?.accepted).toBe(false);
+    expect(state.agyWorkItemBinding).toMatchObject({sessionId:'target',usageBinding:{work_item_id:'wi_20261122_053',runtime:'agy'}});
+    expect(runtime.bindRuntimeUsage).toHaveBeenCalledTimes(1);
+    expect(sent[0].content).toContain('[Host continuation operation: '+ref+']');
+    expect(sent[0].content).toContain('不能调用 pulse_work_item');
+    expect(sent[0].content).toContain('cd <字面绝对路径> && git commit --no-verify -m');
+    expect(sent[0].content).not.toContain('with pulse_work_item');
+    expect(state.pendingNativeRollover?.ref).toBe(ref);
+
+    const second=await rolloverNativeSession({...input,ref:undefined});
+    expect(control.mock.calls.find(([r])=>r.stage==='accept')![0]).toEqual({stage:'accept',ref,native_id:'agy-successor',tenant:poolKey});
+    expect(second.session_handover?.accepted).toBe(true);
+    expect(state.pendingNativeRollover).toBeUndefined();
+    expect(sent).toHaveLength(1);
+    expect(runtime.bindRuntimeUsage).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('agy source an Agent asked to roll over after a restart',()=>{
+  it('knows the persisted source by its agy conversation and recovers it for prepare',async()=>{
+    const poolKey='human:asobi',ref='e'.repeat(64);
+    const state:PersistedSession={poolKey,agentId:'asobi',runtime:'agy',sessionId:'source',
+      agyConversation:{sessionId:'source',conversationId:'agy-source'},status:'active',lastActivity:1,turnCount:1,maxTurns:100};
+    let live:any;
+    const runtime={get:vi.fn(()=>live),kill:vi.fn(async()=>{live=undefined;}),
+      // The agy runtime reopens the conversation saved for the same session.
+      spawn:vi.fn(async(config:any)=>{live={sessionId:config.sessionId,state:'idle',runtime:'agy',
+        ...(config.sessionId==='source'?{agyConversationId:'agy-source'}:{})};return live;}),
+      bindRuntimeUsage:vi.fn(),sendIdempotent:vi.fn(async()=>{})};
+    const stateManager={getSession:()=>state,updateSession:(_key:string,patch:any)=>Object.assign(state,patch),
+      flushStrict:vi.fn()} as unknown as StateManager;
+    const control=vi.fn(async()=>({status:'rejected',error:{code:'fixture_stop'}}));
+    await rolloverNativeSession({poolKey,ref,agent:{id:'asobi',name:'Asobi',emoji:'A',workspace:'/workspace',runtime:'agy'} as AgentConfig,
+      runtime:runtime as unknown as CommandRuntime,stateManager,channel:'telegram' as const,control:control as any,
+      origin:'agent',sourceNativeId:'agy-source'});
+    expect(runtime.spawn.mock.calls[0]![0].sessionId).toBe('source');
+    expect((control.mock.calls as any[]).find(([r])=>r.stage==='prepare')![0]).toEqual({stage:'prepare',ref,native_id:'agy-source',tenant:poolKey});
+  });
+});
+
+describe('agy successor rebuilt after a restart',()=>{
+  it('starts with the WI binding already saved for it, so its turns and Host receipts keep the WI',async()=>{
+    const poolKey='human:asobi',ref='d'.repeat(64);
+    const state:PersistedSession={poolKey,agentId:'asobi',runtime:'agy',sessionId:'source',
+      agyConversation:{sessionId:'source',conversationId:'agy-source'},status:'active',lastActivity:1,turnCount:1,maxTurns:100};
+    let live:any={sessionId:'source',state:'idle',runtime:'agy',agyConversationId:'agy-source'};
+    const sent:any[]=[];
+    const runtime={get:vi.fn(()=>live),kill:vi.fn(async()=>{live=undefined;}),
+      spawn:vi.fn(async(config:any)=>{live={sessionId:config.sessionId,state:'idle',runtime:'agy',
+        computeCostBinding:config.computeCostBinding,...(sent.length?{agyConversationId:'agy-successor'}:{})};return live;}),
+      bindRuntimeUsage:vi.fn((_k:string,binding:any)=>{live.computeCostBinding=binding;}),
+      sendIdempotent:vi.fn(async(_key:string,message:any)=>{sent.push(message);live.agyConversationId='agy-successor';})};
+    const stateManager={getSession:()=>state,updateSession:(_key:string,patch:any)=>Object.assign(state,patch),
+      flushStrict:vi.fn()} as unknown as StateManager;
+    let prepared=false,accepted=false;
+    const control=vi.fn(async(request:any)=>{
+      if(request.stage==='prepare')prepared=true;
+      if(request.stage==='accept')accepted=true;
+      return {status:'read_only',session_handover:{ref,wi:'wi_20261122_053',source_native_id:'agy-source',
+        target_session_id:'target',runtime:'agy',prepared,accepted,target_session_exists:sent.length>0,
+        target_bootstrap_observed:sent.length>0}};
+    });
+    const input={poolKey,ref,agent:{id:'asobi',name:'Asobi',emoji:'A',workspace:'/workspace',runtime:'agy'} as AgentConfig,
+      runtime:runtime as unknown as CommandRuntime,stateManager,channel:'telegram' as const,control};
+    await rolloverNativeSession(input);
+    const saved=state.agyWorkItemBinding!.usageBinding;
+    expect(state.pendingNativeRollover?.ref).toBe(ref);
+    // Relay restarts before the successor is accepted: no process, the binding is on disk.
+    live=undefined;
+    const second=await rolloverNativeSession({...input,ref:undefined});
+    expect(runtime.spawn).toHaveBeenCalledTimes(2);
+    expect((runtime.spawn.mock.calls[1] as any)[0]).toMatchObject({sessionId:'target',resume:true,computeCostBinding:saved});
+    expect(live.computeCostBinding).toBe(saved);
+    expect(runtime.bindRuntimeUsage).toHaveBeenCalledTimes(1);
+    expect(second.session_handover?.accepted).toBe(true);
+  });
+});
+
+describe('agy successor binding write failure',()=>{
+  it('a binding that could not be saved is bound again on the next pass, live process included',async()=>{
+    const poolKey='human:asobi',ref='f'.repeat(64);
+    const state:PersistedSession={poolKey,agentId:'asobi',runtime:'agy',sessionId:'source',
+      agyConversation:{sessionId:'source',conversationId:'agy-source'},status:'active',lastActivity:1,turnCount:1,maxTurns:100};
+    let live:any={sessionId:'source',state:'idle',runtime:'agy',agyConversationId:'agy-source'};
+    const sent:any[]=[];
+    const runtime={get:vi.fn(()=>live),kill:vi.fn(async()=>{live=undefined;}),
+      spawn:vi.fn(async(config:any)=>{live={sessionId:config.sessionId,state:'idle',runtime:'agy'};return live;}),
+      bindRuntimeUsage:vi.fn(),
+      sendIdempotent:vi.fn(async(_key:string,message:any)=>{sent.push(message);live.agyConversationId='agy-successor';})};
+    let binds=0;
+    const stateManager={getSession:()=>state,updateSession:(_key:string,patch:any)=>Object.assign(state,patch),
+      // The binding's write (the second strict flush after the plan) fails once.
+      flushStrict:vi.fn(()=>{if('agyWorkItemBinding' in state&&state.agyWorkItemBinding&&binds++===0)throw new Error('EIO');})} as unknown as StateManager;
+    let prepared=false,accepted=false;
+    const control=vi.fn(async(request:any)=>{
+      if(request.stage==='prepare')prepared=true;
+      if(request.stage==='accept')accepted=true;
+      return {status:'read_only',session_handover:{ref,wi:'wi_20261122_053',source_native_id:'agy-source',
+        target_session_id:'target',runtime:'agy',prepared,accepted,target_session_exists:sent.length>0,
+        target_bootstrap_observed:sent.length>0}};
+    });
+    const input={poolKey,ref,agent:{id:'asobi',name:'Asobi',emoji:'A',workspace:'/workspace',runtime:'agy'} as AgentConfig,
+      runtime:runtime as unknown as CommandRuntime,stateManager,channel:'telegram' as const,control};
+    await expect(rolloverNativeSession(input)).rejects.toThrow('EIO');
+    expect(state.agyWorkItemBinding).toBeUndefined();
+    expect(runtime.bindRuntimeUsage).not.toHaveBeenCalled();
+    expect(sent).toHaveLength(0);
+    await rolloverNativeSession({...input,ref:undefined});
+    expect(state.agyWorkItemBinding).toMatchObject({sessionId:'target',usageBinding:{work_item_id:'wi_20261122_053'}});
+    expect(runtime.bindRuntimeUsage).toHaveBeenCalledTimes(1);
+    expect(sent).toHaveLength(1);
+  });
+});
+
+describe('rollover of a session a /wi switch saved',()=>{
+  it('the successor keeps the source runtime on later launches, whatever the channel prefers',async()=>{
+    const poolKey='human:asobi',ref='c'.repeat(64);
+    // The channel runs cc; the conversation stands on an agy session /wi switch returned to.
+    const state:PersistedSession={poolKey,agentId:'asobi',runtime:'agy',sessionId:'source',
+      agyConversation:{sessionId:'source',conversationId:'agy-source'},status:'active',lastActivity:1,turnCount:1,maxTurns:100,
+      workItemSessions:{wi_20261122_053:{at:'t',unit:{sessionId:'source',runtime:'agy'}},
+        wi_20261122_001:{at:'t',unit:{sessionId:'cc-session',runtime:'cc'}}}};
+    let live:any={sessionId:'source',state:'idle',runtime:'agy',agyConversationId:'agy-source'};
+    const sent:any[]=[];
+    const runtime={get:vi.fn(()=>live),kill:vi.fn(async()=>{live=undefined;}),
+      spawn:vi.fn(async(config:any)=>{live={sessionId:config.sessionId,state:'idle',runtime:config.runtime};return live;}),
+      bindRuntimeUsage:vi.fn(),
+      sendIdempotent:vi.fn(async(_key:string,message:any)=>{sent.push(message);live.agyConversationId='agy-successor';})};
+    const stateManager={getSession:()=>state,updateSession:(_key:string,patch:any)=>Object.assign(state,patch),
+      flushStrict:vi.fn()} as unknown as StateManager;
+    let prepared=false;
+    const control=vi.fn(async(request:any)=>{
+      if(request.stage==='prepare')prepared=true;
+      return {status:'read_only',session_handover:{ref,wi:'wi_20261122_053',source_native_id:'agy-source',
+        target_session_id:'target',runtime:'agy',prepared,accepted:false,target_session_exists:sent.length>0,
+        target_bootstrap_observed:sent.length>0}};
+    });
+    const agent={id:'asobi',name:'Asobi',emoji:'A',workspace:'/workspace',runtime:'cc',conversationRuntimePreference:['cc']} as AgentConfig;
+    await rolloverNativeSession({poolKey,ref,agent,runtime:runtime as unknown as CommandRuntime,stateManager,channel:'telegram',control});
+    expect(state.sessionId).toBe('target');
+    expect(state.workItemSessions!.wi_20261122_053!.unit).toEqual({sessionId:'target',runtime:'agy'});
+    expect(state.workItemSessions!.wi_20261122_001!.unit.sessionId).toBe('cc-session');
+    const launch=conversationLaunch({poolKey,agent,session:state,channel:'telegram',intent:'inbound'});
+    expect(launch).toMatchObject({sessionId:'target',runtime:'agy',conversationRuntimePreference:['agy']});
   });
 });

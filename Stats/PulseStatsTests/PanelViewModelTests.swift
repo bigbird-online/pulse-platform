@@ -1978,8 +1978,8 @@ extension PanelViewModelTests {
             presentation: StatusPresentation(runtimeHealth: .ok, coverage: .unknown), now: now)
     }
 
-    /// The menu bar and the panel row read the same Grok figure.
-    func testGrokQuotaMenuBarAndPanelShareOneReading() {
+    /// The panel keeps the Grok reading; the menu bar no longer carries it.
+    func testGrokQuotaStaysInPanelButLeavesMenuBar() {
         let now = Date(timeIntervalSince1970: 1_792_569_600)
         let start = now.addingTimeInterval(-86400)
         let resets = start.addingTimeInterval(7 * 86400)
@@ -1993,10 +1993,10 @@ extension PanelViewModelTests {
         XCTAssertNil(relay.grokQuotaReason)
         XCTAssertEqual(relay.grokQuotaSummary, "已用 87%")
         let menu = grokMenu(metrics, at: now)
-        XCTAssertEqual(menu.menuGrokText, "87%")
-        XCTAssertTrue(menu.menuAccessibilityLabel.contains("GROK 周额度已用 87%"))
-        XCTAssertEqual(grokMenu(grokQuota(observed: observed, start: start, resets: resets, percent: 0), at: now)
-            .menuGrokText, "0%", "a measured zero is a reading")
+        XCTAssertFalse(menu.menuAccessibilityLabel.localizedCaseInsensitiveContains("grok"))
+        XCTAssertEqual(menu, grokMenu(SnapshotMetrics([]), at: now), "a Grok reading changes nothing on the bar")
+        XCTAssertEqual(menu.menuAgyText, "—")
+        XCTAssertEqual(MenuBarArtwork.image(for: menu).size, MenuBarArtwork.image(for: grokMenu(SnapshotMetrics([]), at: now)).size)
     }
 
     /// Login, account, API change or stale reading: a dash with the reason, never 0%.
@@ -2036,9 +2036,6 @@ extension PanelViewModelTests {
             XCTAssertEqual(relay.grokQuotaSummary, "待更新", label)
             XCTAssertFalse(relay.grokQuotaNotApplicable, label)
             XCTAssertEqual(relay.grokLamp, .gray, label)
-            let menu = grokMenu(metrics, at: now)
-            XCTAssertEqual(menu.menuGrokText, "—", label)
-            XCTAssertTrue(menu.menuAccessibilityLabel.contains("GROK 额度待更新，不以旧数或零替代"), label)
         }
     }
 
@@ -2056,23 +2053,156 @@ extension PanelViewModelTests {
             XCTAssertEqual(relay.grokQuotaSummary, "不适用", code)
             XCTAssertEqual(relay.grokQuotaReason, reason, code)
             XCTAssertEqual(relay.grokPlanLabel, "Grok Bot Plan", code)
-            XCTAssertEqual(grokMenu(metrics, at: now).menuGrokText, "—", code)
         }
     }
 
-    /// GROK takes the slot after CC, the same width as the others, inside the budget.
-    func testMenuBarArtworkPlacesGrokAfterCCWithinBudget() {
+    /// AGY takes the slot after CC that GROK held, the same width as the others, inside the budget.
+    func testMenuBarArtworkPlacesAgyAfterCCWithinBudget() {
+        let spent: [[String: MetricScalar]] = [["group": .string("Gemini Models"), "window": .string("weekly"),
+            "remaining_fraction": .number(0), "resets_at": .number(4_000_000_000)]]
         let metrics = SnapshotMetrics([
             metric(MetricID.ccUsedPercent, .number(100), unit: "percent"),
             metric(MetricID.codexUsedPercent, .number(100), unit: "percent"),
-            metric(MetricID.grokUsedPercent, .number(100), unit: "percent"),
+            Metric(id: MetricID.agyQuota, capabilityID: "s1.request_trace_capture", status: .available,
+                   value: .rows(spent), unit: "buckets", window: "current", quality: .validated,
+                   scope: "agy account quota groups; not per-agent cost", observedAt: nil, reason: nil),
         ])
         let model = MenuBarViewModel(metrics: metrics, alertTiers: AlertTiers(act: 128, watch: 0, done: 0),
             hasSnapshot: true, presentation: StatusPresentation(runtimeHealth: .critical, coverage: .unknown))
-        XCTAssertEqual(model.menuGrokText, "100%")
+        XCTAssertEqual(model.menuAgyText, "100%")
         let slots = MenuBarArtwork.quotaWidth("100%") * 3 + MenuBarArtwork.badgeGap * 3
             + MenuBarArtwork.quotaWidth(model.menuWIText)
         XCTAssertGreaterThan(MenuBarArtwork.image(for: model).size.width, slots)
         XCTAssertLessThanOrEqual(MenuBarWidth.merged(model), MenuBarWidth.budget)
+    }
+}
+
+
+extension PanelViewModelTests {
+    /// The published rows as recorded from `agy -p /quota` on 2026-11-20.
+    private func agyQuota(observed: Date?, status: MetricStatus = .available, reason: String? = nil,
+                          rows: [[String: MetricScalar]]? = nil) -> SnapshotMetrics {
+        func row(_ group: String, _ window: String, _ fraction: Double, _ reset: String) -> [String: MetricScalar] {
+            ["group": .string(group), "window": .string(window), "remaining_fraction": .number(fraction),
+             "resets_at": .number(SnapshotDecoder.parseISO8601(reset)!.timeIntervalSince1970)]
+        }
+        let recorded = [
+            row("Gemini Models", "weekly", 0.9910842776298523, "2026-11-27T04:09:24Z"),
+            row("Gemini Models", "5h", 0.9861072897911072, "2026-11-20T15:30:36Z"),
+            row("Claude and GPT models", "weekly", 1, "2026-11-27T10:38:17Z"),
+            row("Claude and GPT models", "5h", 1, "2026-11-20T15:38:17Z"),
+            row("Gemini 4 Argon", "weekly", 1, "2026-11-27T10:38:17Z"),
+        ]
+        return SnapshotMetrics([Metric(id: MetricID.agyQuota, capabilityID: "s1.request_trace_capture", status: status,
+            value: status == .available ? .rows(rows ?? recorded) : .null, unit: "buckets", window: "current",
+            quality: status == .available ? .validated : .insufficient,
+            scope: "agy account quota groups; not per-agent cost", observedAt: observed, reason: reason)])
+    }
+
+    /// Three groups with remaining share and reset time; Argon has only its weekly window.
+    func testAgyQuotaShowsThreeGroupsWithRemainingAndReset() {
+        let now = SnapshotDecoder.parseISO8601("2026-11-20T10:48:24Z")!
+        let observed = now.addingTimeInterval(-600)
+        let relay = RelayViewModel(metrics: agyQuota(observed: observed), hasSnapshot: true, at: now)
+        let groups = relay.agyQuotaGroups ?? []
+        XCTAssertEqual(groups.map(\.name), ["Gemini Models", "Claude and GPT models", "Gemini 4 Argon"])
+        XCTAssertEqual(groups[0].weeklyRemainingPercent ?? 0, 99.108, accuracy: 0.001)
+        XCTAssertEqual(groups[0].weeklyResetsAt, SnapshotDecoder.parseISO8601("2026-11-27T04:09:24Z"))
+        XCTAssertEqual(groups[0].fiveHourRemainingPercent ?? 0, 98.611, accuracy: 0.001)
+        XCTAssertEqual(groups[0].fiveHourResetsAt, SnapshotDecoder.parseISO8601("2026-11-20T15:30:36Z"))
+        XCTAssertEqual(groups[1].weeklyRemainingPercent, 100)
+        XCTAssertEqual(groups[2].weeklyRemainingPercent, 100)
+        XCTAssertNil(groups[2].fiveHourRemainingPercent, "Argon has no 5-hour window")
+        XCTAssertNil(groups[2].fiveHourResetsAt)
+        XCTAssertEqual(relay.agyQuotaObservedAt, observed)
+        XCTAssertNil(relay.agyQuotaReason)
+        XCTAssertEqual(relay.agyQuotaSummary, "最低剩 99%")
+        XCTAssertEqual(relay.agyLamp, .green)
+        XCTAssertEqual(CostDashboardView.agyBucketText(100, nil), "剩 100% · 未知 重置")
+    }
+
+    /// A failed read, a stale reading or a reset window shows the reason, never an old figure.
+    func testAgyQuotaFailureOrStaleReadingShowsReasonNotOldFigure() {
+        let now = SnapshotDecoder.parseISO8601("2026-11-20T10:48:24Z")!
+        let failedAt = now.addingTimeInterval(-60)
+        let cases: [(String, SnapshotMetrics, Date, String, Date?)] = [
+            ("failed", agyQuota(observed: failedAt, status: .unknown, reason: "agy_command_failed"), now,
+             "agy 额度查询失败，等待下一次查询", failedAt),
+            ("timeout", agyQuota(observed: failedAt, status: .unknown, reason: "agy_command_timeout"), now,
+             "agy 额度查询超时，等待下一次查询", failedAt),
+            ("schema", agyQuota(observed: failedAt, status: .unknown, reason: "quota_schema_changed"), now,
+             "agy 额度输出格式已变化，暂不显示", failedAt),
+            ("missing", SnapshotMetrics([]), now, "尚未取得 agy 额度读数，等待下一次查询", nil),
+            ("stale", agyQuota(observed: now.addingTimeInterval(-3700)), now,
+             "agy 额度读数已超过 1 小时，不当作当前读数", nil),
+            ("all reset", agyQuota(observed: now.addingTimeInterval(8 * 86400 - 600)), now.addingTimeInterval(8 * 86400),
+             "额度窗口已重置，等待下一次查询", nil),
+        ]
+        for (label, metrics, at, reason, observed) in cases {
+            let relay = RelayViewModel(metrics: metrics, hasSnapshot: true, at: at)
+            XCTAssertNil(relay.agyQuotaGroups, label)
+            XCTAssertEqual(relay.agyQuotaReason, reason, label)
+            XCTAssertEqual(relay.agyQuotaObservedAt, observed, label)
+            XCTAssertEqual(relay.agyQuotaSummary, "待更新", label)
+            XCTAssertEqual(relay.agyLamp, .gray, label)
+        }
+        // A bucket past its reset is dropped; the rest of its group stays.
+        let afterFiveHour = SnapshotDecoder.parseISO8601("2026-11-20T15:35:00Z")!
+        let relay = RelayViewModel(metrics: agyQuota(observed: afterFiveHour.addingTimeInterval(-300)),
+                                   hasSnapshot: true, at: afterFiveHour)
+        XCTAssertNil(relay.agyQuotaGroups?[0].fiveHourRemainingPercent)
+        XCTAssertNotNil(relay.agyQuotaGroups?[0].weeklyRemainingPercent)
+        XCTAssertEqual(relay.agyQuotaGroups?[1].fiveHourRemainingPercent, 100)
+    }
+
+    private func agyMenu(_ metrics: SnapshotMetrics, at now: Date) -> MenuBarViewModel {
+        MenuBarViewModel(metrics: metrics, alertTiers: .zero, hasSnapshot: true,
+            presentation: StatusPresentation(runtimeHealth: .ok, coverage: .unknown), now: now)
+    }
+
+    /// The AGY slot reads the scarcest current bucket across all groups, as a used share.
+    func testAgyMenuBarSlotReadsLowestRemainingBucket() {
+        let now = SnapshotDecoder.parseISO8601("2026-11-20T10:48:24Z")!
+        func row(_ group: String, _ window: String, _ fraction: Double) -> [String: MetricScalar] {
+            ["group": .string(group), "window": .string(window), "remaining_fraction": .number(fraction),
+             "resets_at": .number(now.addingTimeInterval(3600).timeIntervalSince1970)]
+        }
+        let rows = [row("Gemini Models", "weekly", 0.80), row("Gemini Models", "5h", 0.60),
+                    row("Claude and GPT models", "weekly", 0.07), row("Claude and GPT models", "5h", 0.30),
+                    row("Gemini 4 Argon", "weekly", 0.95)]
+        let metrics = agyQuota(observed: now.addingTimeInterval(-600), rows: rows)
+        let menu = agyMenu(metrics, at: now)
+        XCTAssertEqual(menu.agyUsedPercent ?? 0, 93, accuracy: 0.0001)
+        XCTAssertEqual(menu.menuAgyText, "93%")
+        XCTAssertEqual(menu.agyLamp, .amber)
+        XCTAssertEqual(menu.agyLamp, RelayViewModel(metrics: metrics, hasSnapshot: true, at: now).agyLamp,
+                       "bar and panel agree on the lamp")
+        XCTAssertTrue(menu.menuAccessibilityLabel.contains("agy 额度最紧一组已用 93%"))
+        // The recorded 2026-11-20 reading: Gemini 5h at 98.6% remaining is the scarcest.
+        let recorded = agyMenu(agyQuota(observed: now.addingTimeInterval(-600)), at: now)
+        XCTAssertEqual(recorded.menuAgyText, "1%")
+        XCTAssertEqual(recorded.agyLamp, .green)
+        // A fully spent bucket is a reading, not an unknown.
+        XCTAssertEqual(agyMenu(agyQuota(observed: now, rows: [row("Gemini Models", "weekly", 0)]), at: now)
+            .menuAgyText, "100%")
+    }
+
+    /// Stale, failed, missing or fully reset agy readings show a dash, never 0% or an old figure.
+    func testAgyMenuBarSlotUnknownShowsDashNeverZero() {
+        let now = SnapshotDecoder.parseISO8601("2026-11-20T10:48:24Z")!
+        let cases: [(String, SnapshotMetrics, Date)] = [
+            ("failed", agyQuota(observed: now.addingTimeInterval(-60), status: .unknown, reason: "agy_command_failed"), now),
+            ("unavailable", agyQuota(observed: nil, status: .unknown, reason: "agy_command_unavailable"), now),
+            ("missing", SnapshotMetrics([]), now),
+            ("stale", agyQuota(observed: now.addingTimeInterval(-3700)), now),
+            ("all reset", agyQuota(observed: now.addingTimeInterval(8 * 86400 - 600)), now.addingTimeInterval(8 * 86400)),
+        ]
+        for (label, metrics, at) in cases {
+            let menu = agyMenu(metrics, at: at)
+            XCTAssertNil(menu.agyUsedPercent, label)
+            XCTAssertEqual(menu.menuAgyText, "—", label)
+            XCTAssertEqual(menu.agyLamp, .gray, label)
+            XCTAssertTrue(menu.menuAccessibilityLabel.contains("agy 额度待更新，不以旧数或零替代"), label)
+        }
     }
 }

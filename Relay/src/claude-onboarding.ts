@@ -1,7 +1,7 @@
 import { execSync } from 'node:child_process';
 import { relayChildEnv } from './relay-secrets.js';
-import { readFileSync, writeFileSync, statSync, existsSync, chmodSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, writeFileSync, statSync, existsSync, chmodSync, realpathSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
 /** CC 2.x `--bare` records registry cwd as `/root` regardless of process chdir. */
 export const CLAUDE_BARE_REGISTRY_CWD = '/root';
@@ -120,14 +120,42 @@ export const CLAUDE_PROJECT_DEFAULTS = {
   disabledMcpjsonServers: [] as string[],
   hasTrustDialogAccepted: true,
   hasCompletedProjectOnboarding: true,
-  hasClaudeMdExternalIncludesApproved: true,
-  hasClaudeMdExternalIncludesWarningShown: true,
   projectOnboardingSeenCount: 0,
 } as const;
 
+/** The approval CC asks for before a CLAUDE.md `@` import may load a file outside the working directory. */
+const EXTERNAL_INCLUDE_KEYS = ['hasClaudeMdExternalIncludesApproved', 'hasClaudeMdExternalIncludesWarningShown'] as const;
+
+/** The nearest directory at or above `cwd` holding `.git`, or undefined. */
+export function gitRootOf(cwd: string): string | undefined {
+  for (let dir = cwd; ; dir = dirname(dir)) {
+    if (existsSync(join(dir, '.git'))) return dir;
+    if (dirname(dir) === dir) return undefined;
+  }
+}
+
+function realOrSelf(path: string): string {
+  try { return realpathSync(path); } catch { return path; }
+}
+
+/**
+ * Register `cwd` with the defaults above. CC reads the external-include
+ * approval from the entry of the git repository holding `cwd` (`cwd` itself
+ * when it is the repository root), and writes that entry with the approval
+ * false the first time it sees the repository; a Relay session never shows the
+ * dialog that would turn it on. So that repository's entry gets the approval,
+ * and only it: trust and every other key there stay as they are.
+ *
+ * Only a repository whose real root is exactly one of `approvedRoots` gets it:
+ * the shared read-only checkouts every session of this Agent may already read,
+ * whose CLAUDE.md changes only through a reviewed PR. A separate repository
+ * inside one of them, or anywhere else, gets nothing. A refusal someone gave
+ * in the dialog (approval false after the warning was shown) is kept.
+ */
 export function ensureClaudeProjectRegistered(
   home: string | undefined,
   cwd: string | undefined,
+  approvedRoots: readonly string[] = [],
 ): ClaudeOnboardingResult {
   if (!home || !cwd) return { path: '', changed: false };
   ensureClaudeJsonWritable(home);
@@ -169,6 +197,26 @@ export function ensureClaudeProjectRegistered(
     if (isMissingOrNull(entryMap[key])) {
       entryMap[key] = defaultValue;
       changed = true;
+    }
+  }
+
+  const root = gitRootOf(cwd);
+  const admitted = root !== undefined
+    && approvedRoots.some((approved) => realOrSelf(approved) === realOrSelf(root));
+  if (admitted) {
+    const existing = projectsMap[root];
+    const rootEntry = existing && typeof existing === 'object' && !Array.isArray(existing)
+      ? existing as Record<string, unknown> : {};
+    const refused = rootEntry['hasClaudeMdExternalIncludesApproved'] === false
+      && rootEntry['hasClaudeMdExternalIncludesWarningShown'] === true;
+    if (!refused) {
+      if (rootEntry !== existing) projectsMap[root] = rootEntry;
+      for (const key of EXTERNAL_INCLUDE_KEYS) {
+        if (rootEntry[key] !== true) {
+          rootEntry[key] = true;
+          changed = true;
+        }
+      }
     }
   }
 

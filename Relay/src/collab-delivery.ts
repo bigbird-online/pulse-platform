@@ -8,6 +8,15 @@
  * scheduled wake of a `wake` job (`wake`: target = the WI the job names; the
  * prompt is the job's own, filled in by Relay, never by the gate).
  *
+ * A pull request result goes only to the session that made the PR's head: the
+ * session that registered `submit_pull_request` with that head (`author_key`).
+ * A busy one defers; no other conversation gets it. Only once the kernel's
+ * journal shows that session ended (it rolled the WI over) does the gate send
+ * the result with the WI holder's `holder_key` instead. A request names one
+ * key: `author_key` wins, and its absence here never falls back to the holder.
+ * The channel re-checks the conversation against the native IDs that match
+ * that key only, so mid-switch a new session beside the routed one never passes.
+ *
  * The collaboration inbox gives only a one-way `holder_key` for that session;
  * this module recomputes it from the native session IDs of this Relay's own
  * conversations. No match or more than one match delivers nothing, so a
@@ -24,10 +33,12 @@
  * An accepted recipient contract is not pushed: it is delivered once more only
  * as a reminder when its deadline is DEADLINE_REMINDER_MS away or past.
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { AgentDisplayName, CollabTurnNotice } from './collab-progress-notice.js';
+import { watchInternalTurn, type InternalTurnOutcome } from './internal-turn-fence.js';
+import { conversationNativeIds, type NativeIdSource } from './session-identity.js';
 import { harnessPrincipalForAgent, type AgentConfig } from './types.js';
 
 export const COLLAB_DELIVERY_SCHEMA = 'pulse.collab_delivery/v1';
@@ -62,7 +73,10 @@ export interface CollabDeliveryRequest {
   actor: string;
   namespace: string;
   surface: string;
-  holder_key: string;
+  /** Absent when the target WI is not held on this surface (a submitter with `author_key`). */
+  holder_key?: string;
+  /** Submitter deliveries: the session that registered the round's head, same digest as `holder_key`. */
+  author_key?: string;
   contract_id: string;
   work_item_id: string;
   target_work_item_id: string;
@@ -161,7 +175,9 @@ export function parseDeliveryRequest(body: unknown): CollabDeliveryRequest {
     out[k] = v;
   }
   const key = b['holder_key'];
-  if (typeof key !== 'string' || !HEX.test(key)) throw new Error('invalid_holder_key');
+  const author = b['author_key'];
+  if (author !== undefined && (b['role'] !== 'submitter' || typeof author !== 'string' || !HEX.test(author))) throw new Error('invalid_author_key');
+  if ((key !== undefined || author === undefined) && (typeof key !== 'string' || !HEX.test(key))) throw new Error('invalid_holder_key');
   const deadline = b['deadline'];
   if (deadline !== undefined && (typeof deadline !== 'string' || deadline.length > 64)) throw new Error('invalid_deadline');
   const role = b['role'] ?? 'recipient';
@@ -174,7 +190,8 @@ export function parseDeliveryRequest(body: unknown): CollabDeliveryRequest {
     ? { answered_by: stringList(b['answered_by'], ID, 'answered_by'), options: stringList(b['options'], OPTION, 'options') }
     : role === 'submitter' ? parsePullRequest(b) : role === 'wake' ? { job_id: wakeJob(b['job_id']) } : {};
   return {
-    ...out, holder_key: key, ...(deadline ? { deadline } : {}), role,
+    ...out, ...(key !== undefined ? { holder_key: key } : {}), ...(author !== undefined ? { author_key: author } : {}),
+    ...(deadline ? { deadline } : {}), role,
     ...(mainOnly !== undefined ? { main_only: mainOnly } : {}),
     ...(offeredBy !== undefined ? { offered_by: offeredBy } : {}), ...settlement,
   } as CollabDeliveryRequest;
@@ -317,18 +334,20 @@ export function agentDisplayName(agents: Array<Pick<AgentConfig, 'id' | 'name' |
   return agents.find(agent => principal(agent) === actor)?.name || undefined;
 }
 
-export interface DeliveryConversation { state: string; sessionId?: string; codexThreadId?: string }
+export interface DeliveryConversation extends NativeIdSource { state: string }
 
 export interface DeliveryChannel {
-  /** Resume the existing conversation if needed and send one turn. Returns false
-   * when the channel does not own this conversation or its native session changed.
-   * `notice` shapes the human-visible line; without it a generic line is sent. */
-  deliverInternalTurn(poolKey: string, prompt: string, expectNativeIds: string[], notice?: CollabTurnNotice): Promise<boolean>;
+  /** Resume the existing conversation if needed and hand it one turn, fenced to `expectNativeIds`
+   * under `deliveryRef` (internal-turn-fence.ts). Returns false when the channel does not own this
+   * conversation or its native session changed. `notice` shapes the human-visible line; without it
+   * a generic line is sent. */
+  deliverInternalTurn(poolKey: string, prompt: string, expectNativeIds: string[], notice?: CollabTurnNotice,
+    deliveryRef?: string): Promise<boolean>;
 }
 
 export interface CollabDeliveryDeps {
   /** Persisted conversations: pool key -> current native IDs. */
-  sessions(): Record<string, { sessionId?: string; codexThreadId?: string }>;
+  sessions(): Record<string, NativeIdSource>;
   live(poolKey: string): DeliveryConversation | undefined;
   /** Harness principal of the agent a conversation belongs to, if known. */
   principalFor(poolKey: string): string | undefined;
@@ -390,14 +409,8 @@ function createLedger(path: string | undefined, log: (event: Record<string, unkn
   };
 }
 
-export function nativeIds(...sources: Array<{ sessionId?: string; codexThreadId?: string } | undefined>): string[] {
-  const ids = new Set<string>();
-  for (const s of sources) {
-    if (s?.sessionId) ids.add(s.sessionId);
-    if (s?.codexThreadId) ids.add(s.codexThreadId);
-  }
-  return [...ids];
-}
+/** Every native ID a conversation is known by, persisted or live; see conversationNativeIds. */
+export const nativeIds = conversationNativeIds;
 
 export function createCollabDelivery(deps: CollabDeliveryDeps) {
   const now = deps.now ?? Date.now;
@@ -407,17 +420,44 @@ export function createCollabDelivery(deps: CollabDeliveryDeps) {
   /** Wakes waiting for a busy conversation, one per wake key. */
   const queued = new Map<string, { poolKey: string; request: CollabDeliveryRequest; mark: string; since: number }>();
   const ledger = createLedger(deps.ledgerPath, log);
+  /** Handed to a conversation, not yet started or refused there: not offered again meanwhile.
+   *  The ledger records a delivery only once its turn starts in the routed conversation. */
+  const handed = new Map<string, { mark: string; since: number; outcome?: InternalTurnOutcome; cancel: () => void }>();
   let timer: NodeJS.Timeout | undefined;
 
-  function matches(poolKey: string, r: CollabDeliveryRequest): string[] | undefined {
+  function handedMark(id: string): string | undefined {
+    const entry = handed.get(id);
+    if (!entry) return undefined;
+    if (now() - entry.since <= WAIT_LIMIT_MS) return entry.mark;
+    entry.cancel();
+    handed.delete(id);
+    return undefined;
+  }
+
+  /** The one session a request goes to: the registering session of a pull request result, else the holder. */
+  function sessionKey(r: CollabDeliveryRequest): string | undefined {
+    return r.author_key ?? r.holder_key;
+  }
+
+  function matchesKey(poolKey: string, r: CollabDeliveryRequest, key: string): string[] | undefined {
     if (deps.principalFor(poolKey) !== r.actor) return undefined;
-    const ids = nativeIds(deps.sessions()[poolKey], deps.live(poolKey));
-    return ids.some(id => holderKey(r.namespace, r.actor, id, r.surface) === r.holder_key) ? ids : undefined;
+    // Only the IDs that are the routed session: the channel re-checks the conversation
+    // against them, so a new session seen beside it mid-switch never passes.
+    const ids = nativeIds(deps.sessions()[poolKey], deps.live(poolKey))
+      .filter(id => holderKey(r.namespace, r.actor, id, r.surface) === key);
+    return ids.length ? ids : undefined;
+  }
+
+  function matches(poolKey: string, r: CollabDeliveryRequest): string[] | undefined {
+    const key = sessionKey(r);
+    return key ? matchesKey(poolKey, r, key) : undefined;
   }
 
   function find(r: CollabDeliveryRequest): { poolKey: string; ids: string[] } | 'not_hosted' | 'ambiguous' {
+    const key = sessionKey(r);
+    if (!key) return 'not_hosted';
     const found = Object.keys(deps.sessions())
-      .map(poolKey => ({ poolKey, ids: matches(poolKey, r) }))
+      .map(poolKey => ({ poolKey, ids: matchesKey(poolKey, r, key) }))
       .filter((m): m is { poolKey: string; ids: string[] } => m.ids !== undefined);
     if (found.length === 0) return 'not_hosted';
     return found.length === 1 ? found[0]! : 'ambiguous';
@@ -428,11 +468,34 @@ export function createCollabDelivery(deps: CollabDeliveryDeps) {
     return state === 'busy' || state === 'starting';
   }
 
+  /** Hand the turn over; true unless the channel or the runtime refused it. */
   async function dispatch(poolKey: string, ids: string[], r: CollabDeliveryRequest, mark: string): Promise<boolean> {
-    const sent = await deps.channelFor(poolKey)!.deliverInternalTurn(poolKey, collabPrompt(r), ids, collabTurnNotice(r, deps.displayName));
-    if (sent) ledger.touch(deliveryKey(r), now(), mark);
-    log({ level: sent ? 'info' : 'warn', msg: sent ? 'collaboration delivered' : 'collaboration delivery refused by channel', contract: r.contract_id });
-    return sent;
+    const id = deliveryKey(r);
+    const ref = randomUUID();
+    handed.get(id)?.cancel();
+    const entry: { mark: string; since: number; outcome?: InternalTurnOutcome; cancel: () => void } = {
+      mark, since: now(), cancel: () => {} };
+    entry.cancel = watchInternalTurn(ref, outcome => {
+      entry.outcome = outcome;
+      if (handed.get(id) === entry) handed.delete(id);
+      if (outcome === 'consumed') ledger.touch(id, now(), mark);
+      log({ level: outcome === 'consumed' ? 'info' : 'warn', contract: r.contract_id, msg: outcome === 'consumed'
+        ? 'collaboration delivered'
+        : 'collaboration delivery refused where the turn would start; the next gate run offers it again' });
+    });
+    handed.set(id, entry);
+    let sent = false;
+    try {
+      sent = await deps.channelFor(poolKey)!.deliverInternalTurn(poolKey, collabPrompt(r), ids,
+        collabTurnNotice(r, deps.displayName), ref);
+    } finally {
+      if (!sent) {
+        entry.cancel();
+        if (handed.get(id) === entry) handed.delete(id);
+      }
+    }
+    if (!sent) log({ level: 'warn', msg: 'collaboration delivery refused by channel', contract: r.contract_id });
+    return sent && entry.outcome !== 'refused';
   }
 
   /** Idle conversations: queued wakes go out, and the Agents waited on read the inbox again. */
@@ -470,7 +533,7 @@ export function createCollabDelivery(deps: CollabDeliveryDeps) {
       const mark = deliveryMark(r, now());
       ledger.touch(id, now());
       if (mark === undefined) return 'suppressed';
-      if (queued.get(id)?.mark === mark || ledger.get(id)?.mark === mark) return 'duplicate';
+      if (queued.get(id)?.mark === mark || ledger.get(id)?.mark === mark || handedMark(id) === mark) return 'duplicate';
       const target = find(r);
       if (typeof target === 'string') return target;
       if (!deps.channelFor(target.poolKey)) return 'not_hosted';

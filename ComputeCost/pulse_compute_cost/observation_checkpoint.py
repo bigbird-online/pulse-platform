@@ -250,6 +250,20 @@ class Checkpoint:
         `accept` must keep nothing it cannot discard: a later failure means the
         caller restarts from a complete read.
         """
+        for meta, facts in self.iter_load(manifest):
+            try:
+                accept(meta, facts)
+            except CheckpointMiss:
+                raise
+            except (OSError, ValueError, TypeError, KeyError, zlib.error) as exc:
+                raise CheckpointMiss("checkpoint unreadable") from exc
+
+    def iter_load(self, manifest: dict[str, Any]) -> Iterator[tuple[dict[str, Any], list[bytes]]]:
+        """Yield each verified batch (metadata, canonical facts) in order; raise CheckpointMiss.
+
+        A batch is yielded once its own digest and chain are verified; the
+        segment and prefix checks finish only when the iteration ends.
+        """
         previous: str | None = None
         expected = 1
         try:
@@ -260,6 +274,7 @@ class Checkpoint:
                     pending = b""
                     meta: dict[str, Any] | None = None
                     facts: list[bytes] = []
+                    ready: list[tuple[dict[str, Any], list[bytes]]] = []
 
                     def lines(data: bytes) -> Iterator[bytes]:
                         nonlocal pending
@@ -283,7 +298,7 @@ class Checkpoint:
                         if len(facts) == meta["count"]:
                             if batch_digest(meta, facts) != meta["sha256"]:
                                 raise CheckpointMiss("checkpoint batch digest differs")
-                            accept({k: v for k, v in meta.items() if k != "count"}, facts)
+                            ready.append(({k: v for k, v in meta.items() if k != "count"}, facts))
                             previous, expected = meta["sha256"], expected + 1
                             meta, facts = None, []
 
@@ -298,6 +313,8 @@ class Checkpoint:
                             # Bounded output keeps transient buffers small and reusable.
                             for line in lines(decompressor.decompress(data, OUTPUT_SIZE)):
                                 consume(line)
+                            yield from ready
+                            ready.clear()
                             if decompressor.eof:
                                 # Compacted segments are concatenated streams.
                                 data = decompressor.unused_data

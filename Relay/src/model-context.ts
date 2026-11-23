@@ -5,6 +5,11 @@ import type { StreamJsonMessage } from './types.js';
 /** When no model id or no rule matches. */
 const DEFAULT_CONTEXT_LIMIT = 128_000;
 
+/** Translate Relay's family aliases to the model names Claude Code resolves. */
+export function resolveClaudeRuntimeModel(model: string): string {
+  return /^claude-(fable|sonnet|opus|haiku)-latest$/.exec(model)?.[1] ?? model;
+}
+
 interface BuiltinRule {
   test: (normalizedId: string) => boolean;
   limit: number;

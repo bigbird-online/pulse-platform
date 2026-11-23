@@ -373,15 +373,20 @@ def host_non_wi_receipts(facts: list[Receipt], observed: str) -> list[Receipt]:
     return result
 
 
+def load_confirmations() -> Any:
+    """The reviewed activity document, only from a regular file that is not a symlink."""
+    if not CONFIRMATIONS.is_file() or CONFIRMATIONS.is_symlink():
+        raise ReceiptError("reviewed activity source is unavailable")
+    return json.loads(CONFIRMATIONS.read_bytes())
+
+
 def collect_reviewed_activity(facts: list[Receipt], registry: Mapping[str, Any], observed: str) -> list[Receipt]:
     if FEATURE not in registry.get("required_receipt_features", []):
         return []  # All installed readers must support the new classification.
-    if not CONFIRMATIONS.is_file() or CONFIRMATIONS.is_symlink():
-        raise ReceiptError("reviewed activity source is unavailable")
-    reviewed = reviewed_activity_receipts(facts, json.loads(CONFIRMATIONS.read_bytes()), observed)
+    reviewed = reviewed_activity_receipts(facts, load_confirmations(), observed)
     if "runtime_subcall.v1" in registry.get("required_receipt_features", []):
         from .runtime_subcalls import reviewed_subcalls
-        reviewed.extend(reviewed_subcalls(facts, json.loads(CONFIRMATIONS.read_bytes()), observed))
+        reviewed.extend(reviewed_subcalls(facts, load_confirmations(), observed))
     return reviewed + host_non_wi_receipts(facts + reviewed, observed)
 
 

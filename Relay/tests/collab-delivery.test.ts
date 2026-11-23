@@ -7,6 +7,12 @@ import {
   agentDisplayName, collabPrompt, createCollabDelivery, holderKey, parseDeliveryRequest,
   type CollabDeliveryDeps, type CollabDeliveryRequest, type DeliveryConversation,
 } from '../src/collab-delivery.js';
+import { fencedInternalTurn, settleInternalTurn } from '../src/internal-turn-fence.js';
+
+/** What the runtime does where the turn starts: settle the delivery under its reference. */
+function settle(ref: string | undefined, outcome: 'consumed' | 'refused'): void {
+  if (ref) settleInternalTurn(fencedInternalTurn({ type: 'human' }, [], ref), outcome);
+}
 
 // Computed by the kernel: collaboration_inbox.holder_key(native_session_ref('team','hestia','native-1','ownermac')).
 const KERNEL_KEY = 'f549314eaf0c2daafdda1c0970903af72098d8ff48c9e2ec35957233a5d2af38';
@@ -20,10 +26,15 @@ function request(nativeId = 'native-1', extra: Partial<CollabDeliveryRequest> = 
   };
 }
 
-function rig(sessions: Record<string, { sessionId?: string; codexThreadId?: string }>,
+function rig(sessions: Record<string, { sessionId?: string; codexThreadId?: string;
+  agyConversation?: { sessionId: string; conversationId: string } }>,
   live: Record<string, DeliveryConversation> = {}, principals: Record<string, string> = {},
   extra: Partial<CollabDeliveryDeps> = {}) {
-  const deliverInternalTurn = vi.fn(async () => true);
+  // The turn starts in the routed conversation at once, as an idle runtime does.
+  const deliverInternalTurn = vi.fn(async (_poolKey: string, _prompt: string, _ids: string[], _notice?: unknown, ref?: string) => {
+    settle(ref, 'consumed');
+    return true;
+  });
   const deps: CollabDeliveryDeps = {
     sessions: () => sessions,
     live: poolKey => live[poolKey],
@@ -127,6 +138,60 @@ describe('collaboration delivery', () => {
     expect(await delivery.deliver(request('thread-9'))).toBe('started');
   });
 
+  it('matches an agy conversation by the conversation agy named, saved or live', async () => {
+    // The core names an agy session by its agy conversation; Relay's session ID is not that.
+    const saved = { 'u1:asobi': { sessionId: 'relay-session', agyConversation: { sessionId: 'relay-session', conversationId: 'conv-1' } } };
+    const r = (candidate: string, id: string) => request(id, { actor: 'asobi', holder_key: undefined,
+      author_key: holderKey('team', 'asobi', id, 'ownermac'), role: 'submitter', contract_id: candidate,
+      kind: 'pull_request', status: 'changes_requested', repository: 'o/r', number: 1013, head_sha: 'a'.repeat(40) });
+    const first = rig(saved);
+    expect(await first.delivery.deliver(r('op_r1', 'conv-1'))).toBe('started');
+    expect((first.deliverInternalTurn.mock.calls[0] as unknown as unknown[])[2]).toEqual(['conv-1']);
+    // A contract for the WI the agy session holds goes to the same conversation.
+    expect(await first.delivery.deliver(request('conv-1', { actor: 'asobi',
+      holder_key: holderKey('team', 'asobi', 'conv-1', 'ownermac') }))).toBe('started');
+    // The live process has named a newer conversation than the one saved.
+    const live = rig(saved, { 'u1:asobi': { state: 'idle', sessionId: 'relay-session', agyConversationId: 'conv-2' } });
+    expect(await live.delivery.deliver(r('op_r2', 'conv-2'))).toBe('started');
+    expect((live.deliverInternalTurn.mock.calls[0] as unknown as unknown[])[2]).toEqual(['conv-2']);
+    // A conversation saved for another Relay session does not name this one.
+    const stale = rig({ 'u1:asobi': { sessionId: 'relay-new', agyConversation: { sessionId: 'relay-session', conversationId: 'conv-1' } } });
+    expect(await stale.delivery.deliver(r('op_r3', 'conv-1'))).toBe('not_hosted');
+    for (const x of [first, live, stale]) x.delivery.stop();
+  });
+
+  it('records a delivery only once its turn starts in the routed conversation, and offers a refused one again', async () => {
+    const ledgerPath = join(mkdtempSync(join(tmpdir(), 'collab-ledger-')), 'ledger.json');
+    const refs: string[] = [];
+    const { delivery, deliverInternalTurn } = rig({ 'u1:hestia': { sessionId: 'native-1' } }, {}, {}, { ledgerPath });
+    deliverInternalTurn.mockImplementation(async (_p: string, _pr: string, _i: string[], _n?: unknown, ref?: string) => {
+      refs.push(ref!);
+      return true;  // handed to the runtime; it settles later, where the turn starts
+    });
+    const recorded = () => { try { return JSON.parse(readFileSync(ledgerPath, 'utf8')).entries; } catch { return {}; } };
+    expect(await delivery.deliver(request())).toBe('started');
+    // Handed over and not yet started: not offered again meanwhile, and not recorded.
+    expect(await delivery.deliver(request())).toBe('duplicate');
+    expect(Object.values(recorded())).toEqual([]);
+    // The conversation changed before the turn started: refused there, still unrecorded, offered again.
+    settle(refs[0], 'refused');
+    expect(Object.values(recorded())).toEqual([]);
+    expect(await delivery.deliver(request())).toBe('started');
+    expect(refs).toHaveLength(2);
+    expect(refs[1]).not.toBe(refs[0]);
+    settle(refs[1], 'consumed');
+    expect(Object.values(recorded())).toHaveLength(1);
+    expect(await delivery.deliver(request())).toBe('duplicate');
+    // A refusal before the channel returns is no delivery either.
+    const quick = rig({ 'u1:hestia': { sessionId: 'native-1' } });
+    quick.deliverInternalTurn.mockImplementation(async (_p: string, _pr: string, _i: string[], _n?: unknown, ref?: string) => {
+      settle(ref, 'refused');
+      return true;
+    });
+    expect(await quick.delivery.deliver(request())).toBe('not_hosted');
+    delivery.stop(); quick.delivery.stop();
+  });
+
   it('delivers nothing when no conversation, another agent, or several conversations match', async () => {
     expect(await rig({ 'u1:hestia': { sessionId: 'native-2' } }).delivery.deliver(request())).toBe('not_hosted');
     const other = rig({ 'u1:pulse': { sessionId: 'native-1' } });
@@ -180,6 +245,67 @@ describe('collaboration delivery', () => {
     expect(prompt).toContain('已由内核合并');
     expect(deliverInternalTurn).toHaveBeenCalledTimes(1);
     delivery.stop();
+  });
+
+  it('delivers a pull request result only to the session that registered its head', async () => {
+    const sessions: Record<string, { sessionId?: string }> = {
+      'u1:pulse': { sessionId: 'holder-1' }, 'u1:pulse:feishu': { sessionId: 'author-1' } };
+    const { delivery, deliverInternalTurn } = rig(sessions);
+    const round = (candidate: string, extra: Partial<CollabDeliveryRequest> = {}) => request('holder-1', {
+      actor: 'pulse', holder_key: undefined,
+      author_key: holderKey('team', 'pulse', 'author-1', 'ownermac'), role: 'submitter',
+      contract_id: candidate, kind: 'pull_request', status: 'merged', repository: 'o/r', number: 7,
+      head_sha: 'a'.repeat(40), ...extra });
+    expect(await delivery.deliver(round('op_r1'))).toBe('started');
+    expect((deliverInternalTurn.mock.calls[0] as unknown as string[])[0]).toBe('u1:pulse:feishu');
+    // The registering session is not here any more: the holder here does not get it.
+    sessions['u1:pulse:feishu'] = { sessionId: 'author-2' };
+    expect(await delivery.deliver(round('op_r2', { holder_key: holderKey('team', 'pulse', 'holder-1', 'ownermac') })))
+      .toBe('not_hosted');
+    // The kernel says the registering session ended: the gate names the holder alone.
+    expect(await delivery.deliver(round('op_r3', { author_key: undefined,
+      holder_key: holderKey('team', 'pulse', 'holder-1', 'ownermac') }))).toBe('started');
+    expect((deliverInternalTurn.mock.calls[1] as unknown as string[])[0]).toBe('u1:pulse');
+    expect(deliverInternalTurn).toHaveBeenCalledTimes(2);
+    delivery.stop();
+  });
+
+  it('hands the channel only the routed session ID while a switch shows the old and new beside each other', async () => {
+    // The switch persists the new session before the old CC process exits.
+    const { delivery, deliverInternalTurn } = rig(
+      { 'u1:pulse': { sessionId: 'author-new' } }, { 'u1:pulse': { state: 'idle', sessionId: 'author-1' } });
+    const r = (candidate: string, id: string) => request('author-1', {
+      actor: 'pulse', holder_key: undefined, author_key: holderKey('team', 'pulse', id, 'ownermac'), role: 'submitter',
+      contract_id: candidate, kind: 'pull_request', status: 'merged', repository: 'o/r', number: 7, head_sha: 'a'.repeat(40) });
+    expect(await delivery.deliver(r('op_r1', 'author-1'))).toBe('started');
+    expect((deliverInternalTurn.mock.calls[0] as unknown as unknown[])[2]).toEqual(['author-1']);
+    expect(await delivery.deliver(r('op_r2', 'author-new'))).toBe('started');
+    expect((deliverInternalTurn.mock.calls[1] as unknown as unknown[])[2]).toEqual(['author-new']);
+    delivery.stop();
+  });
+
+  it('defers a result for a busy registering session instead of handing it to the holder', async () => {
+    const { delivery, deliverInternalTurn } = rig(
+      { 'u1:pulse': { sessionId: 'holder-1' }, 'u1:pulse:feishu': { sessionId: 'author-1' } },
+      { 'u1:pulse:feishu': { state: 'busy', sessionId: 'author-1' } });
+    const r = request('holder-1', {
+      actor: 'pulse', holder_key: holderKey('team', 'pulse', 'holder-1', 'ownermac'),
+      author_key: holderKey('team', 'pulse', 'author-1', 'ownermac'), role: 'submitter',
+      contract_id: 'op_r1', kind: 'pull_request', status: 'merged', repository: 'o/r', number: 7, head_sha: 'a'.repeat(40) });
+    expect(await delivery.deliver(r)).toBe('deferred');
+    expect(deliverInternalTurn).not.toHaveBeenCalled();
+    delivery.stop();
+  });
+
+  it('parses the registering session key only for a pull request result', () => {
+    const body = { schema: COLLAB_DELIVERY_SCHEMA, ...request(), role: 'submitter', kind: 'pull_request',
+      status: 'merged', repository: 'o/r', number: 7, head_sha: 'a'.repeat(40), author_key: 'c'.repeat(64) };
+    expect(parseDeliveryRequest(body).author_key).toBe('c'.repeat(64));
+    const { holder_key: _held, ...unheld } = body;
+    expect(parseDeliveryRequest(unheld)).not.toHaveProperty('holder_key');
+    expect(() => parseDeliveryRequest({ ...unheld, author_key: undefined })).toThrow('invalid_holder_key');
+    expect(() => parseDeliveryRequest({ ...body, author_key: 'short' })).toThrow('invalid_author_key');
+    expect(() => parseDeliveryRequest({ ...body, role: 'recipient', kind: 'request', status: 'pending' })).toThrow('invalid_author_key');
   });
 
   it('delivers one contract to each of its recipients hosted by the same Relay', async () => {

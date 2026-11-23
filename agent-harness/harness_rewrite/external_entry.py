@@ -153,12 +153,17 @@ def session_log(policy: Json, binding_id: str) -> Path:
     return directory(policy, "sessions") / (binding_id + ".jsonl")
 
 
-def locate(policy: Json, chain: list[Json], entry: Path) -> Json | None:
-    """The entry launcher in this invocation's ancestry, and its confirmed binding."""
+def locate(
+    policy: Json, chain: list[Json], entry: Path, *, nearer_than: int | None = None
+) -> Json | None:
+    """The entry launcher in this invocation's ancestry, and its confirmed binding.
+
+    With `nearer_than`, only the first that many processes can be the launcher.
+    """
     if "external_entries" not in policy:
         return None
     python = Path(policy["python"]).resolve()
-    for row in chain:
+    for row in chain[:nearer_than]:
         args = row["argv"]
         if row["uid"] != os.getuid():
             continue

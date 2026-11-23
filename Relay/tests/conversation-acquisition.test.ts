@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { acquireConversation } from '../src/conversation-acquisition.js';
 import { intakeAwareRuntime } from '../src/channels/intake-journal.js';
 import { buildRuntimeUsageBinding, runtimeAuthorityRef } from '../src/runtime-usage-binding.js';
@@ -45,6 +48,41 @@ function fixture() {
 describe('conversation acquisition ownership', () => {
   beforeEach(() => { vi.stubEnv('PULSE_SCL_BIN', ''); });
   afterEach(() => { vi.unstubAllEnvs(); });
+
+  it('switches authentication once after the running turn while retaining the same session', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'conversation-cc-auth-'));
+    try {
+      const oauthFile = join(root, 'relay.env');
+      vi.stubEnv('RELAY_CC_OAUTH_ENV_FILE', oauthFile);
+      writeFileSync(join(root, 'relay-auth'), 'claude_auth=api\n', { mode: 0o600 });
+      const f = fixture();
+      f.input.agent.runtime = f.session.runtime = 'cc';
+      const live = { ...f.makeProcess(), runtime: 'cc' as const, ccAuthMode: 'subscription' as const, state: 'busy' as const };
+      f.processes.set(f.input.poolKey, live);
+      await expect(acquireConversation(f.input)).resolves.toBe(live);
+      f.processes.set(f.input.poolKey, { ...live, state: 'idle' });
+      await expect(acquireConversation(f.input)).rejects.toThrow('CC Console API key unavailable');
+      expect(f.runtime.kill).not.toHaveBeenCalled();
+      writeFileSync(join(root, 'anthropic-api.key'), 'sk-ant-test-console-fixture\n', { mode: 0o600 });
+      f.runtime.spawn.mockImplementation(async config => {
+        const proc = { ...f.makeProcess(config.sessionId), runtime: 'cc' as const,
+          ccAuthMode: f.runtime.spawn.mock.calls.length === 1 ? 'api' as const : 'subscription' as const };
+        f.processes.set(config.tenantId, proc);
+        return proc;
+      });
+      const results = await Promise.all([acquireConversation(f.input), acquireConversation(f.input)]);
+      expect(results.map(proc => [proc.sessionId, proc.ccAuthMode])).toEqual([['original', 'api'], ['original', 'api']]);
+      expect(f.runtime.kill).toHaveBeenCalledTimes(1);
+      expect(f.runtime.spawn).toHaveBeenCalledTimes(1);
+      expect(f.runtime.spawn).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'original', resume: true }));
+      writeFileSync(oauthFile, 'CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat-test-subscription\n', { mode: 0o600 });
+      writeFileSync(join(root, 'relay-auth'), 'claude_auth=subscription\n');
+      await expect(acquireConversation(f.input)).resolves.toMatchObject({ sessionId: 'original', ccAuthMode: 'subscription' });
+      expect(f.runtime.kill).toHaveBeenCalledTimes(2);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 
   it('one address queue for the runtime and its channel wrapper: a cold start is not repeated through the wrapper', async () => {
     const f = fixture(), gate = deferred(), entered = deferred();

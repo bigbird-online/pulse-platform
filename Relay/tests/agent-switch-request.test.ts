@@ -52,6 +52,18 @@ describe('Agent switch requests left by the core',()=>{
     expect(existsSync(busy.path)&&existsSync(pending.path)&&existsSync(failing.path)).toBe(true);
   });
 
+  it('knows an agy source by the conversation the core named, live or saved, not by Relay\'s session ID',async()=>{
+    const agy={runtime:'agy' as const,sessionId:'relay-s',agyConversation:{sessionId:'relay-s',conversationId:'source'}};
+    const live=rig(agy,{runtime:'agy',sessionId:'relay-s',agyConversationId:'source',state:'idle'});
+    const dormant=rig(agy,null);  // No instance.
+    const stale=rig({...agy,sessionId:'relay-new'},null);
+    const start=vi.fn(async()=>({text:'done'}));
+    for(const r of [live,dormant,stale])
+      await adoptAgentSwitchRequests({dir:r.dir,stateManager:r.stateManager,runtime:r.runtime as any,start});
+    expect(start).toHaveBeenCalledTimes(2);
+    expect([live,dormant,stale].map(r=>existsSync(r.path))).toEqual([false,false,false]);
+  });
+
   it('a conversation already on another session retires the notice without a run',async()=>{
     const r=rig({}, {sessionId:'another',state:'ready'});
     const start=vi.fn();

@@ -437,6 +437,151 @@ describe('P0-002: executeJob [P0-002]', () => {
     scheduleSpy.mockRestore();
   });
 
+  it('refuses an agy job whose owner Agent is isolated under its own Linux user, without another runtime', async () => {
+    const cronMod = await import('node-cron');
+    const scheduleSpy = vi.spyOn(cronMod, 'schedule').mockReturnValue({
+      stop: vi.fn(), start: vi.fn(), destroy: vi.fn(), getStatus: vi.fn(),
+    } as unknown as ReturnType<typeof cronMod.schedule>);
+    const { spawn } = await import('node:child_process');
+    vi.mocked(spawn).mockReset();
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { createScheduler } = await import('../src/scheduler.js');
+    const job = makeJob({ id: 'agy-isolated', owner: 'iso',
+      agent: { workspace: '/tmp', prompt: 'hello', timeout: 10, runtimePreference: ['agy'] } });
+    const ownerIsolationFor = vi.fn((owner: string) => owner === 'iso' ? 'isolated' as const : 'host' as const);
+    const scheduler = createScheduler(makeBotMock(), makeTmpJobsFile([job]), { ownerIsolationFor });
+    scheduler.start();
+    const result = await scheduler.runJob('agy-isolated');
+    expect(ownerIsolationFor).toHaveBeenCalledWith('iso');
+    expect(result.status).toBe('error');
+    expect(result.runtime).toBe('agy');
+    expect(result.attemptedRuntimes).toEqual(['agy']);
+    expect(result.errorMessage).toContain('独立 Linux 用户隔离');
+    expect(spawn).not.toHaveBeenCalled();
+    scheduler.stop();
+    consoleSpy.mockRestore();
+    scheduleSpy.mockRestore();
+  });
+
+  it('refuses an agy job when no owner isolation resolver is configured', async () => {
+    const cronMod = await import('node-cron');
+    const scheduleSpy = vi.spyOn(cronMod, 'schedule').mockReturnValue({
+      stop: vi.fn(), start: vi.fn(), destroy: vi.fn(), getStatus: vi.fn(),
+    } as unknown as ReturnType<typeof cronMod.schedule>);
+    const { spawn } = await import('node:child_process');
+    vi.mocked(spawn).mockReset();
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { createScheduler } = await import('../src/scheduler.js');
+    const job = makeJob({ id: 'agy-unverified', owner: 'pulse',
+      agent: { workspace: '/tmp', prompt: 'hello', timeout: 10, runtimePreference: ['agy'] } });
+    const scheduler = createScheduler(makeBotMock(), makeTmpJobsFile([job]));
+    scheduler.start();
+    const result = await scheduler.runJob('agy-unverified');
+    expect(result.status).toBe('error');
+    expect(result.errorMessage).toContain('无法核实');
+    expect(spawn).not.toHaveBeenCalled();
+    scheduler.stop();
+    consoleSpy.mockRestore();
+    scheduleSpy.mockRestore();
+  });
+
+  it('keeps the timeout status and the recognized egress reason of an agy job', async () => {
+    const cronMod = await import('node-cron');
+    const scheduleSpy = vi.spyOn(cronMod, 'schedule').mockReturnValue({
+      stop: vi.fn(), start: vi.fn(), destroy: vi.fn(), getStatus: vi.fn(),
+    } as unknown as ReturnType<typeof cronMod.schedule>);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-sched-agy-'));
+    const agyBin = path.join(dir, 'agy');
+    fs.writeFileSync(agyBin, '#!/bin/sh\n', { mode: 0o755 });
+    const savedBin = process.env['PULSE_AGY_BIN'];
+    process.env['PULSE_AGY_BIN'] = agyBin;
+    const { spawn } = await import('node:child_process');
+    vi.mocked(spawn).mockReset();
+    vi.mocked(spawn).mockImplementationOnce(((_command: string, args: string[]) => {
+      const proc = createMockProc(2790);
+      const kill = proc.kill;
+      // The egress hangs: the log names it only once agy is stopped.
+      proc.kill = vi.fn((signal?: string) => {
+        fs.writeFileSync(args[args.indexOf('--log-file') + 1]!, 'W1120 18:42:09.131754 267 cache.go:157] Post "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist": context deadline exceeded');
+        proc.stdout.push(null);
+        return kill(signal);
+      });
+      return proc;
+    }) as never);
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { createScheduler } = await import('../src/scheduler.js');
+      const job = makeJob({ id: 'agy-hung-egress', owner: 'pulse',
+        agent: { workspace: '/tmp', prompt: 'hello', timeout: 0.05, runtimePreference: ['agy'] } });
+      const scheduler = createScheduler(makeBotMock(), makeTmpJobsFile([job]), { ownerIsolationFor: () => 'host' });
+      scheduler.start();
+      const result = await scheduler.runJob('agy-hung-egress');
+      scheduler.stop();
+      expect(result.status).toBe('timeout');
+      expect(result.errorMessage).toMatch(/^agy timeout after \d+ms: agy 出口不可用/);
+      expect(result.attemptedRuntimes).toEqual(['agy']);
+    } finally {
+      if (savedBin === undefined) delete process.env['PULSE_AGY_BIN'];
+      else process.env['PULSE_AGY_BIN'] = savedBin;
+      fs.rmSync(dir, { recursive: true, force: true });
+      consoleSpy.mockRestore();
+      scheduleSpy.mockRestore();
+    }
+  });
+
+  it.each([
+    ['every part sent', undefined, 'sent', 'ok'],
+    ['the second part fails', 2, 'failed', 'error'],
+  ] as const)('a weekly report longer than one Telegram message goes out in order, in parts (%s)', async (_label, failAt, delivery, status) => {
+    const cronMod = await import('node-cron');
+    const scheduleSpy = vi.spyOn(cronMod, 'schedule').mockReturnValue({
+      stop: vi.fn(), start: vi.fn(), destroy: vi.fn(), getStatus: vi.fn(),
+    } as unknown as ReturnType<typeof cronMod.schedule>);
+    const { spawn } = await import('node:child_process');
+    vi.mocked(spawn).mockReset();
+    const runtimeProc = createMockProc(2781);
+    vi.mocked(spawn).mockReturnValueOnce(runtimeProc as unknown as ReturnType<typeof spawn>);
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { createScheduler } = await import('../src/scheduler.js');
+    const { TELEGRAM_TEXT_MAX } = await import('../src/delivery.js');
+    const bot = makeBotMock();
+    const send = bot.api.sendMessage as unknown as ReturnType<typeof vi.fn>;
+    send.mockReset();
+    send.mockImplementation(async () => {
+      if (send.mock.calls.length === failAt) throw new Error("GrammyError: Call to 'sendMessage' failed! (400: Bad Request)");
+      return { message_id: send.mock.calls.length };
+    });
+    const sections = Array.from({ length: 6 }, (_, i) => `## 第${i + 1}节\n${'健康数据'.repeat(400)}`);
+    const report = sections.join('\n\n');
+    const job = makeJob({ id: 'long-report', delivery: { mode: 'announce', channel: 'telegram', to: '1000000001' } });
+    const scheduler = createScheduler(bot, makeTmpJobsFile([job]));
+    scheduler.start();
+    const resultPromise = scheduler.runJob('long-report');
+    setImmediate(() => {
+      runtimeProc.stdout.push(`${report}\n`);
+      runtimeProc.stdout.push(null);
+      runtimeProc.emit('exit', 0, null);
+    });
+    const result = await resultPromise;
+    const sent = send.mock.calls.map(([, text]) => text as string);
+    expect(result.executionStatus).toBe('ok');
+    expect(result.deliveryStatus).toBe(delivery);
+    expect(result.status).toBe(status);
+    expect(sent.every(text => text.length <= TELEGRAM_TEXT_MAX)).toBe(true);
+    if (failAt) {
+      expect(sent).toHaveLength(2);
+      expect(result.errorMessage).toContain('part 2/');
+    } else {
+      expect(report.length).toBeGreaterThan(4096);
+      expect(sent.length).toBeGreaterThan(1);
+      expect(sent.join('\n\n')).toBe(report);
+      expect(sent.every(text => text.startsWith('## 第'))).toBe(true);
+    }
+    scheduler.stop();
+    consoleSpy.mockRestore();
+    scheduleSpy.mockRestore();
+  });
+
   it('announce delivery is skipped when the output carries a whole-line skip marker', async () => {
     const cronMod = await import('node-cron');
     const scheduleSpy = vi.spyOn(cronMod, 'schedule').mockReturnValue({
@@ -747,6 +892,118 @@ describe('P0-002: Integration Tests [P0-002]', () => {
       scheduleSpy.mockRestore();
       vi.useRealTimers();
     }
+  });
+
+  describe('a slot that hits the subscription limit waits for the reset and runs once more', () => {
+    const LIMIT = "You've hit your session limit · resets 5:50pm (Asia/Taipei)\n";
+    // Sunday 07:00 Asia/Shanghai; the notice resets at 09:50Z the same day.
+    const SLOT = '2026-11-14T23:00:00.000Z';
+
+    async function limitedSlot(retry: 'ok' | 'limited' | 'none', firstOutput = LIMIT) {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-11-14T22:30:00.000Z'));
+      refreshTestCodexModelCatalogTime();
+      const cronMod = await import('node-cron');
+      const scheduleSpy = vi.spyOn(cronMod, 'schedule').mockReturnValue({
+        stop: vi.fn(), start: vi.fn(), destroy: vi.fn(), getStatus: vi.fn(),
+      } as unknown as ReturnType<typeof cronMod.schedule>);
+      const { spawn } = await import('node:child_process');
+      vi.mocked(spawn).mockReset();
+      const outputs = [firstOutput, retry === 'limited' ? LIMIT : ''];
+      vi.mocked(spawn).mockImplementation(() => {
+        const proc = createMockProc(4500 + vi.mocked(spawn).mock.calls.length);
+        const stderr = outputs.shift() ?? '';
+        setTimeout(() => {
+          if (stderr) { proc.stderr.push(stderr); proc.stderr.push(null); proc.stdout.push(null); proc.emit('exit', 1, null); }
+          else { proc.stdout.push('周报已写\n'); proc.stdout.push(null); proc.emit('exit', 0, null); }
+        }, 0);
+        return proc as unknown as ReturnType<typeof spawn>;
+      });
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const statePath = process.env['CRON_JOBS_STATE_PATH']!;
+      fs.writeFileSync(statePath, JSON.stringify({ version: 1, jobs: {} }), 'utf-8');
+      const { createScheduler } = await import('../src/scheduler.js');
+      const file = makeTmpJobsFile([makeJob({ id: 'weekly-health', runtimeStrict: true,
+        schedule: { expr: '0 7 * * 0', tz: 'Asia/Shanghai' },
+        agent: { workspace: '/tmp/ws-weekly-health', prompt: 'weekly', timeout: 60, runtimePreference: ['cc'] },
+        delivery: { mode: 'none', feishuOpenId: 'ou_owner' } })]);
+      const options = { missedRunReconcileIntervalMs: 30_000, missedRunLookbackMs: 3 * 60 * 60 * 1000,
+        runtimePolicy: { primary: 'cc' as const, fallbacks: [] } };
+      const settle = async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+        for (let i = 0; i < 10; i += 1) await vi.advanceTimersByTimeAsync(50);
+      };
+      const alerts = () => errorSpy.mock.calls.filter(([entry]) =>
+        (entry as { msg?: string })?.msg === 'job failure alert unconfigured: feishuOpenId set but no Feishu client for owner').length;
+      let scheduler = createScheduler(makeBotMock(), file, options);
+      try {
+        scheduler.start();
+        vi.setSystemTime(new Date('2026-11-14T23:00:20.000Z'));
+        await settle();
+        expect(vi.mocked(spawn)).toHaveBeenCalledTimes(1);
+        const first = scheduler.listJobs()[0]!._state!;
+        const persisted = JSON.parse(fs.readFileSync(statePath, 'utf-8')).jobs['weekly-health'];
+        scheduler.stop();
+        // Relay restarts before the reset; the plan comes back from the state file.
+        scheduler = createScheduler(makeBotMock(), file, options);
+        scheduler.start();
+        const restored = scheduler.listJobs()[0]!._state!;
+        vi.setSystemTime(new Date('2026-11-15T09:53:00.000Z'));
+        await settle();
+        return { first, persisted, restored, final: scheduler.listJobs()[0]!._state!,
+          runs: vi.mocked(spawn).mock.calls.length, alerts: alerts() };
+      } finally {
+        scheduler.stop();
+        scheduleSpy.mockRestore();
+        errorSpy.mockRestore();
+        warnSpy.mockRestore();
+        vi.useRealTimers();
+      }
+    }
+
+    it('records the limited round as waiting, not failed, and keeps the plan across a restart', async () => {
+      const { first, persisted, restored } = await limitedSlot('ok');
+      expect(first.lastResult).toMatchObject({ scheduledFor: SLOT, status: 'error', deferred: true });
+      expect(first.consecutiveErrors).toBe(0);
+      expect(first.failingSince).toBeUndefined();
+      const plan = [{ scheduledFor: SLOT, definitionHash: first.definitionHash,
+        notBefore: '2026-11-15T09:52:00.000Z', attempts: 1 }];
+      expect(first.quotaRetries).toEqual(plan);
+      expect(persisted.quotaRetries).toEqual(plan);
+      expect(restored.quotaRetries).toEqual(plan);
+    });
+
+    it('a retry after the reset that succeeds settles the slot', async () => {
+      const { final, runs, alerts } = await limitedSlot('ok');
+      expect(runs).toBe(2);
+      expect(final.lastResult).toMatchObject({ scheduledFor: SLOT, status: 'ok', deferred: false });
+      expect(final.lastStatus).toBe('ok');
+      expect(final.consecutiveErrors).toBe(0);
+      expect(final.quotaRetries).toBeUndefined();
+      expect(final.unresolvedResults).toEqual([]);
+      expect(alerts).toBe(0);
+    });
+
+    it('a retry that hits the limit again fails the slot and alerts', async () => {
+      const { first, final, runs, alerts } = await limitedSlot('limited');
+      expect(runs).toBe(2);
+      expect(final.lastResult).toMatchObject({ scheduledFor: SLOT, status: 'error', deferred: false });
+      expect(final.consecutiveErrors).toBe(1);
+      expect(final.quotaRetries).toBeUndefined();
+      expect(final.unresolvedResults?.map(item => item.runId)).toEqual([final.lastResult!.runId]);
+      expect(first.lastResult!.runId).not.toBe(final.lastResult!.runId);
+      expect(alerts).toBe(1);
+    });
+
+    it('a limit notice without a reset time fails the round as before', async () => {
+      const { first, runs, alerts } = await limitedSlot('none', "You've hit your session limit\n");
+      expect(runs).toBe(1);
+      expect(first.lastResult).toMatchObject({ scheduledFor: SLOT, status: 'error', deferred: false });
+      expect(first.consecutiveErrors).toBe(1);
+      expect(first.quotaRetries).toBeUndefined();
+      expect(alerts).toBe(1);
+    });
   });
 
   it('IT-001c-migration: legacy state cannot replay a slot under an unproven definition', async () => {
@@ -3204,6 +3461,8 @@ describe('workspace-relative document delivery', () => {
     job: ScheduledJob,
     channels: { feishu?: import('../src/delivery.js').FeishuMessageClient; bot?: import('grammy').Bot },
     pid: number,
+    stdoutLines: string[] = ['EPUB ready'],
+    exitBeforeOutput = false,
   ): Promise<JobResult> {
     const cronMod = await import('node-cron');
     vi.spyOn(cronMod, 'schedule').mockReturnValue({
@@ -3221,9 +3480,13 @@ describe('workspace-relative document delivery', () => {
     scheduler.start();
     const resultPromise = scheduler.runJob(job.id);
     setImmediate(() => {
-      runtimeProc.stdout.push('EPUB ready\n');
-      runtimeProc.stdout.push(null);
-      runtimeProc.emit('exit', 0, null);
+      // The process may exit before its last stdout lines are read.
+      if (exitBeforeOutput) runtimeProc.emit('exit', 0, null);
+      setImmediate(() => {
+        for (const line of stdoutLines) runtimeProc.stdout.push(`${line}\n`);
+        runtimeProc.stdout.push(null);
+        if (!exitBeforeOutput) runtimeProc.emit('exit', 0, null);
+      });
     });
     try {
       return await resultPromise;
@@ -3314,6 +3577,79 @@ describe('workspace-relative document delivery', () => {
     const sendMessage = vi.mocked(bot.api.sendMessage);
     expect(sendMessage).toHaveBeenCalledWith(1000000001, '伴读导语');
     expect(sendDocument.mock.invocationCallOrder[0]).toBeLessThan(sendMessage.mock.invocationCallOrder[0]);
+  });
+
+  // A stream-json run: progress text, a tool call, then the last reply.
+  const STREAMED_RUN = [
+    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Building the HTML report.' }, { type: 'tool_use', id: 't1', name: 'Write', input: {} }] } }),
+    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Weekly health summary.' }] } }),
+    JSON.stringify({ type: 'result', subtype: 'success', result: 'Weekly health summary.' }),
+  ];
+  function sendOutputJob(workspace: string, id: string): ScheduledJob {
+    fs.writeFileSync(path.join(workspace, 'report.html'), '<html></html>', 'utf-8');
+    return makeJob({
+      id,
+      owner: 'vigil',
+      agent: { workspace, prompt: 'build', timeout: 10, runtimePreference: ['cc'] },
+      delivery: { mode: 'telegram_document', channel: 'telegram', to: '1000000001', documentPath: 'report.html', sendOutput: true },
+    });
+  }
+
+  it('sends only the last reply to Telegram after the document when sendOutput is set', async () => {
+    const bot = makeBotMock();
+    const result = await runDocumentJob(sendOutputJob(makeWorkspace(), 'vigil-weekly'), { bot }, 7408, STREAMED_RUN);
+    expect(result.status).toBe('ok');
+    const sendDocument = vi.mocked(bot.api.sendDocument);
+    const sendMessage = vi.mocked(bot.api.sendMessage);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith(1000000001, 'Weekly health summary.');
+    expect(sendDocument.mock.invocationCallOrder[0]).toBeLessThan(sendMessage.mock.invocationCallOrder[0]);
+  });
+
+  it('sends nothing and fails the delivery when sendOutput is set and the last reply is empty', async () => {
+    const bot = makeBotMock();
+    const run = [
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: 'Write', input: {} }] } }),
+      JSON.stringify({ type: 'result', subtype: 'success', result: '' }),
+    ];
+    const result = await runDocumentJob(sendOutputJob(makeWorkspace(), 'vigil-weekly-empty'), { bot }, 7410, run);
+    expect(result.status).toBe('error');
+    expect(result.deliveryStatus).toBe('failed');
+    expect(result.errorMessage).toContain('the run left no reply to send');
+    expect(vi.mocked(bot.api.sendDocument)).not.toHaveBeenCalled();
+  });
+
+  it('sends nothing when the turn after the progress text ends without a reply or result', async () => {
+    const bot = makeBotMock();
+    const run = [STREAMED_RUN[0]!, JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't2', name: 'Write', input: {} }] } })];
+    const result = await runDocumentJob(sendOutputJob(makeWorkspace(), 'vigil-weekly-noresult'), { bot }, 7411, run);
+    expect(result.deliveryStatus).toBe('failed');
+    expect(result.errorMessage).toContain('the runtime did not separate the last reply');
+    expect(vi.mocked(bot.api.sendDocument)).not.toHaveBeenCalled();
+  });
+
+  it('sends nothing when the run only answers with the no-response placeholder', async () => {
+    const bot = makeBotMock();
+    const run = [JSON.stringify({ type: 'result', subtype: 'success', result: 'No response requested.' })];
+    const result = await runDocumentJob(sendOutputJob(makeWorkspace(), 'vigil-weekly-placeholder'), { bot }, 7413, run);
+    expect(result.deliveryStatus).toBe('failed');
+    expect(vi.mocked(bot.api.sendDocument)).not.toHaveBeenCalled();
+  });
+
+  it('reads the final result even when the process exits before stdout is drained', async () => {
+    const bot = makeBotMock();
+    const result = await runDocumentJob(sendOutputJob(makeWorkspace(), 'vigil-weekly-late'), { bot }, 7412, STREAMED_RUN, true);
+    expect(result.status).toBe('ok');
+    expect(vi.mocked(bot.api.sendMessage)).toHaveBeenCalledWith(1000000001, 'Weekly health summary.');
+  });
+
+  it('fails the delivery when sendOutput is set and the reply cannot be sent', async () => {
+    const bot = makeBotMock();
+    vi.mocked(bot.api.sendMessage).mockRejectedValue(new Error('400: Bad Request'));
+    const result = await runDocumentJob(sendOutputJob(makeWorkspace(), 'vigil-weekly-fail'), { bot }, 7409, STREAMED_RUN);
+    expect(result.status).toBe('error');
+    expect(result.deliveryStatus).toBe('failed');
+    expect(result.errorMessage).toContain('telegram_document reply delivery failed (document already sent)');
   });
 
   it('fails the delivery and sends nothing when the captionPath file is missing', async () => {

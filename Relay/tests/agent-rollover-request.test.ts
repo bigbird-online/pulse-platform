@@ -56,6 +56,18 @@ describe('Agent rollover requests left by the core',()=>{
     expect(existsSync(r.path)).toBe(true); // Kept until the successor holds the WI.
   });
 
+  it('knows an agy source by the conversation the core named, live or saved, not by Relay\'s session ID',async()=>{
+    const agy={runtime:'agy' as const,sessionId:'relay-s',agyConversation:{sessionId:'relay-s',conversationId:'source'}};
+    const live=rig(agy,{runtime:'agy',sessionId:'relay-s',agyConversationId:'source',state:'idle'});
+    const dormant=rig(agy,null);  // No instance.
+    const stale=rig({...agy,sessionId:'relay-new'},null);
+    const start=vi.fn(async()=>({}));
+    for(const r of [live,dormant,stale])
+      await adoptAgentRolloverRequests({dir:r.dir,stateManager:r.stateManager,runtime:r.runtime as any,start});
+    expect(start).toHaveBeenCalledTimes(2);
+    expect([live,dormant,stale].map(r=>existsSync(r.path))).toEqual([true,true,false]);
+  });
+
   it('with no instance, a persisted session that names another source is retired without a start',async()=>{
     const r=rig({sessionId:'later'});
     r.runtime.get=()=>undefined;

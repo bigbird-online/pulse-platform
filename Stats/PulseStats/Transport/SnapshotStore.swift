@@ -242,7 +242,13 @@ final class SnapshotStore {
         } else {
             codexExpiry = nil
         }
-        let resourceExpiry = [oikosExpiry, codexExpiry].compactMap { $0 }.min()
+        // An agy reading turns stale after an hour or when its first bucket resets.
+        let agyExpiry: Date? = metrics.observedAt(MetricID.agyQuota).map { observed in
+            let resets = (metrics.rows(MetricID.agyQuota) ?? []).compactMap { $0["resets_at"]?.number }
+                .filter { $0 > 0 }.map { Date(timeIntervalSince1970: $0) }
+            return ([observed.addingTimeInterval(3600)] + resets).min()!
+        }
+        let resourceExpiry = [oikosExpiry, codexExpiry, agyExpiry].compactMap { $0 }.min()
         guard RefreshPolicy.shouldRefresh(now: current, lastRefresh: lastRefreshAttempt,
                                           resourceExpiresAt: resourceExpiry) else {
             return false

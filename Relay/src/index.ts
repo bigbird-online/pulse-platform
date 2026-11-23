@@ -27,6 +27,8 @@ import { resolvePulseRuntimePriority } from './codex-defaults.js';
 import { buildRelayInteractiveLineage } from './relay-interactive-lineage.js';
 import { loadPlacementRuntimeContext, type PlacementRuntimePaths } from './node-placement.js';
 import { parseConversationPoolKey } from './conversation-address.js';
+import { captureReportedSessionId } from './reported-session-capture.js';
+import { ownerIsolationFromRouter } from './agent-isolation.js';
 import { platformSettings, startPlatformBot } from './platform-bot.js';
 import { createTelegramApiBot } from './channels/telegram.js';
 import { persistQueuedTurns, recordQueuedAtShutdown, unrecordPendingTurn } from './shutdown-interrupts.js';
@@ -37,6 +39,7 @@ export { createConversationRuntimeManager, createPoolConversationAdapter, resolv
 export { createCodexConversationRuntime, buildCodexCommand, codexMessageToPrompt } from './codex-conversation-runtime.js';
 export { createCcSdkConversationRuntime, buildSdkEngineEnv, resolveProviderEnv } from './cc-sdk-conversation-runtime.js';
 export { createPiConversationRuntime, buildPiCommand, loadPiRuntimeManifest } from './pi-conversation-runtime.js';
+export { createAgyConversationRuntime, buildAgyCommand } from './agy-conversation-runtime.js';
 export { createRouter } from './router.js';
 export { collectRichDocCodeBlocks, compileRichDoc, renderRichDocMarkdown, richDocToPlainText, sanitizeLinkTarget, splitRichDoc, validateRichDoc } from './rich-doc.js';
 export { compileFeishuPayloads, compileTelegramPayloads, isRichDocRolloutEnabled, resolveRichDocChannelProfiles } from './channel-rich-rendering.js';
@@ -123,6 +126,7 @@ export async function startRelay(options?: {
   const { createCodexConversationRuntime } = await import('./codex-conversation-runtime.js');
   const { createCcSdkConversationRuntime } = await import('./cc-sdk-conversation-runtime.js');
   const { createPiConversationRuntime, loadPiRuntimeManifest } = await import('./pi-conversation-runtime.js');
+  const { createAgyConversationRuntime } = await import('./agy-conversation-runtime.js');
   const { validateConfiguredPiProfiles } = await import('./pi-runtime-config.js');
   const { createRouter } = await import('./router.js');
   const { createTelegramBots } = await import('./channels/telegram.js');
@@ -248,6 +252,8 @@ export async function startRelay(options?: {
   runtimeManager.register(createPiConversationRuntime({
     manifest: piManifest,
   }));
+  // agy: opt-in only (/runtime agy); no Agent defaults to it, so registering is inert until chosen.
+  runtimeManager.register(createAgyConversationRuntime({ stateManager: options?.stateManager }));
 
   // Ensure CC-runtime agents have a ccModel: if modelCatalog has providers,
   // assign the first available anthropic-protocol model as default IN-MEMORY ONLY.
@@ -485,36 +491,7 @@ export async function startRelay(options?: {
       // 零条，就是这条 guard 挡的。
       //
       // 改成"值不一致就回写"：CC 报什么就记什么，state 始终跟住真在跑的那条。
-      const ccSid = typeof msg.session_id === 'string' ? msg.session_id : undefined;
-      if (ccSid && options?.stateManager) {
-        const existing = options.stateManager.getSession(poolKey);
-        if (existing?.sessionId !== ccSid) {
-          const previousSid = existing?.sessionId;
-          const address = parseConversationPoolKey(poolKey);
-          if (!address) return;
-          const { userId, agentId, channelScope } = address;
-          if (!router.getAgents(userId).some(agent => agent.id === agentId)) return;
-          // Router owns the channel-specific session field selection for both
-          // scoped and legacy unscoped pool keys.
-          router.overrideSessionId(userId, agentId, ccSid, channelScope);
-          // Also persist to state so it survives relay restart
-          options.stateManager.updateSession(poolKey, {
-            poolKey,
-            agentId,
-            sessionId: ccSid,
-            runtime: existing?.runtime ?? 'cc',
-            lastActivity: Date.now(),
-            status: 'active',
-          });
-          console.log({
-            ts: new Date().toISOString(), level: 'info', msg: 'Captured CC session_id',
-            poolKey, sessionId: ccSid.slice(0, 8),
-            // 带上被替换的旧值：state 与 CC 真值分叉时这行就是取证锚点。
-            previousSessionId: previousSid ? previousSid.slice(0, 8) : undefined,
-            corrected: Boolean(previousSid),
-          });
-        }
-      }
+      if (options?.stateManager) captureReportedSessionId(poolKey, msg, { router, stateManager: options.stateManager });
     }
   });
 
@@ -615,7 +592,7 @@ export async function startRelay(options?: {
           const target=conversation(poolKey);
           if(!target)continue;
           await settleWiSwitch({poolKey,runtime:runtimeManager,stateManager:options.stateManager!,
-            acquire:acquireFor(poolKey,target),reply:text=>notify(poolKey,text)})
+            acquire:acquireFor(poolKey,target),reply:text=>notify(poolKey,text),agent:target.agent})
             .catch(error=>console.error({msg:'Interrupted WI switch retained',poolKey,
               code:error instanceof Error?error.message:'wi_switch_unknown'}));
         }
@@ -626,7 +603,8 @@ export async function startRelay(options?: {
             if(!target)throw new Error('agent_switch_conversation_unavailable');
             const poolKey=request.tenant;
             return runAgentSwitch({ref:request.ref,target:request.target,poolKey,runtime:runtimeManager,
-              stateManager:options.stateManager!,reply:text=>notify(poolKey,text),acquire:acquireFor(poolKey,target)});
+              stateManager:options.stateManager!,reply:text=>notify(poolKey,text),acquire:acquireFor(poolKey,target),
+              agent:target.agent});
           }}).catch(error=>console.error({msg:'Agent switch requests unreadable',
             code:error instanceof Error?error.message:'agent_switch_unknown'}));
         for(const [poolKey,session] of Object.entries(options.stateManager!.getAllSessions())){
@@ -699,6 +677,7 @@ export async function startRelay(options?: {
           .map(agent => JSON.stringify(agentRepoAccess(agent) ?? null)))];
         return lists.length === 1 ? JSON.parse(lists[0]!) ?? undefined : undefined;
       },
+      ownerIsolationFor: ownerIsolationFromRouter(router),
       ccSessionWiMcp,
     });
     scheduler.start();
@@ -733,9 +712,9 @@ export async function startRelay(options?: {
     live: poolKey => runtimeManager.get(poolKey),
     principalFor: poolKey => resolveMeteringPrincipal(router, poolKey),
     channelFor: () => ({
-      deliverInternalTurn: async (poolKey, prompt, ids, notice) =>
-        await bots.deliverInternalTurn(poolKey, prompt, ids, notice)
-        || (feishuBots ? await feishuBots.deliverInternalTurn(poolKey, prompt, ids, notice) : false),
+      deliverInternalTurn: async (poolKey, prompt, ids, notice, ref) =>
+        await bots.deliverInternalTurn(poolKey, prompt, ids, notice, ref)
+        || (feishuBots ? await feishuBots.deliverInternalTurn(poolKey, prompt, ids, notice, ref) : false),
     }),
     displayName: displayAgentName,
     ledgerPath: join(resolveRelayDataDir(), 'collab-delivery-ledger.json'),

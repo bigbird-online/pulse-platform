@@ -76,6 +76,7 @@ changelog:
 #### FR-P0-004：Agent 特定 Provider 配置
 
 - Terminal CC 使用 agent 的 `ccModel` 对应的 provider，不使用全局 env 碰运气
+- `claude-fable-latest` 在终端接管时解析为 Claude Code 的 `fable`，订阅选模清除继承的 Fable 型号覆盖。
 - `handleCc` 解析 `ccModel → modelCatalog → provider → API key`，构建：
   - `--model {ccModel}` 参数
   - `--settings {"env":{"ANTHROPIC_AUTH_TOKEN":...,"ANTHROPIC_BASE_URL":...,"ANTHROPIC_DEFAULT_*_MODEL":...}}`

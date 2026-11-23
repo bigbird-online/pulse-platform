@@ -15,6 +15,7 @@ struct CostRecordDetail: View {
         case "none": return "临时任务（不属于 WI）"
         case "ambiguous": return "WI 待核验"
         case "unassigned": return "未关联 WI"
+        case "undeclared": return "未声明 WI（人类请求没有声明 WI）"
         default: return row.key["wi"] ?? "未关联 WI"
         }
     }
